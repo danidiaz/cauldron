@@ -41,20 +41,24 @@ c = C
 d :: D 
 d = D
 
-a2e :: A -> E
-a2e _ = E
+c1 :: A -> E
+c1 _ = E
 
-b2f :: B -> F
-b2f _ = F
+c2 :: B -> F
+c2 _ = F
 
-ef2g :: E -> F -> G
-ef2g _ _ = G
+c3 :: E -> F -> G
+c3 _ _ = G
 
-g2h :: G -> H
-g2h _ = H
+c4 :: A -> D -> G -> H
+c4 _ _ _ = H
 
-dh2z :: D -> H -> Z
-dh2z _ _ = Z
+c5 :: D -> H -> Z
+c5 _ _ = Z
+
+boringWiring :: Z
+boringWiring =
+  c5 d (c4 a d (c3 (c1 a) (c2 b)))
 
 main :: IO ()
 main = do
