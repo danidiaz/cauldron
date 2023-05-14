@@ -22,7 +22,8 @@ library
     build-depends:
         base,
         containers,
-        algebraic-graphs
+        algebraic-graphs,
+        multicurryable
 
     hs-source-dirs:   src
     default-language: GHC2021
