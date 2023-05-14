@@ -1,0 +1,42 @@
+cabal-version:      3.0
+name:               magic-cauldron
+version:            0.1.0.0
+-- synopsis:
+-- description:
+license:            NONE
+author:             diaz_carrete@yahoo.com
+maintainer:         Daniel Díaz
+-- copyright:
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+-- extra-source-files:
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+    exposed-modules:  MagicCauldron
+    -- other-modules:
+    -- other-extensions:
+    build-depends:
+        base,
+        containers,
+        algebraic-graphs
+
+    hs-source-dirs:   src
+    default-language: GHC2021
+
+executable magic-cauldron
+    import:           warnings
+    main-is:          Main.hs
+    -- other-modules:
+    -- other-extensions:
+    build-depends:
+        base,
+        containers,
+        algebraic-graphs,
+        magic-cauldron
+
+    hs-source-dirs:   app
+    default-language: GHC2021
