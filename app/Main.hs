@@ -29,36 +29,44 @@ data X = X deriving Show
 data Y = Y deriving Show
 data Z = Z deriving Show
 
-a :: A
-a = A
+makeA :: A
+makeA = A
 
-b :: B
-b = B
+makeB :: B
+makeB = B
 
-c :: C
-c = C
+makeC :: C
+makeC = C
 
-d :: D 
-d = D
+makeD :: D 
+makeD = D
 
-c1 :: A -> E
-c1 _ = E
+makeE :: A -> E
+makeE _ = E
 
-c2 :: B -> F
-c2 _ = F
+makeF :: B -> C -> F
+makeF _ _ = F
 
-c3 :: E -> F -> G
-c3 _ _ = G
+makeG :: E -> F -> G
+makeG _ _ = G
 
-c4 :: A -> D -> G -> H
-c4 _ _ _ = H
+makeH :: A -> D -> G -> H
+makeH _ _ _ = H
 
-c5 :: D -> H -> Z
-c5 _ _ = Z
+makeZ :: D -> H -> Z
+makeZ _ _ = Z
 
 boringWiring :: Z
 boringWiring =
-  c5 d (c4 a d (c3 (c1 a) (c2 b)))
+  let a = makeA
+      b = makeB
+      c = makeC
+      d = makeD
+      e = makeE a
+      f = makeF b c
+      g = makeG e f
+      h = makeH a d g
+   in makeZ d h
 
 main :: IO ()
 main = do
