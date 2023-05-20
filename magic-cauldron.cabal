@@ -16,7 +16,7 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  MagicCauldron
+    exposed-modules:  Cauldron
     -- other-modules:
     -- other-extensions:
     build-depends:
@@ -26,7 +26,7 @@ library
         sop-core,
         multicurryable,
 
-    hs-source-dirs:   src
+    hs-source-dirs:   lib
     default-language: GHC2021
 
 executable magic-cauldron
