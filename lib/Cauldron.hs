@@ -4,7 +4,7 @@
 
 module Cauldron
   ( Cauldron,
-    add,
+    put,
   )
 where
 
@@ -18,7 +18,7 @@ import Multicurryable
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep Constructor}
 
-add ::
+put ::
   forall (as :: [Type]) (b :: Type) curried.
   ( All Typeable as,
     Typeable b,
@@ -27,7 +27,7 @@ add ::
   curried ->
   Cauldron ->
   Cauldron
-add curried Cauldron {recipes} =
+put curried Cauldron {recipes} =
   Cauldron $
     Map.insert
       do typeRep (Proxy @b)
