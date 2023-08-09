@@ -28,7 +28,7 @@ put ::
   Cauldron ->
   Cauldron
 put curried Cauldron {recipes} =
-  Cauldron $
+  Cauldron do
     Map.insert
       do typeRep (Proxy @b)
       do constructor @as @b @curried curried
