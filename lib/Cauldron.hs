@@ -2,6 +2,9 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Cauldron
   ( Cauldron,
@@ -9,10 +12,12 @@ module Cauldron
   )
 where
 
-import Algebra.Graph.AdjacencyIntMap (AdjacencyIntMap)
-import Algebra.Graph.AdjacencyIntMap qualified as IntGraph
+-- import Algebra.Graph.AdjacencyIntMap (AdjacencyIntMap)
+-- import Algebra.Graph.AdjacencyIntMap qualified as IntGraph
+-- import Algebra.Graph.AdjacencyIntMap.Algorithm qualified as IntGraph
 import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
+import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Data.Foldable
 import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
@@ -28,6 +33,8 @@ import Data.Traversable
 import Data.Tuple
 import Data.Typeable
 import Multicurryable
+import Data.Maybe (fromJust)
+import Data.List.NonEmpty (NonEmpty)
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep Constructor}
 
@@ -78,40 +85,47 @@ constructor curried =
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K do typeRep (Proxy @a)
 
-cook :: Cauldron -> Either MissingDeps (AdjacencyMap TypeRep)
+cook :: Cauldron -> Either Mishap (AdjacencyMap TypeRep)
 cook Cauldron {recipes} =
-  case findMissingDeps recipes of
+  case findMissingDeps do (.argumentReps) <$> recipes of
     missing | Data.Foldable.any (not . Data.List.null) missing ->
       Left do MissingDeps missing
     _ ->
-      undefined
-  where
-    --   let graph =
-    --         IntGraph.edges
-    --         do flip Map.foldMapWithKey (numbered recipes)
-    --               \resultRep (number, Constructor {argumentReps}) ->
-    --                 undefined
-    --    in undefined
+      let graph = 
+            Graph.edges
+            do flip Map.foldMapWithKey recipes
+                  \resultRep Constructor {argumentReps} -> do
+                    argumentRep <- argumentReps 
+                    [(resultRep, argumentRep)]
+       in case Graph.topSort graph of
+        Left depCycle -> 
+          Left do DepCycle depCycle
+        Right buildPlan -> undefined
 
-    numbered :: (Ord a) => Map a b -> Map a (Int, b)
-    numbered theMap =
-      let (_, result) = Map.mapAccum (\n b -> (succ n, (n, b))) 0 theMap
-       in result
+data Mishap = 
+  MissingDeps (Map TypeRep [TypeRep])
+  |DepCycle (NonEmpty TypeRep)
 
-newtype MissingDeps = MissingDeps (Map TypeRep [TypeRep])
-
-findMissingDeps :: Map TypeRep Constructor -> Map TypeRep [TypeRep]
+findMissingDeps :: Map TypeRep [TypeRep] -> Map TypeRep [TypeRep]
 findMissingDeps theMap =
-  Map.map
-    do \Constructor {argumentReps} -> filter (`Map.notMember` theMap) argumentReps
+  Map.map 
+    do Prelude.filter (`Map.notMember` theMap)
     theMap
 
-toIntMap ::
-  (Ord a) =>
-  Set a ->
-  (Map Int a, Map a Int)
-toIntMap theSet =
-  let numbered = zip [0 ..] do Set.toAscList theSet
-   in ( Map.fromAscList numbered,
-        Map.fromAscList do Data.Tuple.swap <$> numbered
-      )
+-- indexIsos :: Ord a => Set a -> (Int -> a, a -> Int)
+-- indexIsos theSet = 
+--   let numbered = zip [0 ..] do Set.toAscList theSet
+--       indexMap = Map.fromAscList numbered
+--       aMap = Map.fromAscList do Data.Tuple.swap <$> numbered
+--    in (\i -> fromJust do Map.lookup i indexMap,
+--        \a -> fromJust do Map.lookup a aMap
+--       )
+-- toIntMap ::
+--   (Ord a) =>
+--   Set a ->
+--   (Map Int a, Map a Int)
+-- toIntMap theSet =
+--   let numbered = zip [0 ..] do Set.toAscList theSet
+--    in ( Map.fromAscList numbered,
+--         Map.fromAscList do Data.Tuple.swap <$> numbered
+--       )
