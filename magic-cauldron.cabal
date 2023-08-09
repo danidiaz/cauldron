@@ -1,5 +1,5 @@
 cabal-version:      3.0
-name:               magic-cauldron
+name:               composer-cauldron
 version:            0.1.0.0
 -- synopsis:
 -- description:
@@ -29,7 +29,7 @@ library
     hs-source-dirs:   lib
     default-language: GHC2021
 
-executable magic-cauldron
+executable composer-cauldron
     import:           warnings
     main-is:          Main.hs
     -- other-modules:
@@ -38,7 +38,7 @@ executable magic-cauldron
         base,
         containers,
         algebraic-graphs,
-        magic-cauldron
+        composer-cauldron
 
     hs-source-dirs:   app
     default-language: GHC2021
