@@ -1,4 +1,4 @@
-# composer-cauldron
+# cauldron
 
-Put your constructors in the cauldron, then get your beans out!
+Put your constructors and decorators in the cauldron, then get your beans out!
 
