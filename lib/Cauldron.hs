@@ -9,22 +9,25 @@ module Cauldron
   )
 where
 
-import Data.Kind
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
-import Data.IntMap.Strict (IntMap)
-import Data.IntMap.Strict qualified as IntMap
-import Data.SOP (All, K (..))
-import Data.SOP.NP
-import Data.Typeable
-import Multicurryable
-import Algebra.Graph.AdjacencyMap (AdjacencyMap)
-import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyIntMap (AdjacencyIntMap)
 import Algebra.Graph.AdjacencyIntMap qualified as IntGraph
-import Data.Traversable
-import Data.List qualified
+import Algebra.Graph.AdjacencyMap (AdjacencyMap)
+import Algebra.Graph.AdjacencyMap qualified as Graph
 import Data.Foldable
+import Data.IntMap.Strict (IntMap)
+import Data.IntMap.Strict qualified as IntMap
+import Data.Kind
+import Data.List qualified
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.SOP (All, K (..))
+import Data.SOP.NP
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Traversable
+import Data.Tuple
+import Data.Typeable
+import Multicurryable
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep Constructor}
 
@@ -75,42 +78,40 @@ constructor curried =
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K do typeRep (Proxy @a)
 
-cook :: Cauldron ->  Either MissingDeps (AdjacencyMap TypeRep)
+cook :: Cauldron -> Either MissingDeps (AdjacencyMap TypeRep)
 cook Cauldron {recipes} =
   case findMissingDeps recipes of
-    missing | Data.Foldable.any (not . Data.List.null) missing -> 
+    missing | Data.Foldable.any (not . Data.List.null) missing ->
       Left do MissingDeps missing
-    _ -> 
+    _ ->
       undefined
-
---   let graph =
---         IntGraph.edges
---         do flip Map.foldMapWithKey (numbered recipes)
---               \resultRep (number, Constructor {argumentReps}) ->
---                 undefined
---    in undefined
   where
-    numbered :: Ord a => Map a b -> Map a (Int, b)
+    --   let graph =
+    --         IntGraph.edges
+    --         do flip Map.foldMapWithKey (numbered recipes)
+    --               \resultRep (number, Constructor {argumentReps}) ->
+    --                 undefined
+    --    in undefined
+
+    numbered :: (Ord a) => Map a b -> Map a (Int, b)
     numbered theMap =
-      let (_, result) = Map.mapAccum (\n b -> (succ n, (n,b))) 0 theMap
-      in result
+      let (_, result) = Map.mapAccum (\n b -> (succ n, (n, b))) 0 theMap
+       in result
 
 newtype MissingDeps = MissingDeps (Map TypeRep [TypeRep])
 
 findMissingDeps :: Map TypeRep Constructor -> Map TypeRep [TypeRep]
 findMissingDeps theMap =
   Map.map
-  do \Constructor {argumentReps} -> filter (`Map.notMember` theMap) argumentReps
-  theMap
+    do \Constructor {argumentReps} -> filter (`Map.notMember` theMap) argumentReps
+    theMap
 
-toIntMap :: 
-  Map TypeRep Constructor -> 
-  (Map Int (TypeRep, Constructor), Map TypeRep (Int, Constructor))
-toIntMap theMap =
-    let (_, numbered) = Map.mapAccum (\n b -> (succ n, (n,b))) (0 :: Int) theMap
-    in (
-        Map.fromAscList 
-        do (\(r,(n,z)) -> (n,(r,z))) <$> Map.toAscList numbered
-        , 
-        numbered)
-
+toIntMap ::
+  (Ord a) =>
+  Set a ->
+  (Map Int a, Map a Int)
+toIntMap theSet =
+  let numbered = zip [0 ..] do Set.toAscList theSet
+   in ( Map.fromAscList numbered,
+        Map.fromAscList do Data.Tuple.swap <$> numbered
+      )
