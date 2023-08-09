@@ -1,6 +1,6 @@
 module Main where
 
-import qualified Cauldron (someFunc)
+import qualified Cauldron (constructor)
 
 data A = A deriving Show
 data B = B deriving Show
@@ -71,4 +71,3 @@ boringWiring =
 main :: IO ()
 main = do
   putStrLn "Hello, Haskell!"
-  Cauldron.someFunc
