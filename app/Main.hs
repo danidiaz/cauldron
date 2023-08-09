@@ -1,6 +1,6 @@
 module Main where
 
-import qualified Cauldron (constructor)
+import Cauldron (Cauldron)
 
 data A = A deriving Show
 data B = B deriving Show
