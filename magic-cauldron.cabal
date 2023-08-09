@@ -24,7 +24,7 @@ library
         containers,
         algebraic-graphs,
         sop-core,
-        multicurryable,
+        multicurryable ^>= 0.1.1.0,
 
     hs-source-dirs:   lib
     default-language: GHC2021
