@@ -54,13 +54,13 @@ constructor ::
 constructor curried =
   Constructor
     { argumentReps =
-        collapse_NP $
+        collapse_NP do 
           cpure_NP @_ @as
-            (Proxy @Typeable)
+            do Proxy @Typeable
             typeRepHelper,
       resultRep = typeRep (Proxy @b),
       uncurried = multiuncurry @(->) @as @b @curried curried
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
-    typeRepHelper = K $ typeRep (Proxy @a)
+    typeRepHelper = K do typeRep (Proxy @a)
