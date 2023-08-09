@@ -78,7 +78,7 @@ constructor curried =
 cook :: Cauldron ->  Either MissingDeps (AdjacencyMap TypeRep)
 cook Cauldron {recipes} =
   case findMissingDeps recipes of
-    missing | not do Data.List.null do Data.Foldable.fold missing -> 
+    missing | Data.Foldable.any (not . Data.List.null) missing -> 
       Left do MissingDeps missing
     _ -> 
       undefined
@@ -102,3 +102,15 @@ findMissingDeps theMap =
   Map.map
   do \Constructor {argumentReps} -> filter (`Map.notMember` theMap) argumentReps
   theMap
+
+toIntMap :: 
+  Map TypeRep Constructor -> 
+  (Map Int (TypeRep, Constructor), Map TypeRep (Int, Constructor))
+toIntMap theMap =
+    let (_, numbered) = Map.mapAccum (\n b -> (succ n, (n,b))) (0 :: Int) theMap
+    in (
+        Map.fromAscList 
+        do (\(r,(n,z)) -> (n,(r,z))) <$> Map.toAscList numbered
+        , 
+        numbered)
+
