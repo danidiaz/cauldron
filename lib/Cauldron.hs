@@ -6,7 +6,7 @@ module Cauldron
   ( Cauldron,
     empty,
     put,
-    cook,
+    boil,
     Mishap (..),
     BeanGraph (..),
     exportToDot,
@@ -102,12 +102,12 @@ makeRecipe recipe =
 type Plan = [TypeRep]
 
 -- | Build a @bean@ from the recipes stored in the 'Cauldron'.
-cook ::
+boil ::
   forall bean.
   (Typeable bean) =>
   Cauldron ->
   Either Mishap (BeanGraph, bean)
-cook Cauldron {recipes, recipesConflicts} = do
+boil Cauldron {recipes, recipesConflicts} = do
   () <- first ConflictingRecipes checkConflicts
   () <- first MissingRecipes checkMissing
   (beanGraph, plan) <- first RecipeCycle checkCycles

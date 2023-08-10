@@ -1,4 +1,4 @@
 # cauldron
 
-Put your constructors and decorators in the cauldron, then get your beans out!
+Put your recipes in the cauldron, make it boil, and get a tasty bean in return! 
 

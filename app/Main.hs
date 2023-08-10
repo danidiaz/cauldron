@@ -110,7 +110,7 @@ coolWiring =
             Cauldron.put makeH,
             Cauldron.put makeZ
           ]
-   in Cauldron.cook cauldron
+   in Cauldron.boil cauldron
 
 main :: IO ()
 main = do
