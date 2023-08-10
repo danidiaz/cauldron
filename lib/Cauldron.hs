@@ -1,9 +1,9 @@
 -- I'm using BlockArguments a lot instead of $.
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE DerivingStrategies #-}
 
 module Cauldron
   ( Cauldron,
@@ -13,29 +13,29 @@ module Cauldron
     Mishap (..),
     Beans (..),
     taste,
-    exportToDot
+    exportToDot,
   )
 where
 
 import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
+import Algebra.Graph.Export.Dot qualified as Dot
+import Data.ByteString qualified
+import Data.Dynamic
 import Data.Foldable
 import Data.Kind
 import Data.List qualified
+import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromJust)
 import Data.SOP (All, K (..))
 import Data.SOP.NP
+import Data.Text qualified
+import Data.Text.Encoding qualified
 import Data.Typeable
 import Multicurryable
-import Data.Maybe (fromJust)
-import Data.List.NonEmpty (NonEmpty)
-import Data.Dynamic
-import qualified Algebra.Graph.Export.Dot as Dot
-import Data.Text qualified
-import Data.Text.Encoding qualified 
-import Data.ByteString qualified
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep Constructor}
 
@@ -89,96 +89,78 @@ makeConstructor curried =
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K do typeRep (Proxy @a)
 
-
 cook :: Cauldron -> Either Mishap Beans
 cook Cauldron {recipes} =
   case findMissingDeps do (.argumentReps) <$> recipes of
     missing | Data.Foldable.any (not . Data.List.null) missing ->
       Left do MissingDeps missing
     _ ->
-      let depGraph = 
+      let depGraph =
             Graph.edges
-            do flip Map.foldMapWithKey recipes
+              do
+                flip
+                  Map.foldMapWithKey
+                  recipes
                   \resultRep Constructor {argumentReps} -> do
-                    argumentRep <- argumentReps 
+                    argumentRep <- argumentReps
                     [(resultRep, argumentRep)]
        in case Graph.topSort depGraph of
-        Left depCycle -> 
-          Left do DepCycle depCycle
-        Right buildPlan -> 
-          let beans = 
-                Data.List.foldl'
-                do \dynMap rep ->
-                      let constructor = fromJust do Map.lookup rep recipes
-                          dyn = construct dynMap constructor
-                      in Map.insert (dynTypeRep dyn) dyn dynMap
-                Map.empty
-                buildPlan
-           in Right Beans { depGraph, beans }
-           
+            Left depCycle ->
+              Left do DepCycle depCycle
+            Right buildPlan ->
+              let beans =
+                    Data.List.foldl'
+                      do
+                        \dynMap rep ->
+                          let constructor = fromJust do Map.lookup rep recipes
+                              dyn = construct dynMap constructor
+                           in Map.insert (dynTypeRep dyn) dyn dynMap
+                      Map.empty
+                      buildPlan
+               in Right Beans {depGraph, beans}
 
-data Mishap = 
-  MissingDeps (Map TypeRep [TypeRep])
-  |DepCycle (NonEmpty TypeRep)
-  deriving stock Show
+data Mishap
+  = MissingDeps (Map TypeRep [TypeRep])
+  | DepCycle (NonEmpty TypeRep)
+  deriving stock (Show)
 
-data Beans = Beans {
-    depGraph :: AdjacencyMap TypeRep,
+data Beans = Beans
+  { depGraph :: AdjacencyMap TypeRep,
     beans :: Map TypeRep Dynamic
   }
 
 findMissingDeps :: Map TypeRep [TypeRep] -> Map TypeRep [TypeRep]
 findMissingDeps theMap =
-  Map.map 
+  Map.map
     do Prelude.filter (`Map.notMember` theMap)
     theMap
 
--- indexIsos :: Ord a => Set a -> (Int -> a, a -> Int)
--- indexIsos theSet = 
---   let numbered = zip [0 ..] do Set.toAscList theSet
---       indexMap = Map.fromAscList numbered
---       aMap = Map.fromAscList do Data.Tuple.swap <$> numbered
---    in (\i -> fromJust do Map.lookup i indexMap,
---        \a -> fromJust do Map.lookup a aMap
---       )
--- toIntMap ::
---   (Ord a) =>
---   Set a ->
---   (Map Int a, Map a Int)
--- toIntMap theSet =
---   let numbered = zip [0 ..] do Set.toAscList theSet
---    in ( Map.fromAscList numbered,
---         Map.fromAscList do Data.Tuple.swap <$> numbered
---       )
-
--- | Build a component out of already build compoenents.
--- This can only work and without blow up if there aren't dependecy cycles
--- and the order of construction respects the depedencies!   
+-- | Build a component out of already build components.
+-- This can only work without blowing up if there aren't dependecy cycles
+-- and the order of construction respects the depedencies!
 construct :: Map TypeRep Dynamic -> Constructor -> Dynamic
-construct theDyns Constructor {uncurried} = 
-  let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor 
+construct theDyns Constructor {uncurried} =
+  let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor argsExtractor theDyns
    in toDyn do uncurried args
 
-newtype Extractor a = 
-  Extractor { runExtractor :: Map TypeRep Dynamic -> a }
+newtype Extractor a = Extractor {runExtractor :: Map TypeRep Dynamic -> a}
   deriving newtype (Functor, Applicative)
 
-makeExtractor :: forall a. Typeable a => Extractor a
-makeExtractor = 
+makeExtractor :: forall a. (Typeable a) => Extractor a
+makeExtractor =
   let rep = typeRep (Proxy @a)
-      runExtractor dyns = 
+      runExtractor dyns =
         fromJust do fromDynamic @a do fromJust do Map.lookup rep dyns
    in Extractor {runExtractor}
 
-taste :: forall a . Typeable a => Beans -> a
+taste :: forall a. (Typeable a) => Beans -> a
 taste Beans {beans} = runExtractor makeExtractor beans
 
 exportToDot :: FilePath -> Beans -> IO ()
-exportToDot filepath Beans { depGraph } = do 
+exportToDot filepath Beans {depGraph} = do
   let dot =
-        Dot.export 
-        do Dot.defaultStyle do \rep -> Data.Text.pack do tyConName do typeRepTyCon rep
-        depGraph 
-  Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot) 
-  
+        Dot.export
+          do Dot.defaultStyle do \rep -> Data.Text.pack do tyConName do typeRepTyCon rep
+          depGraph
+  Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)

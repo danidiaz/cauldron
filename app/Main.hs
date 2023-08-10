@@ -1,34 +1,59 @@
 module Main where
 
-import Cauldron (Mishap, Beans)
+import Cauldron (Beans, Mishap)
 import Cauldron qualified
 
-data A = A deriving Show
-data B = B deriving Show
-data C = C deriving Show
-data D = D deriving Show
-data E = E deriving Show
-data F = F deriving Show
-data G = G deriving Show
-data H = H deriving Show
-data I = I deriving Show
-data J = J deriving Show
-data K = K deriving Show
-data L = L deriving Show
-data M = M deriving Show
-data N = N deriving Show
-data O = O deriving Show
-data P = P deriving Show
-data Q = Q deriving Show
-data R = R deriving Show
-data S = S deriving Show
-data T = T deriving Show
-data U = U deriving Show
-data V = V deriving Show
-data W = W deriving Show
-data X = X deriving Show
-data Y = Y deriving Show
-data Z = Z deriving Show
+data A = A deriving (Show)
+
+data B = B deriving (Show)
+
+data C = C deriving (Show)
+
+data D = D deriving (Show)
+
+data E = E deriving (Show)
+
+data F = F deriving (Show)
+
+data G = G deriving (Show)
+
+data H = H deriving (Show)
+
+data I = I deriving (Show)
+
+data J = J deriving (Show)
+
+data K = K deriving (Show)
+
+data L = L deriving (Show)
+
+data M = M deriving (Show)
+
+data N = N deriving (Show)
+
+data O = O deriving (Show)
+
+data P = P deriving (Show)
+
+data Q = Q deriving (Show)
+
+data R = R deriving (Show)
+
+data S = S deriving (Show)
+
+data T = T deriving (Show)
+
+data U = U deriving (Show)
+
+data V = V deriving (Show)
+
+data W = W deriving (Show)
+
+data X = X deriving (Show)
+
+data Y = Y deriving (Show)
+
+data Z = Z deriving (Show)
 
 makeA :: A
 makeA = A
@@ -39,7 +64,7 @@ makeB = B
 makeC :: C
 makeC = C
 
-makeD :: D 
+makeD :: D
 makeD = D
 
 makeE :: A -> E
@@ -70,28 +95,29 @@ boringWiring =
    in makeZ d h
 
 coolWiring :: Either Mishap Beans
-coolWiring = 
-  let cauldron = 
-        foldr 
-        ($) 
-        Cauldron.empty
-        [ Cauldron.put makeA
-        , Cauldron.put makeB
-        , Cauldron.put makeC
-        , Cauldron.put makeD
-        , Cauldron.put makeE
-        , Cauldron.put makeF
-        , Cauldron.put makeG
-        , Cauldron.put makeH
-        , Cauldron.put makeZ
-        ]
-  in Cauldron.cook cauldron
+coolWiring =
+  let cauldron =
+        foldr
+          ($)
+          Cauldron.empty
+          [ Cauldron.put makeA,
+            Cauldron.put makeB,
+            Cauldron.put makeC,
+            Cauldron.put makeD,
+            Cauldron.put makeE,
+            Cauldron.put makeF,
+            Cauldron.put makeG,
+            Cauldron.put makeH,
+            Cauldron.put makeZ
+          ]
+   in Cauldron.cook cauldron
 
 main :: IO ()
 main = do
   print boringWiring
-  case coolWiring of 
-    Left mishap -> print mishap
+  case coolWiring of
+    Left mishap -> do
+      print mishap
     Right beans -> do
       print (Cauldron.taste @Z beans)
       Cauldron.exportToDot "deps.dot" beans
