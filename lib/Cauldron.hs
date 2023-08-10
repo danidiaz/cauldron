@@ -1,4 +1,3 @@
--- I'm using BlockArguments a lot instead of $.
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
