@@ -1,4 +1,4 @@
--- I'm using a lot of BlockArguments instead of $.
+-- I'm using BlockArguments a lot instead of $.
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
@@ -11,37 +11,31 @@ module Cauldron
     put,
     cook,
     Mishap (..),
+    Beans (..),
     taste,
-    -- Re-exports
-    TypeRep,
-    AdjacencyMap
+    exportToDot
   )
 where
 
--- import Algebra.Graph.AdjacencyIntMap (AdjacencyIntMap)
--- import Algebra.Graph.AdjacencyIntMap qualified as IntGraph
--- import Algebra.Graph.AdjacencyIntMap.Algorithm qualified as IntGraph
 import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Data.Foldable
-import Data.IntMap.Strict (IntMap)
-import Data.IntMap.Strict qualified as IntMap
 import Data.Kind
 import Data.List qualified
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.SOP (All, K (..))
 import Data.SOP.NP
-import Data.Set (Set)
-import Data.Set qualified as Set
-import Data.Traversable
-import Data.Tuple
 import Data.Typeable
 import Multicurryable
 import Data.Maybe (fromJust)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Dynamic
+import qualified Algebra.Graph.Export.Dot as Dot
+import Data.Text qualified
+import Data.Text.Encoding qualified 
+import Data.ByteString qualified
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep Constructor}
 
@@ -96,23 +90,23 @@ makeConstructor curried =
     typeRepHelper = K do typeRep (Proxy @a)
 
 
-cook :: Cauldron -> Either Mishap (AdjacencyMap TypeRep, Map TypeRep Dynamic)
+cook :: Cauldron -> Either Mishap Beans
 cook Cauldron {recipes} =
   case findMissingDeps do (.argumentReps) <$> recipes of
     missing | Data.Foldable.any (not . Data.List.null) missing ->
       Left do MissingDeps missing
     _ ->
-      let graph = 
+      let depGraph = 
             Graph.edges
             do flip Map.foldMapWithKey recipes
                   \resultRep Constructor {argumentReps} -> do
                     argumentRep <- argumentReps 
                     [(resultRep, argumentRep)]
-       in case Graph.topSort graph of
+       in case Graph.topSort depGraph of
         Left depCycle -> 
           Left do DepCycle depCycle
         Right buildPlan -> 
-          let allConstructed = 
+          let beans = 
                 Data.List.foldl'
                 do \dynMap rep ->
                       let constructor = fromJust do Map.lookup rep recipes
@@ -120,13 +114,18 @@ cook Cauldron {recipes} =
                       in Map.insert (dynTypeRep dyn) dyn dynMap
                 Map.empty
                 buildPlan
-           in Right (graph, allConstructed)
+           in Right Beans { depGraph, beans }
            
 
 data Mishap = 
   MissingDeps (Map TypeRep [TypeRep])
   |DepCycle (NonEmpty TypeRep)
   deriving stock Show
+
+data Beans = Beans {
+    depGraph :: AdjacencyMap TypeRep,
+    beans :: Map TypeRep Dynamic
+  }
 
 findMissingDeps :: Map TypeRep [TypeRep] -> Map TypeRep [TypeRep]
 findMissingDeps theMap =
@@ -172,5 +171,14 @@ makeExtractor =
         fromJust do fromDynamic @a do fromJust do Map.lookup rep dyns
    in Extractor {runExtractor}
 
-taste :: forall a . Typeable a => Map TypeRep Dynamic -> a
-taste = runExtractor makeExtractor
+taste :: forall a . Typeable a => Beans -> a
+taste Beans {beans} = runExtractor makeExtractor beans
+
+exportToDot :: FilePath -> Beans -> IO ()
+exportToDot filepath Beans { depGraph } = do 
+  let dot =
+        Dot.export 
+        do Dot.defaultStyle do \rep -> Data.Text.pack do tyConName do typeRepTyCon rep
+        depGraph 
+  Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot) 
+  

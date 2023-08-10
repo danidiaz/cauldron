@@ -25,7 +25,8 @@ library
         algebraic-graphs ^>= 0.7,
         sop-core,
         multicurryable ^>= 0.1.1.0,
-
+        bytestring,
+        text,
     hs-source-dirs:   lib
     default-language: GHC2021
 
