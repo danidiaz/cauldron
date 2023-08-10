@@ -1,6 +1,7 @@
 module Main where
 
-import Cauldron (Cauldron)
+import Cauldron (Cauldron, Mishap)
+import Cauldron qualified
 
 data A = A deriving Show
 data B = B deriving Show
@@ -68,6 +69,27 @@ boringWiring =
       h = makeH a d g
    in makeZ d h
 
+coolWiring :: Either Mishap (Cauldron.AdjacencyMap Cauldron.TypeRep, Z)
+coolWiring = 
+  let cauldron = 
+        foldr 
+        ($) 
+        Cauldron.empty
+        [ Cauldron.put makeA
+        , Cauldron.put makeB
+        , Cauldron.put makeC
+        , Cauldron.put makeD
+        , Cauldron.put makeE
+        , Cauldron.put makeF
+        , Cauldron.put makeG
+        , Cauldron.put makeH
+        , Cauldron.put makeZ
+        ]
+  in case Cauldron.cook cauldron of
+      Left mishap -> Left mishap
+      Right (graph, dyns) -> Right (graph, Cauldron.taste @Z dyns)
+
 main :: IO ()
 main = do
-  putStrLn "Hello, Haskell!"
+  print boringWiring
+  print coolWiring

@@ -3,12 +3,18 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DerivingStrategies #-}
 
 module Cauldron
   ( Cauldron,
+    empty,
     put,
+    cook,
+    Mishap (..),
+    taste,
+    -- Re-exports
+    TypeRep,
+    AdjacencyMap
   )
 where
 
@@ -35,8 +41,12 @@ import Data.Typeable
 import Multicurryable
 import Data.Maybe (fromJust)
 import Data.List.NonEmpty (NonEmpty)
+import Data.Dynamic
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep Constructor}
+
+empty :: Cauldron
+empty = Cauldron do Map.empty
 
 put ::
   forall (as :: [Type]) (b :: Type) curried.
@@ -51,7 +61,7 @@ put curried Cauldron {recipes} =
   Cauldron do
     Map.insert
       do typeRep (Proxy @b)
-      do constructor @as @b @curried curried
+      do makeConstructor @as @b @curried curried
       recipes
 
 data Constructor where
@@ -63,7 +73,7 @@ data Constructor where
     } ->
     Constructor
 
-constructor ::
+makeConstructor ::
   forall (as :: [Type]) (b :: Type) curried.
   ( All Typeable as,
     Typeable b,
@@ -71,7 +81,7 @@ constructor ::
   ) =>
   curried ->
   Constructor
-constructor curried =
+makeConstructor curried =
   Constructor
     { argumentReps =
         collapse_NP do
@@ -85,7 +95,8 @@ constructor curried =
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K do typeRep (Proxy @a)
 
-cook :: Cauldron -> Either Mishap (AdjacencyMap TypeRep)
+
+cook :: Cauldron -> Either Mishap (AdjacencyMap TypeRep, Map TypeRep Dynamic)
 cook Cauldron {recipes} =
   case findMissingDeps do (.argumentReps) <$> recipes of
     missing | Data.Foldable.any (not . Data.List.null) missing ->
@@ -100,11 +111,22 @@ cook Cauldron {recipes} =
        in case Graph.topSort graph of
         Left depCycle -> 
           Left do DepCycle depCycle
-        Right buildPlan -> undefined
+        Right buildPlan -> 
+          let allConstructed = 
+                Data.List.foldl'
+                do \dynMap rep ->
+                      let constructor = fromJust do Map.lookup rep recipes
+                          dyn = construct dynMap constructor
+                      in Map.insert (dynTypeRep dyn) dyn dynMap
+                Map.empty
+                buildPlan
+           in Right (graph, allConstructed)
+           
 
 data Mishap = 
   MissingDeps (Map TypeRep [TypeRep])
   |DepCycle (NonEmpty TypeRep)
+  deriving stock Show
 
 findMissingDeps :: Map TypeRep [TypeRep] -> Map TypeRep [TypeRep]
 findMissingDeps theMap =
@@ -129,3 +151,26 @@ findMissingDeps theMap =
 --    in ( Map.fromAscList numbered,
 --         Map.fromAscList do Data.Tuple.swap <$> numbered
 --       )
+
+-- | Build a component out of already build compoenents.
+-- This can only work and without blow up if there aren't dependecy cycles
+-- and the order of construction respects the depedencies!   
+construct :: Map TypeRep Dynamic -> Constructor -> Dynamic
+construct theDyns Constructor {uncurried} = 
+  let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor 
+      args = runExtractor argsExtractor theDyns
+   in toDyn do uncurried args
+
+newtype Extractor a = 
+  Extractor { runExtractor :: Map TypeRep Dynamic -> a }
+  deriving newtype (Functor, Applicative)
+
+makeExtractor :: forall a. Typeable a => Extractor a
+makeExtractor = 
+  let rep = typeRep (Proxy @a)
+      runExtractor dyns = 
+        fromJust do fromDynamic @a do fromJust do Map.lookup rep dyns
+   in Extractor {runExtractor}
+
+taste :: forall a . Typeable a => Map TypeRep Dynamic -> a
+taste = runExtractor makeExtractor
