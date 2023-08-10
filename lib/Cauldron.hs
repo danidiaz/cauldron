@@ -107,7 +107,7 @@ type Plan = [TypeRep]
 cook :: Cauldron -> Either Mishap Beans
 cook Cauldron {recipes, recipesConflicts} = do
   () <- first ConflictingRecipes checkConflicts
-  () <- first MissingDeps checkMissing
+  () <- first MissingRecipes checkMissing
   (recipeGraph, plan) <- first RecipeCycle checkCycles
   let beans = build plan
   Right Beans {recipeGraph, beans}
@@ -138,8 +138,8 @@ cook Cauldron {recipes, recipesConflicts} = do
                     ingredientRep <- ingredientReps
                     [(beanRep, ingredientRep)]
        in case Graph.topSort recipeGraph of
-            Left depCycle ->
-              Left depCycle
+            Left recipeCycle ->
+              Left recipeCycle
             Right plan -> Right (recipeGraph, plan)
     build :: Plan -> Map TypeRep Dynamic
     build =
@@ -153,7 +153,7 @@ cook Cauldron {recipes, recipesConflicts} = do
 
 data Mishap
   = ConflictingRecipes (Set TypeRep)
-  | MissingDeps (Map TypeRep [TypeRep])
+  | MissingRecipes (Map TypeRep [TypeRep])
   | RecipeCycle (NonEmpty TypeRep)
   deriving stock (Show)
 
