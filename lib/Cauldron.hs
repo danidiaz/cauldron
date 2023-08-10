@@ -9,7 +9,7 @@ module Cauldron
     put,
     cook,
     Mishap (..),
-    RecipeGraph (..),
+    BeanGraph (..),
     exportToDot,
   )
 where
@@ -21,7 +21,6 @@ import Algebra.Graph.Export.Dot qualified as Dot
 import Data.Bifunctor (first)
 import Data.ByteString qualified
 import Data.Dynamic
-import Data.Foldable
 import Data.Kind
 import Data.List qualified
 import Data.List.NonEmpty (NonEmpty)
@@ -104,17 +103,18 @@ makeRecipe recipe =
 type Plan = [TypeRep]
 
 -- | Build a @bean@ from the recipes stored in the 'Cauldron'.
-cook :: 
-  forall bean . Typeable bean => 
-  Cauldron -> 
-  Either Mishap (RecipeGraph, bean)
+cook ::
+  forall bean.
+  (Typeable bean) =>
+  Cauldron ->
+  Either Mishap (BeanGraph, bean)
 cook Cauldron {recipes, recipesConflicts} = do
   () <- first ConflictingRecipes checkConflicts
   () <- first MissingRecipes checkMissing
-  (recipeGraph, plan) <- first RecipeCycle checkCycles
+  (beanGraph, plan) <- first RecipeCycle checkCycles
   let beans = build plan
       bean :: bean = runExtractor makeExtractor beans
-  Right (RecipeGraph {recipeGraph}, bean)
+  Right (BeanGraph {beanGraph}, bean)
   where
     checkConflicts :: Either (Set TypeRep) ()
     checkConflicts =
@@ -126,17 +126,17 @@ cook Cauldron {recipes, recipesConflicts} = do
       let allIngredients = Set.fromList do
             Recipe {ingredientReps} <- Map.elems recipes
             ingredientReps
-          allRequired = 
-            Set.insert  
-            (typeRep (Proxy @bean))
-            allIngredients
+          allRequired =
+            Set.insert
+              (typeRep (Proxy @bean))
+              allIngredients
           missing = Set.filter (`Map.notMember` recipes) allRequired
-      in if not (Set.null missing)
-          then Left missing
-          else Right ()
+       in if not (Set.null missing)
+            then Left missing
+            else Right ()
     checkCycles :: Either (Graph.Cycle TypeRep) (AdjacencyMap TypeRep, Plan)
     checkCycles =
-      let recipeGraph =
+      let beanGraph =
             Graph.edges
               do
                 flip
@@ -145,10 +145,10 @@ cook Cauldron {recipes, recipesConflicts} = do
                   \beanRep Recipe {ingredientReps} -> do
                     ingredientRep <- ingredientReps
                     [(beanRep, ingredientRep)]
-       in case Graph.topSort recipeGraph of
+       in case Graph.topSort beanGraph of
             Left recipeCycle ->
               Left recipeCycle
-            Right plan -> Right (recipeGraph, plan)
+            Right plan -> Right (beanGraph, plan)
     build :: Plan -> Map TypeRep Dynamic
     build =
       Data.List.foldl'
@@ -165,7 +165,7 @@ data Mishap
   | RecipeCycle (NonEmpty TypeRep)
   deriving stock (Show)
 
-newtype RecipeGraph = RecipeGraph { recipeGraph :: AdjacencyMap TypeRep }
+newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap TypeRep}
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
@@ -186,13 +186,12 @@ makeExtractor =
         fromJust do fromDynamic @a do fromJust do Map.lookup rep dyns
    in Extractor {runExtractor}
 
-exportToDot :: FilePath -> RecipeGraph -> IO ()
-exportToDot filepath RecipeGraph { recipeGraph } = do
+exportToDot :: FilePath -> BeanGraph -> IO ()
+exportToDot filepath BeanGraph {beanGraph} = do
   let prettyRep rep =
         Data.Text.pack do tyConName do typeRepTyCon rep
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
-          recipeGraph
+          beanGraph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
-
