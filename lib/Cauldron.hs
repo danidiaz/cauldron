@@ -159,8 +159,10 @@ taste Beans {beans} = runExtractor makeExtractor beans
 
 exportToDot :: FilePath -> Beans -> IO ()
 exportToDot filepath Beans {depGraph} = do
-  let dot =
+  let prettyRep rep =
+        Data.Text.pack do tyConName do typeRepTyCon rep
+      dot =
         Dot.export
-          do Dot.defaultStyle do \rep -> Data.Text.pack do tyConName do typeRepTyCon rep
+          do Dot.defaultStyle prettyRep
           depGraph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
