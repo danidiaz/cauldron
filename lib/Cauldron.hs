@@ -43,7 +43,7 @@ data Cauldron = Cauldron
 empty :: Cauldron
 empty = Cauldron {recipes = Map.empty, recipesConflicts = Set.empty}
 
--- | Might throw a 'ConflictingBeanRecipes' exception.
+-- | Put a recipe (constructor) into the 'Cauldron'.
 put ::
   forall (ingredients :: [Type]) (bean :: Type) recipe.
   ( All Typeable ingredients,
@@ -73,7 +73,7 @@ data Recipe where
     (All Typeable ingredients, Typeable bean) =>
     { ingredientReps :: [TypeRep],
       beanRep :: TypeRep,
-      unrecipe :: NP I ingredients -> bean
+      uncurried :: NP I ingredients -> bean
     } ->
     Recipe
 
@@ -93,7 +93,7 @@ makeRecipe recipe =
             do Proxy @Typeable
             typeRepHelper,
       beanRep = typeRep (Proxy @bean),
-      unrecipe = multiuncurry @(->) @ingredients @bean @recipe recipe
+      uncurried = multiuncurry @(->) @ingredients @bean @recipe recipe
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
@@ -101,10 +101,10 @@ makeRecipe recipe =
 
 type Plan = [TypeRep]
 
--- | Build a @bean@ from the recipes stored in the 'Cauldron'.
+-- | Try to build a @bean@ from the recipes stored in the 'Cauldron'.
 boil ::
   forall bean.
-  (Typeable bean) =>
+  Typeable bean =>
   Cauldron ->
   Either Mishap (BeanGraph, bean)
 boil Cauldron {recipes, recipesConflicts} = do
@@ -170,10 +170,10 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap TypeRep}
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
 followRecipe :: Map TypeRep Dynamic -> Recipe -> Dynamic
-followRecipe theDyns Recipe {unrecipe} =
-  let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
-      args = runExtractor argsExtractor theDyns
-   in toDyn do unrecipe args
+followRecipe theDyns Recipe {uncurried} =
+  let ingredientsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
+      ingredients = runExtractor ingredientsExtractor theDyns
+   in toDyn do uncurried ingredients
 
 newtype Extractor a = Extractor {runExtractor :: Map TypeRep Dynamic -> a}
   deriving newtype (Functor, Applicative)

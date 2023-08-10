@@ -1,3 +1,9 @@
+-- | We have a bunch of datatypes, and a single recipe (constructor) for each
+-- datatype. This means the wiring can be type-directed: we don't have to make a
+-- decision at the term level about which constructor to use. 
+--
+-- We wire the constructors in two ways: manually, and using a bit of dynamic
+-- typing magic from the "Cauldron" module.
 module Main where
 
 import Cauldron (BeanGraph, Mishap)
@@ -94,6 +100,9 @@ boringWiring =
       h = makeH a d g
    in makeZ d h
 
+-- | Here we don't have to worry about positional parameters. We simply throw 
+-- all the constructors into the 'Cauldron' and get the 'Z' value at the end,
+-- plus a graph we may want to draw.
 coolWiring :: Either Mishap (BeanGraph, Z)
 coolWiring =
   let cauldron =
