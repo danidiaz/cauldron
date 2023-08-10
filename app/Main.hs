@@ -1,6 +1,6 @@
 module Main where
 
-import Cauldron (Beans, Mishap)
+import Cauldron (Mishap, RecipeGraph)
 import Cauldron qualified
 
 data A = A deriving (Show)
@@ -94,7 +94,7 @@ boringWiring =
       h = makeH a d g
    in makeZ d h
 
-coolWiring :: Either Mishap Beans
+coolWiring :: Either Mishap (RecipeGraph, Z)
 coolWiring =
   let cauldron =
         foldr
@@ -118,6 +118,6 @@ main = do
   case coolWiring of
     Left mishap -> do
       print mishap
-    Right beans -> do
-      print (Cauldron.taste @Z beans)
-      Cauldron.exportToDot "recipes.dot" beans
+    Right (recipeGraph, bean) -> do
+      print bean
+      Cauldron.exportToDot "recipes.dot" recipeGraph
