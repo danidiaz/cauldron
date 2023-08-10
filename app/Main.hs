@@ -120,4 +120,4 @@ main = do
       print mishap
     Right beans -> do
       print (Cauldron.taste @Z beans)
-      Cauldron.exportToDot "deps.dot" beans
+      Cauldron.exportToDot "recipes.dot" beans

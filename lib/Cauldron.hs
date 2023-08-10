@@ -49,21 +49,22 @@ empty = Cauldron {recipes = Map.empty, recipesConflicts = Set.empty}
 
 -- | Might throw a 'ConflictingBeanRecipes' exception.
 put ::
-  forall (as :: [Type]) (b :: Type) recipe.
-  ( All Typeable as,
-    Typeable b,
-    MulticurryableF as b recipe (IsFunction recipe)
+  forall (ingredients :: [Type]) (bean :: Type) recipe.
+  ( All Typeable ingredients,
+    Typeable bean,
+    MulticurryableF ingredients bean recipe (IsFunction recipe)
   ) =>
+  -- | A curried function that takes the @ingredients@ and returns the @bean@
   recipe ->
   Cauldron ->
   Cauldron
 put recipe Cauldron {recipes, recipesConflicts} =
-  let rep = typeRep (Proxy @b)
+  let rep = typeRep (Proxy @bean)
    in Cauldron
         { recipes =
             Map.insert
               rep
-              do makeRecipe @as @b @recipe recipe
+              do makeRecipe @ingredients @bean recipe
               recipes,
           recipesConflicts =
             case Map.lookup rep recipes of
@@ -73,18 +74,18 @@ put recipe Cauldron {recipes, recipesConflicts} =
 
 data Recipe where
   Recipe ::
-    (All Typeable as, Typeable b) =>
+    (All Typeable ingredients, Typeable bean) =>
     { ingredientReps :: [TypeRep],
       beanRep :: TypeRep,
-      unrecipe :: NP I as -> b
+      unrecipe :: NP I ingredients -> bean
     } ->
     Recipe
 
 makeRecipe ::
-  forall (as :: [Type]) (b :: Type) recipe.
-  ( All Typeable as,
-    Typeable b,
-    MulticurryableF as b recipe (IsFunction recipe)
+  forall (ingredients :: [Type]) (bean :: Type) recipe.
+  ( All Typeable ingredients,
+    Typeable bean,
+    MulticurryableF ingredients bean recipe (IsFunction recipe)
   ) =>
   recipe ->
   Recipe
@@ -92,11 +93,11 @@ makeRecipe recipe =
   Recipe
     { ingredientReps =
         collapse_NP do
-          cpure_NP @_ @as
+          cpure_NP @_ @ingredients
             do Proxy @Typeable
             typeRepHelper,
-      beanRep = typeRep (Proxy @b),
-      unrecipe = multiuncurry @(->) @as @b @recipe recipe
+      beanRep = typeRep (Proxy @bean),
+      unrecipe = multiuncurry @(->) @ingredients @bean @recipe recipe
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
