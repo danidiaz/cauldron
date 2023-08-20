@@ -35,13 +35,10 @@ import Data.Text.Encoding qualified
 import Data.Typeable
 import Multicurryable
 
-data Cauldron = Cauldron
-  { recipes :: Map TypeRep Recipe,
-    recipesConflicts :: Set TypeRep
-  }
+newtype Cauldron = Cauldron { recipes :: Map TypeRep Recipe }
 
 empty :: Cauldron
-empty = Cauldron {recipes = Map.empty, recipesConflicts = Set.empty}
+empty = Cauldron {recipes = Map.empty}
 
 -- | Put a recipe (constructor) into the 'Cauldron'.
 put ::
@@ -54,18 +51,14 @@ put ::
   recipe ->
   Cauldron ->
   Cauldron
-put recipe Cauldron {recipes, recipesConflicts} =
+put recipe Cauldron {recipes} =
   let rep = typeRep (Proxy @bean)
    in Cauldron
         { recipes =
             Map.insert
               rep
               do makeRecipe @ingredients @bean recipe
-              recipes,
-          recipesConflicts =
-            case Map.lookup rep recipes of
-              Nothing -> recipesConflicts
-              _ -> Set.insert rep recipesConflicts
+              recipes
         }
 
 data Recipe where
@@ -107,19 +100,13 @@ boil ::
   Typeable bean =>
   Cauldron ->
   Either Mishap (BeanGraph, bean)
-boil Cauldron {recipes, recipesConflicts} = do
-  () <- first ConflictingRecipes checkConflicts
+boil Cauldron {recipes} = do
   () <- first MissingRecipes checkMissing
   (beanGraph, plan) <- first RecipeCycle checkCycles
   let beans = build plan
       bean :: bean = runExtractor makeExtractor beans
   Right (BeanGraph {beanGraph}, bean)
   where
-    checkConflicts :: Either (Set TypeRep) ()
-    checkConflicts =
-      if not do Set.null recipesConflicts
-        then Left do recipesConflicts
-        else Right ()
     checkMissing :: Either (Set TypeRep) ()
     checkMissing =
       let allIngredients = Set.fromList do
@@ -159,8 +146,8 @@ boil Cauldron {recipes, recipesConflicts} = do
         Map.empty
 
 data Mishap
-  = ConflictingRecipes (Set TypeRep)
-  | MissingRecipes (Set TypeRep)
+  = 
+    MissingRecipes (Set TypeRep)
   | RecipeCycle (NonEmpty TypeRep)
   deriving stock (Show)
 
@@ -178,11 +165,10 @@ followRecipe theDyns Recipe {uncurried} =
 newtype Extractor a = Extractor {runExtractor :: Map TypeRep Dynamic -> a}
   deriving newtype (Functor, Applicative)
 
-makeExtractor :: forall a. (Typeable a) => Extractor a
+makeExtractor :: forall a. Typeable a => Extractor a
 makeExtractor =
-  let rep = typeRep (Proxy @a)
-      runExtractor dyns =
-        fromJust do fromDynamic @a do fromJust do Map.lookup rep dyns
+  let runExtractor dyns =
+        fromJust do taste (Proxy @a) dyns
    in Extractor {runExtractor}
 
 exportToDot :: FilePath -> BeanGraph -> IO ()
@@ -194,3 +180,9 @@ exportToDot filepath BeanGraph {beanGraph} = do
           do Dot.defaultStyle prettyRep
           beanGraph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
+
+taste :: forall a. Typeable a => Proxy a -> Map TypeRep Dynamic -> Maybe a
+taste _ dyns = do
+  let rep = typeRep (Proxy @a)
+  dyn <- Map.lookup rep dyns
+  fromDynamic @a dyn
