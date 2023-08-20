@@ -8,6 +8,7 @@ module Main where
 
 import Cauldron (BeanGraph, Mishap)
 import Cauldron qualified
+import Data.Proxy
 
 data A = A deriving (Show)
 
@@ -103,7 +104,7 @@ boringWiring =
 -- | Here we don't have to worry about positional parameters. We simply throw 
 -- all the constructors into the 'Cauldron' and get the 'Z' value at the end,
 -- plus a graph we may want to draw.
-coolWiring :: Either Mishap (BeanGraph, Z)
+coolWiring :: Either Mishap (BeanGraph, Maybe Z)
 coolWiring =
   let cauldron =
         foldr
@@ -119,7 +120,11 @@ coolWiring =
             Cauldron.put makeH,
             Cauldron.put makeZ
           ]
-   in Cauldron.boil cauldron
+     in case Cauldron.boil cauldron of 
+          Left e -> Left e
+          Right (beanGraph, beans) ->
+            Right (beanGraph, Cauldron.taste (Proxy @Z) beans)
+  
 
 main :: IO ()
 main = do

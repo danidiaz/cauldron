@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 
 module Cauldron
   ( Cauldron,
@@ -9,6 +10,7 @@ module Cauldron
     boil,
     Mishap (..),
     BeanGraph (..),
+    taste,
     exportToDot,
   )
 where
@@ -34,6 +36,7 @@ import Data.Text qualified
 import Data.Text.Encoding qualified
 import Data.Typeable
 import Multicurryable
+import Data.Foldable qualified
 
 newtype Cauldron = Cauldron { recipes :: Map TypeRep Recipe }
 
@@ -96,30 +99,24 @@ type Plan = [TypeRep]
 
 -- | Try to build a @bean@ from the recipes stored in the 'Cauldron'.
 boil ::
-  forall bean.
-  Typeable bean =>
   Cauldron ->
-  Either Mishap (BeanGraph, bean)
+  Either Mishap (BeanGraph, Map TypeRep Dynamic)
 boil Cauldron {recipes} = do
   () <- first MissingRecipes checkMissing
   (beanGraph, plan) <- first RecipeCycle checkCycles
   let beans = build plan
-      bean :: bean = runExtractor makeExtractor beans
-  Right (BeanGraph {beanGraph}, bean)
+  Right (BeanGraph {beanGraph}, beans)
   where
-    checkMissing :: Either (Set TypeRep) ()
+    checkMissing :: Either (Map TypeRep [TypeRep]) ()
     checkMissing =
-      let allIngredients = Set.fromList do
-            Recipe {ingredientReps} <- Map.elems recipes
-            ingredientReps
-          allRequired =
-            Set.insert
-              (typeRep (Proxy @bean))
-              allIngredients
-          missing = Set.filter (`Map.notMember` recipes) allRequired
-       in if not (Set.null missing)
-            then Left missing
-            else Right ()
+      case Map.map
+        do Prelude.filter (`Map.notMember` recipes)
+        do (.ingredientReps) <$> recipes 
+      of
+      missing | Data.Foldable.any (not . Data.List.null) missing ->
+        Left do missing
+      _ ->
+        Right ()
     checkCycles :: Either (Graph.Cycle TypeRep) (AdjacencyMap TypeRep, Plan)
     checkCycles =
       let beanGraph =
@@ -147,7 +144,7 @@ boil Cauldron {recipes} = do
 
 data Mishap
   = 
-    MissingRecipes (Set TypeRep)
+    MissingRecipes (Map TypeRep [TypeRep])
   | RecipeCycle (NonEmpty TypeRep)
   deriving stock (Show)
 
