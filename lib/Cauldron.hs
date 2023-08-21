@@ -46,7 +46,7 @@ import Data.Typeable
 import Multicurryable
 import Data.Foldable qualified
 
-newtype Cauldron = Cauldron { recipes :: Map TypeRep Recipe }
+newtype Cauldron = Cauldron { recipes :: Map TypeRep Constructor }
 
 empty :: Cauldron
 empty = Cauldron {recipes = Map.empty}
@@ -65,28 +65,28 @@ put recipe Cauldron {recipes} =
         { recipes =
             Map.insert
               rep
-              do Recipe @args @bean recipe
+              do Constructor @args @bean recipe
               recipes
         }
 
-data Recipe where
-  Recipe ::
+data Constructor where
+  Constructor ::
     (All Typeable args, Typeable bean) =>
     { 
-      recipe :: Args args (Regs '[] bean)
+      constructor :: Args args (Regs '[] bean)
     } ->
-    Recipe
+    Constructor
 
-data RecipeReps = RecipeReps {
+data ConstructorReps = ConstructorReps {
   argsReps :: [TypeRep],
   resultRep :: TypeRep
 }
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
-recipeReps :: Recipe -> RecipeReps
-recipeReps Recipe {recipe = (_ :: Args args (Regs '[] result))} = 
-  RecipeReps
+consctructorReps :: Constructor -> ConstructorReps
+consctructorReps Constructor {constructor = (_ :: Args args (Regs '[] result))} = 
+  ConstructorReps
     { argsReps =
         collapse_NP do
           cpure_NP @_ @args
@@ -106,8 +106,8 @@ boil ::
   Cauldron ->
   Either Mishap (BeanGraph, Map TypeRep Dynamic)
 boil Cauldron {recipes} = do
-  () <- first MissingRecipes checkMissing
-  (beanGraph, plan) <- first RecipeCycle checkCycles
+  () <- first MissingConstructors checkMissing
+  (beanGraph, plan) <- first ConstructorCycle checkCycles
   let beans = build plan
   Right (BeanGraph {beanGraph}, beans)
   where
@@ -115,7 +115,7 @@ boil Cauldron {recipes} = do
     checkMissing =
       case Map.map
         do Prelude.filter (`Map.notMember` recipes)
-        do (.argsReps) . recipeReps <$> recipes 
+        do (.argsReps) . consctructorReps <$> recipes 
       of
       missing | Data.Foldable.any (not . Data.List.null) missing ->
         Left do missing
@@ -129,7 +129,7 @@ boil Cauldron {recipes} = do
                 flip
                   Map.foldMapWithKey
                   recipes
-                  \beanRep (recipeReps -> RecipeReps {argsReps}) -> do
+                  \beanRep (consctructorReps -> ConstructorReps {argsReps}) -> do
                     argRep <- argsReps
                     [(beanRep, argRep)]
        in case Graph.topSort beanGraph of
@@ -142,14 +142,14 @@ boil Cauldron {recipes} = do
         do
           \dynMap rep ->
             let recipe = fromJust do Map.lookup rep recipes
-                dyn = followRecipe dynMap recipe
+                dyn = followConstructor dynMap recipe
              in Map.insert (dynTypeRep dyn) dyn dynMap
         Map.empty
 
 data Mishap
   = 
-    MissingRecipes (Map TypeRep [TypeRep])
-  | RecipeCycle (NonEmpty TypeRep)
+    MissingConstructors (Map TypeRep [TypeRep])
+  | ConstructorCycle (NonEmpty TypeRep)
   deriving stock (Show)
 
 newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap TypeRep}
@@ -157,11 +157,11 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap TypeRep}
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
-followRecipe :: Map TypeRep Dynamic -> Recipe -> Dynamic
-followRecipe theDyns Recipe {recipe} = do
+followConstructor :: Map TypeRep Dynamic -> Constructor -> Dynamic
+followConstructor theDyns Constructor {constructor} = do
   let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor argsExtractor theDyns
-      (_, bean) = runRegs do runArgs recipe args
+      (_, bean) = runRegs do runArgs constructor args
   toDyn bean
 
 newtype Extractor a = Extractor {runExtractor :: Map TypeRep Dynamic -> a}
