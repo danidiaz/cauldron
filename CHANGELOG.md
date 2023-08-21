@@ -1,4 +1,4 @@
-# Revision history for magic-cauldron
+# Revision history for cauldron
 
 ## 0.1.0.0 -- YYYY-mm-dd
 

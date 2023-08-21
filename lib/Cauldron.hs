@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Cauldron
   ( Cauldron,
@@ -12,6 +13,15 @@ module Cauldron
     BeanGraph (..),
     taste,
     exportToDot,
+    --
+    Args,
+    args0,
+    argsN,
+    Regs,
+    regs0,
+    -- * re-exports
+    multiuncurry,
+    IsFunction,
   )
 where
 
@@ -28,7 +38,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
-import Data.SOP (All, K (..))
+import Data.SOP (All, K (..), And)
 import Data.SOP.NP
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -183,3 +193,38 @@ taste _ dyns = do
   let rep = typeRep (Proxy @a)
   dyn <- Map.lookup rep dyns
   fromDynamic @a dyn
+
+newtype Args args r = 
+  Args { runArgs :: NP I args -> r }
+  deriving newtype (Functor, Applicative, Monad)
+
+args0 :: r -> Args '[] r
+args0 r = Args do \Nil -> r
+
+argsN :: forall (args :: [Type]) r curried.
+    MulticurryableF args r curried (IsFunction curried) =>
+    curried -> Args args r
+argsN = Args . multiuncurry
+
+newtype Regs (regs :: [Type]) r = 
+  Regs { runRegs :: (NP I regs, r) }
+  deriving newtype Functor
+
+regs0 :: r -> Regs '[] r
+regs0 r = Regs (Nil, r)
+
+newtype Constructor args regs bean = 
+  Constructor { runConstructor :: NP I args -> (NP I regs, bean) }
+  deriving stock Functor
+
+-- simple :: forall (args :: [Type]) regs bean recipe.
+--     MulticurryableF args bean recipe (IsFunction recipe) =>
+--     recipe -> Constructor args '[] bean
+-- simple recipe = Constructor do (,) Nil . multiuncurry recipe
+
+-- constructor :: 
+--   forall (args :: [Type]) regs bean recipe.
+--     MulticurryableF args bean recipe (IsFunction recipe)
+--    =>
+--    recipe -> Constructor args '[] bean
+-- constructor recipe = Constructor do (,) Nil do multiuncurry @(->) @args @bean recipe
