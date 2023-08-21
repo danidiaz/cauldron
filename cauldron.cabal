@@ -26,6 +26,7 @@ library
         sop-core,
         multicurryable ^>= 0.1.1.0,
         bytestring,
+        these-skinny ^>= 0.7.5,
         text,
     hs-source-dirs:   lib
     default-language: GHC2021
