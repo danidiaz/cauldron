@@ -19,9 +19,6 @@ module Cauldron
     argsN,
     Regs,
     regs0,
-    -- * re-exports
-    multiuncurry,
-    IsFunction,
   )
 where
 
@@ -55,13 +52,10 @@ empty = Cauldron {recipes = Map.empty}
 
 -- | Put a recipe (constructor) into the 'Cauldron'.
 put ::
-  forall (ingredients :: [Type]) (bean :: Type) recipe.
-  ( All Typeable ingredients,
-    Typeable bean,
-    MulticurryableF ingredients bean recipe (IsFunction recipe)
-  ) =>
-  -- | A curried function that takes the @ingredients@ and returns the @bean@
-  recipe ->
+  forall (args :: [Type]) (bean :: Type).
+  (All Typeable args, Typeable bean) =>
+  -- | A curried function that takes the @args@ and returns the @bean@
+  Args args (Regs '[] bean) ->
   Cauldron ->
   Cauldron
 put recipe Cauldron {recipes} =
@@ -70,36 +64,35 @@ put recipe Cauldron {recipes} =
         { recipes =
             Map.insert
               rep
-              do makeRecipe @ingredients @bean recipe
+              do makeRecipe @args @bean recipe
               recipes
         }
 
 data Recipe where
   Recipe ::
-    (All Typeable ingredients, Typeable bean) =>
-    { ingredientReps :: [TypeRep],
+    (All Typeable args, Typeable bean) =>
+    { argsReps :: [TypeRep],
       beanRep :: TypeRep,
-      uncurried :: NP I ingredients -> bean
+      recipe :: Args args (Regs '[] bean)
     } ->
     Recipe
 
 makeRecipe ::
-  forall (ingredients :: [Type]) (bean :: Type) recipe.
-  ( All Typeable ingredients,
-    Typeable bean,
-    MulticurryableF ingredients bean recipe (IsFunction recipe)
+  forall (args :: [Type]) (bean :: Type).
+  ( All Typeable args,
+    Typeable bean
   ) =>
-  recipe ->
+  Args args (Regs '[] bean) ->
   Recipe
 makeRecipe recipe =
   Recipe
-    { ingredientReps =
+    { argsReps =
         collapse_NP do
-          cpure_NP @_ @ingredients
+          cpure_NP @_ @args
             do Proxy @Typeable
             typeRepHelper,
       beanRep = typeRep (Proxy @bean),
-      uncurried = multiuncurry @(->) @ingredients @bean @recipe recipe
+      recipe = recipe
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
@@ -121,7 +114,7 @@ boil Cauldron {recipes} = do
     checkMissing =
       case Map.map
         do Prelude.filter (`Map.notMember` recipes)
-        do (.ingredientReps) <$> recipes 
+        do (.argsReps) <$> recipes 
       of
       missing | Data.Foldable.any (not . Data.List.null) missing ->
         Left do missing
@@ -135,9 +128,9 @@ boil Cauldron {recipes} = do
                 flip
                   Map.foldMapWithKey
                   recipes
-                  \beanRep Recipe {ingredientReps} -> do
-                    ingredientRep <- ingredientReps
-                    [(beanRep, ingredientRep)]
+                  \beanRep Recipe {argsReps} -> do
+                    argRep <- argsReps
+                    [(beanRep, argRep)]
        in case Graph.topSort beanGraph of
             Left recipeCycle ->
               Left recipeCycle
@@ -164,10 +157,11 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap TypeRep}
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
 followRecipe :: Map TypeRep Dynamic -> Recipe -> Dynamic
-followRecipe theDyns Recipe {uncurried} =
-  let ingredientsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
-      ingredients = runExtractor ingredientsExtractor theDyns
-   in toDyn do uncurried ingredients
+followRecipe theDyns Recipe {recipe} = do
+  let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
+      args = runExtractor argsExtractor theDyns
+      (_, bean) = runRegs do runArgs recipe args
+  toDyn bean
 
 newtype Extractor a = Extractor {runExtractor :: Map TypeRep Dynamic -> a}
   deriving newtype (Functor, Applicative)
@@ -199,7 +193,7 @@ newtype Args args r =
   deriving newtype (Functor, Applicative, Monad)
 
 args0 :: r -> Args '[] r
-args0 r = Args do \Nil -> r
+args0 r = Args do \_ -> r
 
 argsN :: forall (args :: [Type]) r curried.
     MulticurryableF args r curried (IsFunction curried) =>
@@ -212,19 +206,3 @@ newtype Regs (regs :: [Type]) r =
 
 regs0 :: r -> Regs '[] r
 regs0 r = Regs (Nil, r)
-
-newtype Constructor args regs bean = 
-  Constructor { runConstructor :: NP I args -> (NP I regs, bean) }
-  deriving stock Functor
-
--- simple :: forall (args :: [Type]) regs bean recipe.
---     MulticurryableF args bean recipe (IsFunction recipe) =>
---     recipe -> Constructor args '[] bean
--- simple recipe = Constructor do (,) Nil . multiuncurry recipe
-
--- constructor :: 
---   forall (args :: [Type]) regs bean recipe.
---     MulticurryableF args bean recipe (IsFunction recipe)
---    =>
---    recipe -> Constructor args '[] bean
--- constructor recipe = Constructor do (,) Nil do multiuncurry @(->) @args @bean recipe

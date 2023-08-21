@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 -- | We have a bunch of datatypes, and a single recipe (constructor) for each
 -- datatype. This means the wiring can be type-directed: we don't have to make a
 -- decision at the term level about which constructor to use. 
@@ -6,9 +7,11 @@
 -- typing magic from the "Cauldron" module.
 module Main where
 
-import Cauldron (BeanGraph, Mishap)
+import Cauldron (BeanGraph, Mishap, argsN, regs0)
 import Cauldron qualified
 import Data.Proxy
+import Data.Function ((&))
+import Data.Functor ((<&>))
 
 data A = A deriving (Show)
 
@@ -110,15 +113,15 @@ coolWiring =
         foldr
           ($)
           Cauldron.empty
-          [ Cauldron.put makeA,
-            Cauldron.put makeB,
-            Cauldron.put makeC,
-            Cauldron.put makeD,
-            Cauldron.put makeE,
-            Cauldron.put makeF,
-            Cauldron.put makeG,
-            Cauldron.put makeH,
-            Cauldron.put makeZ
+          [ Cauldron.put do makeA & argsN <&> regs0,
+            Cauldron.put do makeB & argsN <&> regs0,
+            Cauldron.put do makeC & argsN <&> regs0,
+            Cauldron.put do makeD & argsN <&> regs0,
+            Cauldron.put do makeE & argsN <&> regs0,
+            Cauldron.put do makeF & argsN <&> regs0,
+            Cauldron.put do makeG & argsN <&> regs0,
+            Cauldron.put do makeH & argsN <&> regs0,
+            Cauldron.put do makeZ & argsN <&> regs0
           ]
      in case Cauldron.boil cauldron of 
           Left e -> Left e
