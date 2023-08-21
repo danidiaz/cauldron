@@ -82,13 +82,10 @@ data RecipeReps = RecipeReps {
   resultRep :: TypeRep
 }
 
+-- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
+-- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 recipeReps :: Recipe -> RecipeReps
-recipeReps Recipe {recipe} = recipeReps' recipe 
-
-recipeReps' :: forall args result. (All Typeable args, Typeable result) =>
-  Args args (Regs '[] result)
-  -> RecipeReps
-recipeReps' _ = 
+recipeReps Recipe {recipe = (_ :: Args args (Regs '[] result))} = 
   RecipeReps
     { argsReps =
         collapse_NP do
