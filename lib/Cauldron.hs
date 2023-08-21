@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedRecordDot #-}
@@ -64,35 +65,38 @@ put recipe Cauldron {recipes} =
         { recipes =
             Map.insert
               rep
-              do makeRecipe @args @bean recipe
+              do Recipe @args @bean recipe
               recipes
         }
 
 data Recipe where
   Recipe ::
     (All Typeable args, Typeable bean) =>
-    { argsReps :: [TypeRep],
-      beanRep :: TypeRep,
+    { 
       recipe :: Args args (Regs '[] bean)
     } ->
     Recipe
 
-makeRecipe ::
-  forall (args :: [Type]) (bean :: Type).
-  ( All Typeable args,
-    Typeable bean
-  ) =>
-  Args args (Regs '[] bean) ->
-  Recipe
-makeRecipe recipe =
-  Recipe
+data RecipeReps = RecipeReps {
+  argsReps :: [TypeRep],
+  resultRep :: TypeRep
+}
+
+recipeReps :: Recipe -> RecipeReps
+recipeReps Recipe {recipe} = recipeReps' recipe 
+
+recipeReps' :: forall args result. (All Typeable args, Typeable result) =>
+  Args args (Regs '[] result)
+  -> RecipeReps
+recipeReps' _ = 
+  RecipeReps
     { argsReps =
         collapse_NP do
           cpure_NP @_ @args
             do Proxy @Typeable
             typeRepHelper,
-      beanRep = typeRep (Proxy @bean),
-      recipe = recipe
+      resultRep = 
+        typeRep (Proxy @result)
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
@@ -114,7 +118,7 @@ boil Cauldron {recipes} = do
     checkMissing =
       case Map.map
         do Prelude.filter (`Map.notMember` recipes)
-        do (.argsReps) <$> recipes 
+        do (.argsReps) . recipeReps <$> recipes 
       of
       missing | Data.Foldable.any (not . Data.List.null) missing ->
         Left do missing
@@ -128,7 +132,7 @@ boil Cauldron {recipes} = do
                 flip
                   Map.foldMapWithKey
                   recipes
-                  \beanRep Recipe {argsReps} -> do
+                  \beanRep (recipeReps -> RecipeReps {argsReps}) -> do
                     argRep <- argsReps
                     [(beanRep, argRep)]
        in case Graph.topSort beanGraph of
