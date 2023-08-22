@@ -9,7 +9,7 @@
 module Cauldron
   ( Cauldron,
     empty,
-    put,
+    insert,
     boil,
     Mishap (..),
     BeanGraph (..),
@@ -53,14 +53,14 @@ empty :: Cauldron
 empty = Cauldron {recipes = Map.empty}
 
 -- | Put a recipe (constructor) into the 'Cauldron'.
-put ::
+insert ::
   forall (args :: [Type]) (bean :: Type).
   (All Typeable args, Typeable bean) =>
   -- | A curried function that takes the @args@ and returns the @bean@
   Args args (Regs '[] bean) ->
   Cauldron ->
   Cauldron
-put recipe Cauldron {recipes} =
+insert recipe Cauldron {recipes} =
   let rep = typeRep (Proxy @bean)
    in Cauldron
         { recipes =

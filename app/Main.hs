@@ -113,15 +113,15 @@ coolWiring =
         foldr
           ($)
           Cauldron.empty
-          [ Cauldron.put do makeA & argsN <&> regs0,
-            Cauldron.put do makeB & argsN <&> regs0,
-            Cauldron.put do makeC & argsN <&> regs0,
-            Cauldron.put do makeD & argsN <&> regs0,
-            Cauldron.put do makeE & argsN <&> regs0,
-            Cauldron.put do makeF & argsN <&> regs0,
-            Cauldron.put do makeG & argsN <&> regs0,
-            Cauldron.put do makeH & argsN <&> regs0,
-            Cauldron.put do makeZ & argsN <&> regs0
+          [ Cauldron.insert do makeA & argsN <&> regs0,
+            Cauldron.insert do makeB & argsN <&> regs0,
+            Cauldron.insert do makeC & argsN <&> regs0,
+            Cauldron.insert do makeD & argsN <&> regs0,
+            Cauldron.insert do makeE & argsN <&> regs0,
+            Cauldron.insert do makeF & argsN <&> regs0,
+            Cauldron.insert do makeG & argsN <&> regs0,
+            Cauldron.insert do makeH & argsN <&> regs0,
+            Cauldron.insert do makeZ & argsN <&> regs0
           ]
      in case Cauldron.boil cauldron of 
           Left e -> Left e
