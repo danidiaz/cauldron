@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Cauldron
   ( Cauldron,
@@ -46,7 +47,7 @@ import Data.Typeable
 import Multicurryable
 import Data.Foldable qualified
 
-newtype Cauldron = Cauldron { recipes :: Map TypeRep Constructor }
+newtype Cauldron = Cauldron { recipes :: Map TypeRep Recipe }
 
 empty :: Cauldron
 empty = Cauldron {recipes = Map.empty}
@@ -65,9 +66,18 @@ put recipe Cauldron {recipes} =
         { recipes =
             Map.insert
               rep
-              do Constructor @args @bean recipe
+              do Recipe { 
+                  beanCon = Just do Constructor @args @bean recipe,
+                  decosCons = []
+              }
               recipes
         }
+
+data Recipe where
+  Recipe :: { 
+    beanCon :: Maybe Constructor, 
+    decosCons :: [Constructor]
+  } -> Recipe
 
 data Constructor where
   Constructor ::
@@ -84,8 +94,8 @@ data ConstructorReps = ConstructorReps {
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
-consctructorReps :: Constructor -> ConstructorReps
-consctructorReps Constructor {constructor = (_ :: Args args (Regs '[] result))} = 
+constructorReps :: Constructor -> ConstructorReps
+constructorReps Constructor {constructor = (_ :: Args args (Regs '[] result))} = 
   ConstructorReps
     { argsReps =
         collapse_NP do
@@ -106,19 +116,32 @@ boil ::
   Cauldron ->
   Either Mishap (BeanGraph, Map TypeRep Dynamic)
 boil Cauldron {recipes} = do
-  () <- first MissingConstructors checkMissing
+  () <- first BeanlessDecorator checkBeanlessDecos
+  () <- first MissingBeanDependencies checkMissingDeps
   (beanGraph, plan) <- first ConstructorCycle checkCycles
   let beans = build plan
   Right (BeanGraph {beanGraph}, beans)
   where
-    checkMissing :: Either (Map TypeRep [TypeRep]) ()
-    checkMissing =
+    checkBeanlessDecos :: Either (Set TypeRep) ()
+    checkBeanlessDecos =
+        case flip Map.foldMapWithKey
+                recipes 
+                do \beanRep -> \case 
+                      Recipe { beanCon = Just _} -> Set.empty
+                      _ -> Set.singleton beanRep
+        of 
+        missing | not do Data.List.null missing ->
+          Left missing
+        _ -> 
+          Right ()
+    checkMissingDeps :: Either (Map TypeRep [TypeRep]) ()
+    checkMissingDeps =
       case Map.map
         do Prelude.filter (`Map.notMember` recipes)
-        do (.argsReps) . consctructorReps <$> recipes 
+        do (.argsReps) . constructorReps . fromJust . (.beanCon) <$> recipes 
       of
       missing | Data.Foldable.any (not . Data.List.null) missing ->
-        Left do missing
+        Left missing
       _ ->
         Right ()
     checkCycles :: Either (Graph.Cycle TypeRep) (AdjacencyMap TypeRep, Plan)
@@ -129,7 +152,7 @@ boil Cauldron {recipes} = do
                 flip
                   Map.foldMapWithKey
                   recipes
-                  \beanRep (consctructorReps -> ConstructorReps {argsReps}) -> do
+                  \beanRep (constructorReps . fromJust . (.beanCon) -> ConstructorReps {argsReps}) -> do
                     argRep <- argsReps
                     [(beanRep, argRep)]
        in case Graph.topSort beanGraph of
@@ -141,14 +164,14 @@ boil Cauldron {recipes} = do
       Data.List.foldl'
         do
           \dynMap rep ->
-            let recipe = fromJust do Map.lookup rep recipes
-                dyn = followConstructor dynMap recipe
+            let constructor = fromJust do (.beanCon) do fromJust do Map.lookup rep recipes
+                dyn = followConstructor dynMap constructor
              in Map.insert (dynTypeRep dyn) dyn dynMap
         Map.empty
 
 data Mishap
-  = 
-    MissingConstructors (Map TypeRep [TypeRep])
+  = BeanlessDecorator (Set TypeRep) 
+  | MissingBeanDependencies (Map TypeRep [TypeRep])
   | ConstructorCycle (NonEmpty TypeRep)
   deriving stock (Show)
 
