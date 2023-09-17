@@ -10,6 +10,7 @@ module Cauldron
   ( Cauldron,
     empty,
     insert,
+    wrap,
     delete,
     boil,
     Mishap (..),
@@ -22,6 +23,9 @@ module Cauldron
     argsN,
     Regs,
     regs0,
+
+    -- * Re-exports
+    Endo (..),
   )
 where
 
@@ -40,6 +44,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
+import Data.Monoid (Endo (..))
 import Data.SOP (All, K (..))
 import Data.SOP.NP
 import Data.Set (Set)
@@ -62,25 +67,51 @@ insert ::
   Args args (Regs '[] bean) ->
   Cauldron ->
   Cauldron
-insert con Cauldron {recipes} =
+insert con Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
       beanCon = Just do Constructor @args @bean con
-   in Cauldron
-        { recipes =
-            Map.alter
-              do
-                \case
-                  Nothing ->
-                    Just
-                      Recipe
-                        { beanCon,
-                          decosCons = []
-                        }
-                  Just r ->
-                    Just r {beanCon}
-              rep
-              recipes
-        }
+  Cauldron
+    { recipes =
+        Map.alter
+          do
+            \case
+              Nothing ->
+                Just
+                  Recipe
+                    { beanCon,
+                      decosCons = []
+                    }
+              Just r ->
+                Just r {beanCon}
+          rep
+          recipes
+    }
+
+wrap ::
+  forall (args :: [Type]) (bean :: Type).
+  (All Typeable args, Typeable bean) =>
+  Args args (Regs '[] (Endo bean)) ->
+  Cauldron ->
+  Cauldron
+wrap con Cauldron {recipes} = do
+  let rep = typeRep (Proxy @bean)
+      decoCon = Constructor @args @(Endo bean) con
+  Cauldron
+    { recipes =
+        Map.alter
+          do
+            \case
+              Nothing ->
+                Just
+                  Recipe
+                    { beanCon = Nothing,
+                      decosCons = [decoCon]
+                    }
+              Just r@Recipe {decosCons} ->
+                Just r {decosCons = decoCon : decosCons}
+          rep
+          recipes
+    }
 
 delete ::
   (Typeable bean) =>
