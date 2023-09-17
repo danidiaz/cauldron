@@ -61,17 +61,21 @@ insert ::
   Args args (Regs '[] bean) ->
   Cauldron ->
   Cauldron
-insert recipe Cauldron {recipes} =
+insert con Cauldron {recipes} =
   let rep = typeRep (Proxy @bean)
+      beanCon = Just do Constructor @args @bean con
    in Cauldron
         { recipes =
-            Map.insert
+            Map.alter
+              do \case
+                    Nothing -> 
+                      Just Recipe
+                        { beanCon,
+                          decosCons = []
+                        }
+                    Just r -> 
+                      Just r { beanCon }
               rep
-              do
-                Recipe
-                  { beanCon = Just do Constructor @args @bean recipe,
-                    decosCons = []
-                  }
               recipes
         }
 
