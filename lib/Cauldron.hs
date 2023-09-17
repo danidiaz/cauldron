@@ -10,6 +10,7 @@ module Cauldron
   ( Cauldron,
     empty,
     insert,
+    delete,
     boil,
     Mishap (..),
     BeanGraph (..),
@@ -67,17 +68,27 @@ insert con Cauldron {recipes} =
    in Cauldron
         { recipes =
             Map.alter
-              do \case
-                    Nothing -> 
-                      Just Recipe
+              do
+                \case
+                  Nothing ->
+                    Just
+                      Recipe
                         { beanCon,
                           decosCons = []
                         }
-                    Just r -> 
-                      Just r { beanCon }
+                  Just r ->
+                    Just r {beanCon}
               rep
               recipes
         }
+
+delete ::
+  (Typeable bean) =>
+  Proxy bean ->
+  Cauldron ->
+  Cauldron
+delete proxy Cauldron {recipes} =
+  Cauldron {recipes = Map.delete (typeRep proxy) recipes}
 
 data Recipe_ f where
   Recipe ::
