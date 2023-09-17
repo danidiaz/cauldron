@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 
@@ -47,6 +48,8 @@ import Data.Maybe (fromJust)
 import Data.Monoid (Endo (..))
 import Data.SOP (All, K (..))
 import Data.SOP.NP
+import Data.Sequence (Seq)
+import Data.Sequence qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified
@@ -79,7 +82,7 @@ insert con Cauldron {recipes} = do
                 Just
                   Recipe
                     { beanCon,
-                      decosCons = []
+                      decosCons = Seq.empty
                     }
               Just r ->
                 Just r {beanCon}
@@ -87,13 +90,14 @@ insert con Cauldron {recipes} = do
           recipes
     }
 
-wrap ::
+wrap_ ::
   forall (args :: [Type]) (bean :: Type).
   (All Typeable args, Typeable bean) =>
+  (forall a. a -> Seq a -> Seq a) ->
   Args args (Regs '[] (Endo bean)) ->
   Cauldron ->
   Cauldron
-wrap con Cauldron {recipes} = do
+wrap_ addToDecos con Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
       decoCon = Constructor @args @(Endo bean) con
   Cauldron
@@ -105,13 +109,21 @@ wrap con Cauldron {recipes} = do
                 Just
                   Recipe
                     { beanCon = Nothing,
-                      decosCons = [decoCon]
+                      decosCons = Seq.singleton decoCon
                     }
               Just r@Recipe {decosCons} ->
-                Just r {decosCons = decoCon : decosCons}
+                Just r {decosCons = addToDecos decoCon decosCons}
           rep
           recipes
     }
+
+wrap ::
+  forall (args :: [Type]) (bean :: Type).
+  (All Typeable args, Typeable bean) =>
+  Args args (Regs '[] (Endo bean)) ->
+  Cauldron ->
+  Cauldron
+wrap = wrap_ do flip (Seq.|>)
 
 delete ::
   (Typeable bean) =>
@@ -124,7 +136,7 @@ delete proxy Cauldron {recipes} =
 data Recipe_ f where
   Recipe ::
     { beanCon :: f Constructor,
-      decosCons :: [Constructor]
+      decosCons :: Seq Constructor
     } ->
     Recipe_ f
 
