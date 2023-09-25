@@ -171,7 +171,13 @@ constructorReps Constructor {constructor = (_ :: Args args (Regs '[] result))} =
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K do typeRep (Proxy @a)
 
-type Plan = [TypeRep]
+type Plan = [PlanItem]
+
+data PlanItem = 
+    BareBean TypeRep
+  | BeanDecorator TypeRep Integer
+  | BuiltBean TypeRep
+  deriving stock (Show, Eq, Ord)
 
 -- | Try to build a @bean@ from the recipes stored in the 'Cauldron'.
 boil ::
@@ -216,7 +222,7 @@ checkMissingDeps recipes =
 
 checkCycles ::
   Map TypeRep Recipe ->
-  Either (Graph.Cycle TypeRep) (AdjacencyMap TypeRep, Plan)
+  Either (Graph.Cycle PlanItem) (AdjacencyMap PlanItem, Plan)
 checkCycles recipes = do
   let beanGraph =
         Graph.edges
@@ -226,7 +232,7 @@ checkCycles recipes = do
               recipes
               \beanRep (constructorReps . runIdentity . (.beanCon) -> ConstructorReps {argsReps}) -> do
                 argRep <- argsReps
-                [(beanRep, argRep)]
+                [(BareBean beanRep, BareBean argRep)]
   case Graph.topSort beanGraph of
     Left recipeCycle ->
       Left recipeCycle
