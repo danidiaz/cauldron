@@ -171,7 +171,13 @@ constructorReps Constructor {constructor = (_ :: Args args (Regs '[] result))} =
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K do typeRep (Proxy @a)
 
-type Plan = [TypeRep]
+type Plan = [PlanItem]
+
+data PlanItem = 
+    BareBean TypeRep
+  | BeanDecorator TypeRep Integer
+  | BuiltBean TypeRep
+  deriving stock (Show, Eq, Ord)
 
 -- | Try to build a @bean@ from the recipes stored in the 'Cauldron'.
 boil ::
@@ -216,7 +222,7 @@ checkMissingDeps recipes =
 
 checkCycles ::
   Map TypeRep Recipe ->
-  Either (Graph.Cycle TypeRep) (AdjacencyMap TypeRep, Plan)
+  Either (Graph.Cycle PlanItem) (AdjacencyMap PlanItem, Plan)
 checkCycles recipes = do
   let beanGraph =
         Graph.edges
@@ -225,8 +231,11 @@ checkCycles recipes = do
               Map.foldMapWithKey
               recipes
               \beanRep (constructorReps . runIdentity . (.beanCon) -> ConstructorReps {argsReps}) -> do
-                argRep <- argsReps
-                [(beanRep, argRep)]
+                let outgoing = do
+                      argRep <- argsReps
+                      [(BareBean beanRep, BuiltBean argRep)]
+                    inner = [(BuiltBean beanRep, BareBean beanRep)]
+                outgoing ++ inner
   case Graph.topSort beanGraph of
     Left recipeCycle ->
       Left recipeCycle
@@ -239,19 +248,22 @@ build ::
 build recipes =
   Data.List.foldl'
     do
-      \dynMap rep ->
-        let constructor = runIdentity do (.beanCon) do fromJust do Map.lookup rep recipes
-            dyn = followConstructor dynMap constructor
-         in Map.insert (dynTypeRep dyn) dyn dynMap
+      \dynMap -> \case
+          BareBean rep ->
+            let constructor = runIdentity do (.beanCon) do fromJust do Map.lookup rep recipes
+                dyn = followConstructor dynMap constructor
+            in Map.insert (dynTypeRep dyn) dyn dynMap
+          BuiltBean _ -> dynMap
+          BeanDecorator _ _ -> dynMap
     Map.empty
 
 data Mishap
   = BeanlessDecorator (Set TypeRep)
   | MissingBeanDependencies (Map TypeRep [TypeRep])
-  | ConstructorCycle (NonEmpty TypeRep)
+  | ConstructorCycle (NonEmpty PlanItem)
   deriving stock (Show)
 
-newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap TypeRep}
+newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
@@ -274,8 +286,13 @@ makeExtractor =
 
 exportToDot :: FilePath -> BeanGraph -> IO ()
 exportToDot filepath BeanGraph {beanGraph} = do
-  let prettyRep rep =
-        Data.Text.pack do tyConName do typeRepTyCon rep
+  let prettyRep = 
+        let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
+        in
+        \case
+          BareBean rep -> p rep <>  Data.Text.pack "_0"
+          BeanDecorator rep index -> p rep <> Data.Text.pack ("_" ++ show index)
+          BuiltBean rep -> p rep
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
