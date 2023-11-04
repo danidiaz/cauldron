@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE GADTs #-}
 
 module Cauldron
   ( Cauldron,
@@ -60,6 +61,8 @@ import Data.Typeable
 import Multicurryable
 import qualified Data.List.NonEmpty
 import Data.Functor ((<&>))
+import Data.Type.Equality (testEquality)
+import qualified Type.Reflection
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep (SomeRecipe_ Maybe)}
 
@@ -83,13 +86,14 @@ insert con Cauldron {recipes} = do
           do
             \case
               Nothing ->
-                Just
-                  Recipe
+                Just (SomeRecipe (Recipe
                     { beanConF,
                       decoCons = Seq.empty
-                    }
-              Just r ->
-                Just r {beanConF}
+                    }))
+              Just (SomeRecipe (r :: Recipe_ Maybe a)) ->
+                case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
+                  Nothing -> error "should never happen"
+                  Just Refl -> Just do SomeRecipe r {beanConF}
           rep
           recipes
     }
@@ -112,12 +116,16 @@ decorate_ addToDecos con Cauldron {recipes} = do
             \case
               Nothing ->
                 Just
-                  Recipe
+                  (SomeRecipe Recipe
                     { beanConF = Nothing,
                       decoCons = Seq.singleton decoCon
-                    }
-              Just r@Recipe {decoCons} ->
-                Just r {decoCons = addToDecos decoCon decoCons}
+                    })
+              Just (SomeRecipe (r :: Recipe_ Maybe a)) -> do
+                case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
+                  Nothing -> error "should never happen"
+                  Just Refl -> do
+                    let Recipe {decoCons} = r
+                    Just do SomeRecipe r {decoCons = addToDecos decoCon decoCons}
           rep
           recipes
     }
@@ -139,7 +147,7 @@ delete proxy Cauldron {recipes} =
   Cauldron {recipes = Map.delete (typeRep proxy) recipes}
 
 data SomeRecipe_ f where
-  SomeRecipe :: Recipe_ f a -> SomeRecipe_ f
+  SomeRecipe :: Typeable a => Recipe_ f a -> SomeRecipe_ f
 
 type SomeRecipe = SomeRecipe_ Identity
 
@@ -149,11 +157,6 @@ data Recipe_ f bean where
       decoCons :: Seq (Constructor (Endo bean))
     } ->
     Recipe_ f bean
-
-type Recipe = Recipe_ Identity
-
-data SomeConstructor where
-  SomeConstructor :: Constructor component -> SomeConstructor
 
 data Constructor component where
   Constructor ::
@@ -171,8 +174,8 @@ data ConstructorReps = ConstructorReps
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
-constructorReps :: Constructor -> ConstructorReps
-constructorReps Constructor {constructor = (_ :: Args args (Regs '[] result))} =
+constructorReps :: Typeable component => Constructor component -> ConstructorReps
+constructorReps Constructor {constructor = (_ :: Args args (Regs '[] component))} =
   ConstructorReps
     { argReps =
         collapse_NP do
@@ -180,13 +183,13 @@ constructorReps Constructor {constructor = (_ :: Args args (Regs '[] result))} =
             do Proxy @Typeable
             typeRepHelper,
       resultRep =
-        typeRep (Proxy @result)
+        typeRep (Proxy @component)
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K do typeRep (Proxy @a)
 
-dependOnArgs :: PlanItem -> Constructor -> [(PlanItem,PlanItem)]
+dependOnArgs :: Typeable component => PlanItem -> Constructor component -> [(PlanItem,PlanItem)]
 dependOnArgs item (constructorReps -> ConstructorReps {argReps}) = do
   argRep <- argReps
   [(item, BuiltBean argRep)]
@@ -211,17 +214,17 @@ boil Cauldron {recipes} = do
   Right (BeanGraph {beanGraph}, beans)
 
 checkBeanlessDecos ::
-  Map TypeRep (Recipe_ Maybe) ->
-  Either (Set TypeRep) (Map TypeRep Recipe)
+  Map TypeRep (SomeRecipe_ Maybe) ->
+  Either (Set TypeRep) (Map TypeRep SomeRecipe)
 checkBeanlessDecos recipes =
   case flip
     Map.foldMapWithKey
     recipes
     do
       \beanRep -> \case
-        recipe@Recipe {beanConF = Just con} -> 
+        SomeRecipe (recipe@Recipe {beanConF = Just con}) -> 
           (Set.empty, 
-           Map.singleton beanRep (recipe {beanConF = Identity con}))
+           Map.singleton beanRep (SomeRecipe (recipe {beanConF = Identity con})))
         _ -> (Set.singleton beanRep, Map.empty) of
     (missing, _)
       | not do Data.List.null missing ->
@@ -231,20 +234,20 @@ checkBeanlessDecos recipes =
 
 -- | TODO: handle decorator and registration dependencies as well.
 checkMissingDeps ::
-  Map TypeRep Recipe ->
+  Map TypeRep SomeRecipe ->
   Either (Map TypeRep [TypeRep]) ()
 checkMissingDeps recipes =
-  case Map.map
-    do Prelude.filter (`Map.notMember` recipes)
-    do (.argReps) . constructorReps . runIdentity . (.beanConF) <$> recipes of
+  case Prelude.filter (`Map.notMember` recipes) . getArgReps <$> recipes of
     missing
       | Data.Foldable.any (not . Data.List.null) missing ->
           Left missing
     _ ->
       Right ()
+  where 
+    getArgReps (SomeRecipe Recipe { beanConF = Identity (constructorReps -> ConstructorReps {argReps})}) = argReps
 
 checkCycles ::
-  Map TypeRep Recipe ->
+  Map TypeRep SomeRecipe ->
   Either (Graph.Cycle PlanItem) (AdjacencyMap PlanItem, Plan)
 checkCycles recipes = do
   let beanGraph =
@@ -253,10 +256,10 @@ checkCycles recipes = do
             flip
               Map.foldMapWithKey
               recipes
-              \beanRep Recipe { 
+              \beanRep (SomeRecipe (Recipe { 
                   beanConF = Identity beanCon,
                   decoCons
-                } -> do
+                })) -> do
                 let bareBean = BareBean beanRep
                     builtBean = BuiltBean beanRep
                     decos = do 
@@ -273,23 +276,23 @@ checkCycles recipes = do
     Right plan -> Right (beanGraph, plan)
 
 build ::
-  Map TypeRep Recipe ->
+  Map TypeRep SomeRecipe ->
   Plan ->
   Map TypeRep Dynamic
 build recipes =
   Data.List.foldl'
     do
       \dynMap -> \case
-          BareBean rep -> do
-            let Recipe { beanConF = Identity constructor } = fromJust do Map.lookup rep recipes
-                dyn = followConstructor dynMap constructor
-            Map.insert (dynTypeRep dyn) dyn dynMap
+          BareBean rep -> case fromJust do Map.lookup rep recipes of
+            SomeRecipe (Recipe { beanConF = Identity constructor }) -> do
+              let dyn = followConstructor dynMap constructor
+              Map.insert (dynTypeRep dyn) dyn dynMap
           BuiltBean _ -> dynMap
-          BeanDecorator rep index -> do
-            let Recipe { decoCons } = fromJust do Map.lookup rep recipes
-                decoCon = Seq.lookup (fromIntegral (pred index)) decoCons
-                dyn = fromJust do Map.lookup rep dynMap 
-            dynMap
+          BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
+            SomeRecipe (Recipe { decoCons }) -> do
+                let decoCon = Seq.lookup (fromIntegral (pred index)) decoCons
+                    dyn = fromJust do Map.lookup rep dynMap 
+                dynMap
     Map.empty
 
 data Mishap
@@ -303,7 +306,7 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
-followConstructor :: Map TypeRep Dynamic -> Constructor -> Dynamic
+followConstructor :: Typeable component => Map TypeRep Dynamic -> Constructor component -> Dynamic
 followConstructor theDyns Constructor {constructor} = do
   let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor argsExtractor theDyns
