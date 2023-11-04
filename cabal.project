@@ -1,0 +1,4 @@
+
+packages: *.cabal
+allow-newer:
+    deepseq
