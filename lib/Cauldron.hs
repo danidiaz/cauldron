@@ -71,15 +71,15 @@ empty = Cauldron {recipes = Map.empty}
 
 -- | Put a recipe (constructor) into the 'Cauldron'.
 insert ::
-  forall (args :: [Type]) (bean :: Type).
-  (All Typeable args, Typeable bean) =>
+  forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
+  (All Typeable args, All Typeable accums, Typeable bean) =>
   -- | A curried function that takes the @args@ and returns the @bean@
-  Args args (Regs '[] bean) ->
+  Args args (Regs accums bean) ->
   Cauldron ->
   Cauldron
 insert con Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
-      beanConF = Just do Constructor @args @bean con
+      beanConF = Just do Constructor @args @accums @bean con
   Cauldron
     { recipes =
         Map.alter
@@ -99,16 +99,16 @@ insert con Cauldron {recipes} = do
     }
 
 decorate_ ::
-  forall (args :: [Type]) (bean :: Type).
-  (All Typeable args, Typeable bean) =>
+  forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
+  (All Typeable args, All Typeable accums, Typeable bean) =>
   -- | Where to add the decorator is left to the caller to decide.
   (forall a. a -> Seq a -> Seq a) ->
-  Args args (Regs '[] (Endo bean)) ->
+  Args args (Regs accums (Endo bean)) ->
   Cauldron ->
   Cauldron
 decorate_ addToDecos con Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
-      decoCon = Constructor @args @(Endo bean) con
+      decoCon = Constructor @args @accums @(Endo bean) con
   Cauldron
     { recipes =
         Map.alter
@@ -131,9 +131,9 @@ decorate_ addToDecos con Cauldron {recipes} = do
     }
 
 decorate ::
-  forall (args :: [Type]) (bean :: Type).
-  (All Typeable args, Typeable bean) =>
-  Args args (Regs '[] (Endo bean)) ->
+  forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
+  (All Typeable args, All Typeable accums, Typeable bean) =>
+  Args args (Regs accums (Endo bean)) ->
   Cauldron ->
   Cauldron
 decorate = decorate_ do flip (Seq.|>)
@@ -160,14 +160,14 @@ data Recipe_ f bean where
 
 data Constructor component where
   Constructor ::
-    (All Typeable args) =>
-    { constructor :: Args args (Regs '[] component)
+    (All Typeable args, All Typeable accums) =>
+    { constructor :: Args args (Regs accums component)
     } ->
     Constructor component
 
 data ConstructorReps = ConstructorReps
   { argReps :: [TypeRep],
-    resultRep :: TypeRep
+    accumReps :: [TypeRep]
   }
 
 
@@ -175,15 +175,18 @@ data ConstructorReps = ConstructorReps
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 constructorReps :: Typeable component => Constructor component -> ConstructorReps
-constructorReps Constructor {constructor = (_ :: Args args (Regs '[] component))} =
+constructorReps Constructor {constructor = (_ :: Args args (Regs accums component))} =
   ConstructorReps
     { argReps =
         collapse_NP do
           cpure_NP @_ @args
             do Proxy @Typeable
             typeRepHelper,
-      resultRep =
-        typeRep (Proxy @component)
+      accumReps =
+        collapse_NP do
+          cpure_NP @_ @accums
+            do Proxy @Typeable
+            typeRepHelper
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
