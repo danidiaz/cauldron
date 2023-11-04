@@ -11,7 +11,7 @@ module Cauldron
   ( Cauldron,
     empty,
     insert,
-    wrap,
+    decorate,
     delete,
     boil,
     Mishap (..),
@@ -94,7 +94,7 @@ insert con Cauldron {recipes} = do
           recipes
     }
 
-wrap_ ::
+decorate_ ::
   forall (args :: [Type]) (bean :: Type).
   (All Typeable args, Typeable bean) =>
   -- | Where to add the decorator is left to the caller to decide.
@@ -102,7 +102,7 @@ wrap_ ::
   Args args (Regs '[] (Endo bean)) ->
   Cauldron ->
   Cauldron
-wrap_ addToDecos con Cauldron {recipes} = do
+decorate_ addToDecos con Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
       decoCon = Constructor @args @(Endo bean) con
   Cauldron
@@ -122,13 +122,13 @@ wrap_ addToDecos con Cauldron {recipes} = do
           recipes
     }
 
-wrap ::
+decorate ::
   forall (args :: [Type]) (bean :: Type).
   (All Typeable args, Typeable bean) =>
   Args args (Regs '[] (Endo bean)) ->
   Cauldron ->
   Cauldron
-wrap = wrap_ do flip (Seq.|>)
+decorate = decorate_ do flip (Seq.|>)
 
 delete ::
   (Typeable bean) =>

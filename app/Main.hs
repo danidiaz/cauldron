@@ -129,11 +129,11 @@ coolWiring =
             Cauldron.insert do constructor0 makeE,
             Cauldron.insert do constructor0 makeF,
             Cauldron.insert do constructor0 makeG,
-            Cauldron.wrap do constructor0 makeGDeco1,
+            Cauldron.decorate do constructor0 makeGDeco1,
             Cauldron.insert do constructor0 makeH,
             Cauldron.insert do constructor0 makeZ,
-            Cauldron.wrap do constructor0 makeZDeco1,
-            Cauldron.wrap do constructor0 makeZDeco2
+            Cauldron.decorate do constructor0 makeZDeco1,
+            Cauldron.decorate do constructor0 makeZDeco2
           ]
      in case Cauldron.boil cauldron of 
           Left e -> Left e
