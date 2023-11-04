@@ -272,12 +272,16 @@ build recipes =
   Data.List.foldl'
     do
       \dynMap -> \case
-          BareBean rep ->
+          BareBean rep -> do
             let Recipe { beanConF = Identity constructor } = fromJust do Map.lookup rep recipes
                 dyn = followConstructor dynMap constructor
-            in Map.insert (dynTypeRep dyn) dyn dynMap
+            Map.insert (dynTypeRep dyn) dyn dynMap
           BuiltBean _ -> dynMap
-          BeanDecorator _ _ -> dynMap
+          BeanDecorator rep index -> do
+            let Recipe { decoCons } = fromJust do Map.lookup rep recipes
+                decoCon = Seq.lookup (fromIntegral (pred index)) decoCons
+                dyn = fromJust do Map.lookup rep dynMap 
+            dynMap
     Map.empty
 
 data Mishap
