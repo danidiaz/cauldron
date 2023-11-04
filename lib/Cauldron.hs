@@ -61,7 +61,7 @@ import Multicurryable
 import qualified Data.List.NonEmpty
 import Data.Functor ((<&>))
 
-newtype Cauldron = Cauldron {recipes :: Map TypeRep (Recipe_ Maybe)}
+newtype Cauldron = Cauldron {recipes :: Map TypeRep (SomeRecipe_ Maybe)}
 
 empty :: Cauldron
 empty = Cauldron {recipes = Map.empty}
@@ -138,21 +138,29 @@ delete ::
 delete proxy Cauldron {recipes} =
   Cauldron {recipes = Map.delete (typeRep proxy) recipes}
 
-data Recipe_ f where
+data SomeRecipe_ f where
+  SomeRecipe :: Recipe_ f a -> SomeRecipe_ f
+
+type SomeRecipe = SomeRecipe_ Identity
+
+data Recipe_ f bean where
   Recipe ::
-    { beanConF :: f Constructor,
-      decoCons :: Seq Constructor
+    { beanConF :: f (Constructor bean),
+      decoCons :: Seq (Constructor (Endo bean))
     } ->
-    Recipe_ f
+    Recipe_ f bean
 
 type Recipe = Recipe_ Identity
 
-data Constructor where
+data SomeConstructor where
+  SomeConstructor :: Constructor component -> SomeConstructor
+
+data Constructor component where
   Constructor ::
-    (All Typeable args, Typeable bean) =>
-    { constructor :: Args args (Regs '[] bean)
+    (All Typeable args) =>
+    { constructor :: Args args (Regs '[] component)
     } ->
-    Constructor
+    Constructor component
 
 data ConstructorReps = ConstructorReps
   { argReps :: [TypeRep],
