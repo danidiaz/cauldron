@@ -93,6 +93,7 @@ insert con Cauldron {recipes} = do
 wrap_ ::
   forall (args :: [Type]) (bean :: Type).
   (All Typeable args, Typeable bean) =>
+  -- | Where to add the decorator is left to the caller to decide.
   (forall a. a -> Seq a -> Seq a) ->
   Args args (Regs '[] (Endo bean)) ->
   Cauldron ->
