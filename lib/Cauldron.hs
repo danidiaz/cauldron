@@ -313,8 +313,8 @@ exportToDot filepath BeanGraph {beanGraph} = do
         let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
         in
         \case
-          BareBean rep -> p rep <>  Data.Text.pack "_0"
-          BeanDecorator rep index -> p rep <> Data.Text.pack ("_" ++ show index)
+          BareBean rep -> p rep <>  Data.Text.pack "#0"
+          BeanDecorator rep index -> p rep <> Data.Text.pack ("#" ++ show index)
           BuiltBean rep -> p rep
       dot =
         Dot.export
