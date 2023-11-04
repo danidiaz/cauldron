@@ -49,8 +49,9 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
 import Data.Monoid (Endo (..))
-import Data.SOP (All, K (..))
+import Data.SOP (All, And, K (..))
 import Data.SOP.NP
+import Data.SOP.Dict
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -72,7 +73,7 @@ empty = Cauldron {recipes = Map.empty}
 -- | Put a recipe (constructor) into the 'Cauldron'.
 insert ::
   forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
-  (All Typeable args, All Typeable accums, Typeable bean) =>
+  (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
   -- | A curried function that takes the @args@ and returns the @bean@
   Args args (Regs accums bean) ->
   Cauldron ->
@@ -100,7 +101,7 @@ insert con Cauldron {recipes} = do
 
 decorate_ ::
   forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
-  (All Typeable args, All Typeable accums, Typeable bean) =>
+  (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
   -- | Where to add the decorator is left to the caller to decide.
   (forall a. a -> Seq a -> Seq a) ->
   Args args (Regs accums (Endo bean)) ->
@@ -132,7 +133,7 @@ decorate_ addToDecos con Cauldron {recipes} = do
 
 decorate ::
   forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
-  (All Typeable args, All Typeable accums, Typeable bean) =>
+  (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
   Args args (Regs accums (Endo bean)) ->
   Cauldron ->
   Cauldron
@@ -160,7 +161,7 @@ data Recipe_ f bean where
 
 data Constructor component where
   Constructor ::
-    (All Typeable args, All Typeable accums) =>
+    (All Typeable args, All (Typeable `And` Monoid) accums) =>
     { constructor :: Args args (Regs accums component)
     } ->
     Constructor component
@@ -185,12 +186,13 @@ constructorReps Constructor {constructor = (_ :: Args args (Regs accums componen
       accumReps =
         collapse_NP do
           cpure_NP @_ @accums
-            do Proxy @Typeable
+            do Proxy @(Typeable `And` Monoid)
             typeRepHelper
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K do typeRep (Proxy @a)
+
 
 dependOnArgs :: Typeable component => PlanItem -> Constructor component -> [(PlanItem,PlanItem)]
 dependOnArgs item (constructorReps -> ConstructorReps {argReps}) = do
