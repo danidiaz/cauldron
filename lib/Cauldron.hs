@@ -51,7 +51,6 @@ import Data.Maybe (fromJust)
 import Data.Monoid (Endo (..))
 import Data.SOP (All, And, K (..))
 import Data.SOP.NP
-import Data.SOP.Dict
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -237,7 +236,9 @@ checkBeanlessDecos recipes =
     (_, result) ->
       Right result
 
--- | TODO: handle decorator and registration dependencies as well.
+-- | TODO: handle decorator and accum dependencies as well.
+-- TODO: accum dependencies should never count as missing, because they can
+-- be trivially produced.
 checkMissingDeps ::
   Map TypeRep SomeRecipe ->
   Either (Map TypeRep [TypeRep]) ()
@@ -250,6 +251,18 @@ checkMissingDeps recipes =
       Right ()
   where 
     getArgReps (SomeRecipe Recipe { beanConF = Identity (constructorReps -> ConstructorReps {argReps})}) = argReps
+    accumSet = Set.fromList do
+      recipe <- Data.Foldable.toList recipes
+      case recipe of 
+        (SomeRecipe Recipe { beanConF = Identity beanCon, decoCons}) -> do
+          let ConstructorReps { accumReps = beanAccums } = constructorReps beanCon
+          beanAccums ++ do 
+            decoCon <- Data.Foldable.toList decoCons
+            let ConstructorReps { accumReps = decoAccums } = constructorReps decoCon
+            decoAccums
+
+
+
 
 checkCycles ::
   Map TypeRep SomeRecipe ->
