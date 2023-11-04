@@ -151,7 +151,7 @@ data Constructor where
     Constructor
 
 data ConstructorReps = ConstructorReps
-  { argsReps :: [TypeRep],
+  { argReps :: [TypeRep],
     resultRep :: TypeRep
   }
 
@@ -160,7 +160,7 @@ data ConstructorReps = ConstructorReps
 constructorReps :: Constructor -> ConstructorReps
 constructorReps Constructor {constructor = (_ :: Args args (Regs '[] result))} =
   ConstructorReps
-    { argsReps =
+    { argReps =
         collapse_NP do
           cpure_NP @_ @args
             do Proxy @Typeable
@@ -200,7 +200,9 @@ checkBeanlessDecos recipes =
     recipes
     do
       \beanRep -> \case
-        recipe@Recipe {beanCon = Just con} -> (Set.empty, Map.singleton beanRep (recipe {beanCon = Identity con}))
+        recipe@Recipe {beanCon = Just con} -> 
+          (Set.empty, 
+           Map.singleton beanRep (recipe {beanCon = Identity con}))
         _ -> (Set.singleton beanRep, Map.empty) of
     (missing, _)
       | not do Data.List.null missing ->
@@ -214,7 +216,7 @@ checkMissingDeps ::
 checkMissingDeps recipes =
   case Map.map
     do Prelude.filter (`Map.notMember` recipes)
-    do (.argsReps) . constructorReps . runIdentity . (.beanCon) <$> recipes of
+    do (.argReps) . constructorReps . runIdentity . (.beanCon) <$> recipes of
     missing
       | Data.Foldable.any (not . Data.List.null) missing ->
           Left missing
@@ -231,9 +233,9 @@ checkCycles recipes = do
             flip
               Map.foldMapWithKey
               recipes
-              \beanRep (constructorReps . runIdentity . (.beanCon) -> ConstructorReps {argsReps}) -> do
+              \beanRep Recipe { beanCon = Identity (constructorReps -> ConstructorReps {argReps})} -> do
                 let outgoing = do
-                      argRep <- argsReps
+                      argRep <- argReps
                       [(BareBean beanRep, BuiltBean argRep)]
                     inner = [(BuiltBean beanRep, BareBean beanRep)]
                 outgoing ++ inner
@@ -251,7 +253,7 @@ build recipes =
     do
       \dynMap -> \case
           BareBean rep ->
-            let constructor = runIdentity do (.beanCon) do fromJust do Map.lookup rep recipes
+            let Recipe { beanCon = Identity constructor } = fromJust do Map.lookup rep recipes
                 dyn = followConstructor dynMap constructor
             in Map.insert (dynTypeRep dyn) dyn dynMap
           BuiltBean _ -> dynMap
