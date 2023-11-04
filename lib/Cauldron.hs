@@ -284,15 +284,16 @@ build recipes =
     do
       \dynMap -> \case
           BareBean rep -> case fromJust do Map.lookup rep recipes of
-            SomeRecipe (Recipe { beanConF = Identity constructor }) -> do
-              let dyn = toDyn do followConstructor dynMap constructor
+            SomeRecipe (Recipe { beanConF = Identity beanCon }) -> do
+              let dyn = toDyn do followConstructor dynMap beanCon
               Map.insert (dynTypeRep dyn) dyn dynMap
           BuiltBean _ -> dynMap
           BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
             SomeRecipe (Recipe { decoCons }) -> do
-                let decoCon = fromJust do Seq.lookup (fromIntegral (pred index)) decoCons
-                    dyn = fromJust do Map.lookup rep dynMap 
-                dynMap
+                let indexStartingAt0 = fromIntegral (pred index)
+                    decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
+                    dyn = toDyn do followDecorator dynMap decoCon
+                Map.insert (dynTypeRep dyn) dyn dynMap
     Map.empty
 
 data Mishap
@@ -312,6 +313,17 @@ followConstructor theDyns Constructor {constructor} = do
       args = runExtractor argsExtractor theDyns
       (_, bean) = runRegs do runArgs constructor args
   bean
+
+followDecorator :: 
+    forall component . Typeable component => 
+    Map TypeRep Dynamic -> 
+    Constructor (Endo component) -> 
+    component
+followDecorator theDyns decoCon  = do
+  let Endo deco = followConstructor theDyns decoCon
+      baseDyn = fromJust do Map.lookup (typeRep (Proxy @component)) theDyns
+      base = fromJust do fromDynamic baseDyn
+  deco base
 
 newtype Extractor a = Extractor {runExtractor :: Map TypeRep Dynamic -> a}
   deriving newtype (Functor, Applicative)
