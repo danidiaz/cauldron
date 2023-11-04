@@ -7,10 +7,9 @@
 -- typing magic from the "Cauldron" module.
 module Main where
 
-import Cauldron (BeanGraph, Mishap, argsN, regs0)
+import Cauldron 
 import Cauldron qualified
 import Data.Proxy
-import Data.Function ((&))
 import Data.Functor ((<&>))
 
 data A = A deriving (Show)
@@ -92,6 +91,15 @@ makeH _ _ _ = H
 makeZ :: D -> H -> Z
 makeZ _ _ = Z
 
+makeZDeco1 :: B -> E -> Endo Z
+makeZDeco1 _ _ = mempty
+
+makeZDeco2 :: F -> Endo Z
+makeZDeco2 _ = mempty
+
+makeGDeco1 :: A -> Endo G
+makeGDeco1 _ = mempty 
+
 boringWiring :: Z
 boringWiring =
   let a = makeA
@@ -100,9 +108,10 @@ boringWiring =
       d = makeD
       e = makeE a
       f = makeF b c
-      g = makeG e f
+      g = appEndo (makeGDeco1 a) do makeG e f
       h = makeH a d g
-   in makeZ d h
+      z = appEndo (makeZDeco2 f) do appEndo (makeZDeco1 b e) do makeZ d h
+   in z
 
 -- | Here we don't have to worry about positional parameters. We simply throw 
 -- all the constructors into the 'Cauldron' and get the 'Z' value at the end,
@@ -113,15 +122,18 @@ coolWiring =
         foldr
           ($)
           Cauldron.empty
-          [ Cauldron.insert do argsN makeA <&> regs0,
-            Cauldron.insert do argsN makeB <&> regs0,
-            Cauldron.insert do argsN makeC <&> regs0,
-            Cauldron.insert do argsN makeD <&> regs0,
-            Cauldron.insert do argsN makeE <&> regs0,
-            Cauldron.insert do argsN makeF <&> regs0,
-            Cauldron.insert do argsN makeG <&> regs0,
-            Cauldron.insert do argsN makeH <&> regs0,
-            Cauldron.insert do argsN makeZ <&> regs0
+          [ Cauldron.insert do constructor0 makeA,
+            Cauldron.insert do constructor0 makeB,
+            Cauldron.insert do constructor0 makeC,
+            Cauldron.insert do constructor0 makeD,
+            Cauldron.insert do constructor0 makeE,
+            Cauldron.insert do constructor0 makeF,
+            Cauldron.insert do constructor0 makeG,
+            Cauldron.wrap do constructor0 makeGDeco1,
+            Cauldron.insert do constructor0 makeH,
+            Cauldron.insert do constructor0 makeZ,
+            Cauldron.wrap do constructor0 makeZDeco1,
+            Cauldron.wrap do constructor0 makeZDeco2
           ]
      in case Cauldron.boil cauldron of 
           Left e -> Left e

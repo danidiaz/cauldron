@@ -24,7 +24,9 @@ module Cauldron
     argsN,
     Regs,
     regs0,
-
+    constructor0,
+    constructor1,
+    constructor2,
     -- * Re-exports
     Endo (..),
   )
@@ -57,6 +59,7 @@ import Data.Text.Encoding qualified
 import Data.Typeable
 import Multicurryable
 import qualified Data.List.NonEmpty
+import Data.Functor ((<&>))
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep (Recipe_ Maybe)}
 
@@ -343,3 +346,27 @@ newtype Regs (regs :: [Type]) r = Regs {runRegs :: (NP I regs, r)}
 
 regs0 :: r -> Regs '[] r
 regs0 r = Regs (Nil, r)
+
+constructor0 :: 
+  forall r (args :: [Type]) curried.
+  (MulticurryableF args r curried (IsFunction curried)) =>
+  curried ->
+  Args args (Regs '[] r)
+constructor0 curried =
+  regs0 <$> argsN curried 
+
+constructor1 :: 
+  forall r reg (args :: [Type]) curried.
+  (MulticurryableF args (reg, r) curried (IsFunction curried)) =>
+  curried ->
+  Args args (Regs '[reg] r)
+constructor1 curried =
+  argsN curried <&> \(reg, r) -> Regs ((I reg :* Nil), r) 
+
+constructor2 :: 
+  forall r reg1 reg2 (args :: [Type]) curried.
+  (MulticurryableF args (reg1, reg2, r) curried (IsFunction curried)) =>
+  curried ->
+  Args args (Regs '[reg1, reg2] r)
+constructor2 curried =
+  argsN curried <&> \(reg1, reg2, r) -> Regs ((I reg1 :* I reg2 :* Nil), r) 
