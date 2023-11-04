@@ -56,6 +56,7 @@ import Data.Text qualified
 import Data.Text.Encoding qualified
 import Data.Typeable
 import Multicurryable
+import qualified Data.List.NonEmpty
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep (Recipe_ Maybe)}
 
@@ -72,7 +73,7 @@ insert ::
   Cauldron
 insert con Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
-      beanCon = Just do Constructor @args @bean con
+      beanConF = Just do Constructor @args @bean con
   Cauldron
     { recipes =
         Map.alter
@@ -81,11 +82,11 @@ insert con Cauldron {recipes} = do
               Nothing ->
                 Just
                   Recipe
-                    { beanCon,
+                    { beanConF,
                       decoCons = Seq.empty
                     }
               Just r ->
-                Just r {beanCon}
+                Just r {beanConF}
           rep
           recipes
     }
@@ -109,7 +110,7 @@ wrap_ addToDecos con Cauldron {recipes} = do
               Nothing ->
                 Just
                   Recipe
-                    { beanCon = Nothing,
+                    { beanConF = Nothing,
                       decoCons = Seq.singleton decoCon
                     }
               Just r@Recipe {decoCons} ->
@@ -136,7 +137,7 @@ delete proxy Cauldron {recipes} =
 
 data Recipe_ f where
   Recipe ::
-    { beanCon :: f Constructor,
+    { beanConF :: f Constructor,
       decoCons :: Seq Constructor
     } ->
     Recipe_ f
@@ -155,6 +156,8 @@ data ConstructorReps = ConstructorReps
     resultRep :: TypeRep
   }
 
+
+
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 constructorReps :: Constructor -> ConstructorReps
@@ -171,6 +174,11 @@ constructorReps Constructor {constructor = (_ :: Args args (Regs '[] result))} =
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K do typeRep (Proxy @a)
+
+dependOnArgs :: PlanItem -> Constructor -> [(PlanItem,PlanItem)]
+dependOnArgs item (constructorReps -> ConstructorReps {argReps}) = do
+  argRep <- argReps
+  [(item, BuiltBean argRep)]
 
 type Plan = [PlanItem]
 
@@ -200,9 +208,9 @@ checkBeanlessDecos recipes =
     recipes
     do
       \beanRep -> \case
-        recipe@Recipe {beanCon = Just con} -> 
+        recipe@Recipe {beanConF = Just con} -> 
           (Set.empty, 
-           Map.singleton beanRep (recipe {beanCon = Identity con}))
+           Map.singleton beanRep (recipe {beanConF = Identity con}))
         _ -> (Set.singleton beanRep, Map.empty) of
     (missing, _)
       | not do Data.List.null missing ->
@@ -210,13 +218,14 @@ checkBeanlessDecos recipes =
     (_, result) ->
       Right result
 
+-- | TODO: handle decorator and registration dependencies as well.
 checkMissingDeps ::
   Map TypeRep Recipe ->
   Either (Map TypeRep [TypeRep]) ()
 checkMissingDeps recipes =
   case Map.map
     do Prelude.filter (`Map.notMember` recipes)
-    do (.argReps) . constructorReps . runIdentity . (.beanCon) <$> recipes of
+    do (.argReps) . constructorReps . runIdentity . (.beanConF) <$> recipes of
     missing
       | Data.Foldable.any (not . Data.List.null) missing ->
           Left missing
@@ -233,12 +242,20 @@ checkCycles recipes = do
             flip
               Map.foldMapWithKey
               recipes
-              \beanRep Recipe { beanCon = Identity (constructorReps -> ConstructorReps {argReps})} -> do
-                let outgoing = do
-                      argRep <- argReps
-                      [(BareBean beanRep, BuiltBean argRep)]
-                    inner = [(BuiltBean beanRep, BareBean beanRep)]
-                outgoing ++ inner
+              \beanRep Recipe { 
+                  beanConF = Identity beanCon,
+                  decoCons
+                } -> do
+                let bareBean = BareBean beanRep
+                    builtBean = BuiltBean beanRep
+                    decos = do 
+                      (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons) 
+                      [(BeanDecorator beanRep decoIndex, decoCon)]
+                    beanDeps = dependOnArgs bareBean beanCon
+                    decoDeps = concatMap (uncurry dependOnArgs) decos
+                    full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
+                    innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full) 
+                beanDeps ++ decoDeps ++ innerDeps
   case Graph.topSort beanGraph of
     Left recipeCycle ->
       Left recipeCycle
@@ -253,7 +270,7 @@ build recipes =
     do
       \dynMap -> \case
           BareBean rep ->
-            let Recipe { beanCon = Identity constructor } = fromJust do Map.lookup rep recipes
+            let Recipe { beanConF = Identity constructor } = fromJust do Map.lookup rep recipes
                 dyn = followConstructor dynMap constructor
             in Map.insert (dynTypeRep dyn) dyn dynMap
           BuiltBean _ -> dynMap
