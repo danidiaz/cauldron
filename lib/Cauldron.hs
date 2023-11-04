@@ -82,7 +82,7 @@ insert con Cauldron {recipes} = do
                 Just
                   Recipe
                     { beanCon,
-                      decosCons = Seq.empty
+                      decoCons = Seq.empty
                     }
               Just r ->
                 Just r {beanCon}
@@ -110,10 +110,10 @@ wrap_ addToDecos con Cauldron {recipes} = do
                 Just
                   Recipe
                     { beanCon = Nothing,
-                      decosCons = Seq.singleton decoCon
+                      decoCons = Seq.singleton decoCon
                     }
-              Just r@Recipe {decosCons} ->
-                Just r {decosCons = addToDecos decoCon decosCons}
+              Just r@Recipe {decoCons} ->
+                Just r {decoCons = addToDecos decoCon decoCons}
           rep
           recipes
     }
@@ -137,7 +137,7 @@ delete proxy Cauldron {recipes} =
 data Recipe_ f where
   Recipe ::
     { beanCon :: f Constructor,
-      decosCons :: Seq Constructor
+      decoCons :: Seq Constructor
     } ->
     Recipe_ f
 
