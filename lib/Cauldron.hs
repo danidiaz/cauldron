@@ -285,12 +285,12 @@ build recipes =
       \dynMap -> \case
           BareBean rep -> case fromJust do Map.lookup rep recipes of
             SomeRecipe (Recipe { beanConF = Identity constructor }) -> do
-              let dyn = followConstructor dynMap constructor
+              let dyn = toDyn do followConstructor dynMap constructor
               Map.insert (dynTypeRep dyn) dyn dynMap
           BuiltBean _ -> dynMap
           BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
             SomeRecipe (Recipe { decoCons }) -> do
-                let decoCon = Seq.lookup (fromIntegral (pred index)) decoCons
+                let decoCon = fromJust do Seq.lookup (fromIntegral (pred index)) decoCons
                     dyn = fromJust do Map.lookup rep dynMap 
                 dynMap
     Map.empty
@@ -306,12 +306,12 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
-followConstructor :: Typeable component => Map TypeRep Dynamic -> Constructor component -> Dynamic
+followConstructor :: Map TypeRep Dynamic -> Constructor component -> component
 followConstructor theDyns Constructor {constructor} = do
   let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor argsExtractor theDyns
       (_, bean) = runRegs do runArgs constructor args
-  toDyn bean
+  bean
 
 newtype Extractor a = Extractor {runExtractor :: Map TypeRep Dynamic -> a}
   deriving newtype (Functor, Applicative)
