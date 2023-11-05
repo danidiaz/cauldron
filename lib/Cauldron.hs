@@ -161,7 +161,7 @@ data Recipe_ f bean where
 data Constructor component where
   Constructor ::
     (All Typeable args, All (Typeable `And` Monoid) accums) =>
-    { constructor :: Args args (Regs accums component)
+    { constructor_ :: Args args (Regs accums component)
     } ->
     Constructor component
 
@@ -175,7 +175,7 @@ data ConstructorReps = ConstructorReps
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 constructorReps :: Typeable component => Constructor component -> ConstructorReps
-constructorReps Constructor {constructor = (_ :: Args args (Regs accums component))} =
+constructorReps Constructor {constructor_ = (_ :: Args args (Regs accums component))} =
   ConstructorReps
     { argReps =
         collapse_NP do
@@ -212,8 +212,9 @@ boil ::
   Either Mishap (BeanGraph, Map TypeRep Dynamic)
 boil Cauldron {recipes} = do
   recipes' <- first BeanlessDecorator do checkBeanlessDecos recipes
-  () <- first MissingBeanDependencies do checkMissingDeps recipes'
-  (beanGraph, plan) <- first ConstructorCycle do checkCycles recipes'
+  accumSet <- first DoubleDutyBeans do checkNoAccumBeans recipes'
+  () <- first MissingDependencies do checkMissingDeps accumSet recipes'
+  (beanGraph, plan) <- first DependencyCycle do checkCycles recipes'
   let beans = build recipes' plan
   Right (BeanGraph {beanGraph}, beans)
 
@@ -236,21 +237,15 @@ checkBeanlessDecos recipes =
     (_, result) ->
       Right result
 
--- | TODO: handle decorator and accum dependencies as well.
--- TODO: accum dependencies should never count as missing, because they can
--- be trivially produced.
-checkMissingDeps ::
+checkNoAccumBeans ::
   Map TypeRep SomeRecipe ->
-  Either (Map TypeRep [TypeRep]) ()
-checkMissingDeps recipes =
-  case Prelude.filter (`Map.notMember` recipes) . getArgReps <$> recipes of
-    missing
-      | Data.Foldable.any (not . Data.List.null) missing ->
-          Left missing
-    _ ->
-      Right ()
-  where 
-    getArgReps (SomeRecipe Recipe { beanConF = Identity (constructorReps -> ConstructorReps {argReps})}) = argReps
+  Either (Set TypeRep) (Set TypeRep)
+checkNoAccumBeans recipes = do
+  let common = Set.intersection accumSet (Map.keysSet recipes)
+  if not (Set.null common)
+    then Left common
+    else Right accumSet 
+  where
     accumSet = Set.fromList do
       recipe <- Data.Foldable.toList recipes
       case recipe of 
@@ -260,6 +255,27 @@ checkMissingDeps recipes =
             decoCon <- Data.Foldable.toList decoCons
             let ConstructorReps { accumReps = decoAccums } = constructorReps decoCon
             decoAccums
+
+-- | TODO: handle decorator and accum dependencies as well.
+-- TODO: accum dependencies should never count as missing, because they can
+-- be trivially produced.
+checkMissingDeps ::
+  Set TypeRep ->
+  Map TypeRep SomeRecipe ->
+  Either (Map TypeRep (Set TypeRep)) ()
+checkMissingDeps accumSet recipes = do
+  let demandedMap = Set.filter (`Map.notMember` recipes) . demanded <$> recipes
+  if Data.Foldable.any (not . Set.null) demandedMap 
+    then Left demandedMap
+    else Right ()
+  where 
+    demanded :: SomeRecipe -> Set TypeRep
+    demanded (SomeRecipe Recipe { beanConF = Identity beanCon, decoCons}) = (Set.fromList do 
+          let ConstructorReps { argReps = beanArgReps } = constructorReps beanCon
+          beanArgReps ++ do
+            decoCon <- Data.Foldable.toList decoCons
+            let ConstructorReps { argReps = decoArgReps } = constructorReps decoCon
+            decoArgReps) `Set.difference` accumSet
 
 
 
@@ -316,8 +332,10 @@ build recipes =
 
 data Mishap
   = BeanlessDecorator (Set TypeRep)
-  | MissingBeanDependencies (Map TypeRep [TypeRep])
-  | ConstructorCycle (NonEmpty PlanItem)
+  -- | Beans working as accumulartors and regular beans.
+  | DoubleDutyBeans (Set TypeRep)
+  | MissingDependencies (Map TypeRep (Set TypeRep))
+  | DependencyCycle (NonEmpty PlanItem)
   deriving stock (Show)
 
 newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
@@ -326,10 +344,10 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
 followConstructor :: Map TypeRep Dynamic -> Constructor component -> component
-followConstructor theDyns Constructor {constructor} = do
+followConstructor theDyns Constructor {constructor_} = do
   let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor argsExtractor theDyns
-      (_, bean) = runRegs do runArgs constructor args
+      (_, bean) = runRegs do runArgs constructor_ args
   bean
 
 followDecorator :: 
@@ -392,12 +410,12 @@ newtype Regs (regs :: [Type]) r = Regs {runRegs :: (NP I regs, r)}
 regs0 :: r -> Regs '[] r
 regs0 r = Regs (Nil, r)
 
-constructor0 :: 
+constructor :: 
   forall r (args :: [Type]) curried.
   (MulticurryableF args r curried (IsFunction curried)) =>
   curried ->
   Args args (Regs '[] r)
-constructor0 curried =
+constructor curried =
   regs0 <$> argsN curried 
 
 constructor1 :: 

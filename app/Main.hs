@@ -122,18 +122,18 @@ coolWiring =
         foldr
           ($)
           Cauldron.empty
-          [ Cauldron.insert do constructor0 makeA,
-            Cauldron.insert do constructor0 makeB,
-            Cauldron.insert do constructor0 makeC,
-            Cauldron.insert do constructor0 makeD,
-            Cauldron.insert do constructor0 makeE,
-            Cauldron.insert do constructor0 makeF,
-            Cauldron.insert do constructor0 makeG,
-            Cauldron.decorate do constructor0 makeGDeco1,
-            Cauldron.insert do constructor0 makeH,
-            Cauldron.insert do constructor0 makeZ,
-            Cauldron.decorate do constructor0 makeZDeco1,
-            Cauldron.decorate do constructor0 makeZDeco2
+          [ Cauldron.insert do constructor makeA,
+            Cauldron.insert do constructor makeB,
+            Cauldron.insert do constructor makeC,
+            Cauldron.insert do constructor makeD,
+            Cauldron.insert do constructor makeE,
+            Cauldron.insert do constructor makeF,
+            Cauldron.insert do constructor makeG,
+            Cauldron.decorate do constructor makeGDeco1,
+            Cauldron.insert do constructor makeH,
+            Cauldron.insert do constructor makeZ,
+            Cauldron.decorate do constructor makeZDeco1,
+            Cauldron.decorate do constructor makeZDeco2
           ]
      in case Cauldron.boil cauldron of 
           Left e -> Left e
