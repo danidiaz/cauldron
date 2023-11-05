@@ -268,9 +268,8 @@ checkNoRegBeans recipes = do
 
 -- | TODO: handle decorator and accum dependencies as well.
 -- TODO: reg dependencies should never count as missing, because they can
--- be trivially produced.
--- TODO: actually, regs *should* count as dependencies for the sake of ordering.
--- It's just that we must add "dummy" regs at the beginning.
+-- be trivially produced. 
+-- However, they should be present in the plan for the sake of ordering.
 checkMissingDeps ::
   Set TypeRep ->
   Map TypeRep SomeRecipe ->
