@@ -25,6 +25,7 @@ module Cauldron
     argsN,
     Regs,
     regs0,
+    constructor,
     constructor0,
     constructor1,
     constructor2,
@@ -167,7 +168,7 @@ data Constructor component where
 
 data ConstructorReps = ConstructorReps
   { argReps :: [TypeRep],
-    accumReps :: [TypeRep]
+    regReps :: [TypeRep]
   }
 
 
@@ -182,7 +183,7 @@ constructorReps Constructor {constructor_ = (_ :: Args args (Regs accums compone
           cpure_NP @_ @args
             do Proxy @Typeable
             typeRepHelper,
-      accumReps =
+      regReps =
         collapse_NP do
           cpure_NP @_ @accums
             do Proxy @(Typeable `And` Monoid)
@@ -193,10 +194,19 @@ constructorReps Constructor {constructor_ = (_ :: Args args (Regs accums compone
     typeRepHelper = K do typeRep (Proxy @a)
 
 
-dependOnArgs :: Typeable component => PlanItem -> Constructor component -> [(PlanItem,PlanItem)]
-dependOnArgs item (constructorReps -> ConstructorReps {argReps}) = do
-  argRep <- argReps
-  [(item, BuiltBean argRep)]
+constructorEdges :: Typeable component => PlanItem -> Constructor component -> [(PlanItem,PlanItem)]
+constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) = 
+  -- consumers depend on their args
+  (do
+    argRep <- argReps
+    let argItem = BuiltBean argRep 
+    [(item, argItem)])
+  ++
+  -- regs depend on their producers
+  (do
+    regRep <- regReps
+    let repItem = BuiltBean regRep 
+    [(repItem, item)])
 
 type Plan = [PlanItem]
 
@@ -212,7 +222,7 @@ boil ::
   Either Mishap (BeanGraph, Map TypeRep Dynamic)
 boil Cauldron {recipes} = do
   recipes' <- first BeanlessDecorator do checkBeanlessDecos recipes
-  accumSet <- first DoubleDutyBeans do checkNoAccumBeans recipes'
+  accumSet <- first DoubleDutyBeans do checkNoRegBeans recipes'
   () <- first MissingDependencies do checkMissingDeps accumSet recipes'
   (beanGraph, plan) <- first DependencyCycle do checkCycles recipes'
   let beans = build recipes' plan
@@ -237,10 +247,10 @@ checkBeanlessDecos recipes =
     (_, result) ->
       Right result
 
-checkNoAccumBeans ::
+checkNoRegBeans ::
   Map TypeRep SomeRecipe ->
   Either (Set TypeRep) (Set TypeRep)
-checkNoAccumBeans recipes = do
+checkNoRegBeans recipes = do
   let common = Set.intersection accumSet (Map.keysSet recipes)
   if not (Set.null common)
     then Left common
@@ -250,15 +260,17 @@ checkNoAccumBeans recipes = do
       recipe <- Data.Foldable.toList recipes
       case recipe of 
         (SomeRecipe Recipe { beanConF = Identity beanCon, decoCons}) -> do
-          let ConstructorReps { accumReps = beanAccums } = constructorReps beanCon
+          let ConstructorReps { regReps = beanAccums } = constructorReps beanCon
           beanAccums ++ do 
             decoCon <- Data.Foldable.toList decoCons
-            let ConstructorReps { accumReps = decoAccums } = constructorReps decoCon
+            let ConstructorReps { regReps = decoAccums } = constructorReps decoCon
             decoAccums
 
 -- | TODO: handle decorator and accum dependencies as well.
--- TODO: accum dependencies should never count as missing, because they can
+-- TODO: reg dependencies should never count as missing, because they can
 -- be trivially produced.
+-- TODO: actually, regs *should* count as dependencies for the sake of ordering.
+-- It's just that we must add "dummy" regs at the beginning.
 checkMissingDeps ::
   Set TypeRep ->
   Map TypeRep SomeRecipe ->
@@ -299,8 +311,8 @@ checkCycles recipes = do
                     decos = do 
                       (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons) 
                       [(BeanDecorator beanRep decoIndex, decoCon)]
-                    beanDeps = dependOnArgs bareBean beanCon
-                    decoDeps = concatMap (uncurry dependOnArgs) decos
+                    beanDeps = constructorEdges bareBean beanCon
+                    decoDeps = concatMap (uncurry constructorEdges) decos
                     full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
                     innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full) 
                 beanDeps ++ decoDeps ++ innerDeps
@@ -415,7 +427,14 @@ constructor ::
   (MulticurryableF args r curried (IsFunction curried)) =>
   curried ->
   Args args (Regs '[] r)
-constructor curried =
+constructor = constructor0
+
+constructor0 :: 
+  forall r (args :: [Type]) curried.
+  (MulticurryableF args r curried (IsFunction curried)) =>
+  curried ->
+  Args args (Regs '[] r)
+constructor0 curried =
   regs0 <$> argsN curried 
 
 constructor1 :: 
