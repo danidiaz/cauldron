@@ -8,12 +8,13 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Cauldron
   ( Cauldron,
     empty,
-    Recipe (..),
-    beanOnly,
+    Bean (.., SimpleBean),
     adjust,
     Constructor (Constructor),
     Decos,
@@ -72,21 +73,22 @@ import qualified Type.Reflection
 import Control.Monad (guard)
 
 newtype Cauldron where 
-  Cauldron :: {recipes :: Map TypeRep SomeRecipe} -> Cauldron
+  Cauldron :: {recipes :: Map TypeRep SomeBean} -> Cauldron
   deriving newtype (Semigroup, Monoid)
 
-data SomeRecipe where
-  SomeRecipe :: Typeable a => Recipe a -> SomeRecipe
+data SomeBean where
+  SomeBean :: Typeable a => Bean a -> SomeBean
 
-data Recipe bean where
-  Recipe ::
-    { bean :: Constructor bean,
+data Bean bean where
+  Bean ::
+    { constructor :: Constructor bean,
       decos :: Decos bean
     } ->
-    Recipe bean
+    Bean bean
 
-beanOnly :: Constructor bean -> Recipe bean
-beanOnly bean = Recipe { bean, decos = mempty} 
+pattern SimpleBean :: Constructor a -> Bean a
+pattern SimpleBean constructor <- Bean {constructor} where
+  SimpleBean constructor = Bean {constructor, decos = mempty}
 
 newtype Decos bean where
   Decos :: { decoSeq :: Seq (Constructor (Endo bean)) } -> Decos bean
@@ -104,7 +106,7 @@ decosFromList cons = Decos do Seq.fromList cons
 data Constructor component where
   Constructor ::
     (All Typeable args, All (Typeable `And` Monoid) accums) =>
-    { constructor :: Args args (Regs accums component)
+    { constructor_ :: Args args (Regs accums component)
     } ->
     Constructor component
 
@@ -125,33 +127,33 @@ empty = mempty
 insert ::
   forall (bean :: Type).
   (Typeable bean) =>
-  Recipe bean ->
+  Bean bean ->
   Cauldron ->
   Cauldron
 insert recipe Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
-  Cauldron { recipes = Map.insert rep (SomeRecipe recipe) recipes } 
+  Cauldron { recipes = Map.insert rep (SomeBean recipe) recipes } 
 
---                Just (SomeRecipe (Recipe
+--                Just (SomeBean (Bean
 --                    { beanConF,
 --                      decoCons = Seq.empty
 --                    }))
---              Just (SomeRecipe (r :: Recipe_ Maybe a)) ->
+--              Just (SomeBean (r :: Bean_ Maybe a)) ->
 --                case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
 --                  Nothing -> error "should never happen"
---                  Just Refl -> Just do SomeRecipe r {beanConF}
+--                  Just Refl -> Just do SomeBean r {beanConF}
 
 adjust :: forall bean . Typeable bean => 
-  (Recipe bean -> Recipe bean) -> 
+  (Bean bean -> Bean bean) -> 
     Cauldron -> 
       Cauldron
 adjust f (Cauldron {recipes})= do
   let rep = typeRep (Proxy @bean)
   Cauldron { recipes = Map.adjust 
-    do \(SomeRecipe (r :: Recipe a)) ->
+    do \(SomeBean (r :: Bean a)) ->
           case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
             Nothing -> error "should never happen"
-            Just Refl -> SomeRecipe (f r)
+            Just Refl -> SomeBean (f r)
     rep
     recipes
   }
@@ -174,16 +176,16 @@ adjust f (Cauldron {recipes})= do
 --             \case
 --               Nothing ->
 --                 Just
---                   (SomeRecipe Recipe
+--                   (SomeBean Bean
 --                     { beanConF = Nothing,
 --                       decoCons = Seq.singleton decoCon
 --                     })
---               Just (SomeRecipe (r :: Recipe_ Maybe a)) -> do
+--               Just (SomeBean (r :: Bean_ Maybe a)) -> do
 --                 case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
 --                   Nothing -> error "should never happen"
 --                   Just Refl -> do
---                     let Recipe {decoCons} = r
---                     Just do SomeRecipe r {decoCons = addToDecos decoCon decoCons}
+--                     let Bean {decoCons} = r
+--                     Just do SomeBean r {decoCons = addToDecos decoCon decoCons}
 --           rep
 --           recipes
 --     }
@@ -207,7 +209,7 @@ delete proxy Cauldron {recipes} =
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 constructorReps :: Typeable component => Constructor component -> ConstructorReps
-constructorReps Constructor {constructor = (_ :: Args args (Regs accums component))} =
+constructorReps Constructor {constructor_ = (_ :: Args args (Regs accums component))} =
   ConstructorReps
     { argReps = Set.fromList do
         collapse_NP do
@@ -266,7 +268,7 @@ cook Cauldron {recipes} = do
   Right (BeanGraph {beanGraph}, beans)
 
 checkNoRegBeans ::
-  Map TypeRep SomeRecipe ->
+  Map TypeRep SomeBean ->
   Either (Set TypeRep) (Map TypeRep Dynamic)
 checkNoRegBeans recipes = do
   let common = Set.intersection (Map.keysSet accumSet) (Map.keysSet recipes)
@@ -277,8 +279,8 @@ checkNoRegBeans recipes = do
     accumSet = Map.fromList do
       recipe <- Data.Foldable.toList recipes
       case recipe of 
-        (SomeRecipe Recipe { bean, decos = Decos {decoSeq}}) -> do
-          let ConstructorReps { regReps = beanAccums } = constructorReps bean
+        (SomeBean Bean { constructor, decos = Decos {decoSeq}}) -> do
+          let ConstructorReps { regReps = beanAccums } = constructorReps constructor
           Map.toList beanAccums ++ do 
             decoCon <- Data.Foldable.toList decoSeq
             let ConstructorReps { regReps = decoAccums } = constructorReps decoCon
@@ -286,7 +288,7 @@ checkNoRegBeans recipes = do
 
 checkMissingDeps ::
   Set TypeRep ->
-  Map TypeRep SomeRecipe ->
+  Map TypeRep SomeBean ->
   Either (Map TypeRep (Set TypeRep)) ()
 checkMissingDeps accumSet recipes = do
   let demandedMap = Set.filter (`Map.notMember` recipes) . demanded <$> recipes
@@ -294,16 +296,16 @@ checkMissingDeps accumSet recipes = do
     then Left demandedMap
     else Right ()
   where 
-    demanded :: SomeRecipe -> Set TypeRep
-    demanded (SomeRecipe Recipe { bean, decos = Decos {decoSeq}}) = (Set.fromList do 
-          let ConstructorReps { argReps = beanArgReps } = constructorReps bean
+    demanded :: SomeBean -> Set TypeRep
+    demanded (SomeBean Bean { constructor, decos = Decos {decoSeq}}) = (Set.fromList do 
+          let ConstructorReps { argReps = beanArgReps } = constructorReps constructor
           Set.toList beanArgReps ++ do
             decoCon <- Data.Foldable.toList decoSeq
             let ConstructorReps { argReps = decoArgReps } = constructorReps decoCon
             Set.toList decoArgReps) `Set.difference` accumSet
 
 checkCycles ::
-  Map TypeRep SomeRecipe ->
+  Map TypeRep SomeBean ->
   Either (Graph.Cycle PlanItem) (AdjacencyMap PlanItem, Plan)
 checkCycles recipes = do
   let beanGraph =
@@ -312,8 +314,8 @@ checkCycles recipes = do
             flip
               Map.foldMapWithKey
               recipes
-              \beanRep (SomeRecipe (Recipe { 
-                  bean = beanCon :: Constructor bean,
+              \beanRep (SomeBean (Bean { 
+                  constructor = constructor :: Constructor bean,
                   decos = Decos {decoSeq}
                 })) -> do
                 let bareBean = BareBean beanRep
@@ -322,7 +324,7 @@ checkCycles recipes = do
                       (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoSeq) 
                       [(BeanDecorator beanRep decoIndex, decoCon)]
                     noEdgesForSelfLoops = (/=) do typeRep (Proxy @bean)
-                    beanDeps = constructorEdges noEdgesForSelfLoops bareBean beanCon
+                    beanDeps = constructorEdges noEdgesForSelfLoops bareBean constructor
                     decoDeps = concatMap (uncurry do constructorEdges (const True)) decos
                     full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
                     innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full) 
@@ -333,7 +335,7 @@ checkCycles recipes = do
     Right plan -> Right (beanGraph, plan)
 
 followPlan ::
-  Map TypeRep SomeRecipe ->
+  Map TypeRep SomeBean ->
   Map TypeRep Dynamic ->
   Plan ->
   Map TypeRep Dynamic
@@ -342,13 +344,13 @@ followPlan recipes initial plan = do
         Data.List.foldl' 
           do \super -> \case
                 BareBean rep -> case fromJust do Map.lookup rep recipes of
-                  SomeRecipe (Recipe { bean = beanCon }) -> do
-                    let (super', bean) = followConstructor beanCon final super 
+                  SomeBean (Bean { constructor }) -> do
+                    let (super', bean) = followConstructor constructor final super 
                         dyn = toDyn bean
                     Map.insert (dynTypeRep dyn) dyn super'
                 BuiltBean _ -> super
                 BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
-                  SomeRecipe (Recipe { decos = Decos {decoSeq} }) -> do
+                  SomeBean (Bean { decos = Decos {decoSeq} }) -> do
                     let indexStartingAt0 = fromIntegral (pred index)
                         decoCon = fromJust do Seq.lookup indexStartingAt0 decoSeq
                         (super', bean) = followDecorator decoCon final super
@@ -375,7 +377,7 @@ followConstructor ::
     Map TypeRep Dynamic -> 
     Map TypeRep Dynamic -> 
     (Map TypeRep Dynamic, component)
-followConstructor Constructor {constructor = Args {runArgs}} final super = do
+followConstructor Constructor {constructor_ = Args {runArgs}} final super = do
   let Extractor {runExtractor} = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor final
   case runArgs args of

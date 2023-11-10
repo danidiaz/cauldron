@@ -128,42 +128,40 @@ coolWiring =
         foldr
           ($)
           Cauldron.empty
-          [ Cauldron.insert @A Recipe { 
-              bean = Constructor do makeA & argsN <&> \(reg,a) -> regs1 reg a,
-              decos = mempty
-             },
-            Cauldron.insert @B Recipe {
-              bean = Constructor do makeB & argsN <&> regs0,
+          [ Cauldron.insert @A 
+              do SimpleBean do Constructor do makeA & argsN <&> \(reg,a) -> regs1 reg a,
+            Cauldron.insert @B Bean {
+              constructor = Constructor do makeB & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @C Recipe {
-              bean = Constructor do makeC & argsN <&> regs0,
+            Cauldron.insert @C Bean {
+              constructor = Constructor do makeC & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @D Recipe {
-              bean = Constructor do makeD & argsN <&> regs0,
+            Cauldron.insert @D Bean {
+              constructor = Constructor do makeD & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @E Recipe {
-              bean = Constructor do makeE & argsN <&> regs0,
+            Cauldron.insert @E Bean {
+              constructor = Constructor do makeE & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @F Recipe {
-              bean = Constructor do makeF & argsN <&> regs0,
+            Cauldron.insert @F Bean {
+              constructor = Constructor do makeF & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @G Recipe {
-              bean = Constructor do makeG & argsN <&> regs0,
+            Cauldron.insert @G Bean {
+              constructor = Constructor do makeG & argsN <&> regs0,
               decos = Cauldron.decosFromList [
                 Constructor do makeGDeco1 & argsN <&> regs0
               ]
             },
-            Cauldron.insert @H Recipe {
-              bean = Constructor do makeH & argsN <&> \(reg,a ) -> regs1 reg a,
+            Cauldron.insert @H Bean {
+              constructor = Constructor do makeH & argsN <&> \(reg,a ) -> regs1 reg a,
               decos = mempty
             },
-            Cauldron.insert @Z Recipe {
-              bean = Constructor do makeZ & argsN <&> regs0,
+            Cauldron.insert @Z Bean {
+              constructor = Constructor do makeZ & argsN <&> regs0,
               decos = Cauldron.decosFromList [
                 Constructor do makeZDeco1 & argsN <&> regs0,
                 Constructor do makeZDeco2 & argsN <&> regs0
