@@ -11,6 +11,8 @@ import Cauldron
 import Cauldron qualified
 import Data.Proxy
 import Data.Functor ((<&>))
+import Data.Function ((&))
+import Data.Monoid
 
 data A = A deriving (Show)
 
@@ -64,8 +66,8 @@ data Y = Y deriving (Show)
 
 data Z = Z deriving (Show)
 
-makeA :: A
-makeA = A
+makeA :: (Sum Int, A)
+makeA = (Sum 1, A)
 
 makeB :: B
 makeB = B
@@ -85,11 +87,11 @@ makeF _ _ = F
 makeG :: E -> F -> G
 makeG _ _ = G
 
-makeH :: A -> D -> G -> H
-makeH _ _ _ = H
+makeH :: A -> D -> G -> (Sum Int, H)
+makeH _ _ _ = (Sum 1, H)
 
-makeZ :: D -> H -> Z
-makeZ _ _ = Z
+makeZ :: Sum Int -> D -> H -> Z
+makeZ _ _ _ = Z
 
 makeZDeco1 :: B -> E -> Endo Z
 makeZDeco1 _ _ = mempty
@@ -100,45 +102,64 @@ makeZDeco2 _ = mempty
 makeGDeco1 :: A -> Endo G
 makeGDeco1 _ = mempty 
 
-boringWiring :: Z
+boringWiring :: (Sum Int, Z)
 boringWiring =
-  let a = makeA
+  let acc = acc1 <> acc2
+      (acc1, a) = makeA
       b = makeB
       c = makeC
       d = makeD
       e = makeE a
       f = makeF b c
-      g = appEndo (makeGDeco1 a) do makeG e f
-      h = makeH a d g
-      z = appEndo (makeZDeco2 f) do appEndo (makeZDeco1 b e) do makeZ d h
-   in z
+      gDeco1 = makeGDeco1 a
+      g = appEndo gDeco1 do makeG e f
+      zDeco1 = makeZDeco1 b e
+      zDeco2 = makeZDeco2 f
+      (acc2, h) = makeH a d g
+      z = appEndo (zDeco2 <> zDeco1) do makeZ acc d h
+   in (acc,z)
 
 -- | Here we don't have to worry about positional parameters. We simply throw 
 -- all the constructors into the 'Cauldron' and get the 'Z' value at the end,
 -- plus a graph we may want to draw.
-coolWiring :: Either Mishap (BeanGraph, Maybe Z)
+coolWiring :: Either Mishap (BeanGraph, Maybe (Sum Int, Z))
 coolWiring =
   let cauldron =
         foldr
           ($)
           Cauldron.empty
-          [ Cauldron.insert do constructor makeA,
-            Cauldron.insert do constructor makeB,
-            Cauldron.insert do constructor makeC,
-            Cauldron.insert do constructor makeD,
-            Cauldron.insert do constructor makeE,
-            Cauldron.insert do constructor makeF,
-            Cauldron.insert do constructor makeG,
-            Cauldron.decorate do constructor makeGDeco1,
-            Cauldron.insert do constructor makeH,
-            Cauldron.insert do constructor makeZ,
-            Cauldron.decorate do constructor makeZDeco1,
-            Cauldron.decorate do constructor makeZDeco2
+          [ Cauldron.insert @A do 
+              makeA & argsN <&> \(reg,a) -> regs1 reg a,
+            Cauldron.insert @B do 
+              makeB & argsN <&> regs0,
+            Cauldron.insert @C do 
+              makeC & argsN <&> regs0,
+            Cauldron.insert @D do 
+              makeD & argsN <&> regs0,
+            Cauldron.insert @E do 
+              makeE & argsN <&> regs0,
+            Cauldron.insert @F do 
+              makeF & argsN <&> regs0,
+            Cauldron.insert @G do 
+              makeG & argsN <&> regs0,
+            Cauldron.decorate @G do 
+              makeGDeco1 & argsN <&> regs0,
+            Cauldron.insert @H do 
+              makeH & argsN <&> \(reg,a ) -> regs1 reg a,
+            Cauldron.insert @Z do
+              makeZ & argsN <&> regs0,
+            Cauldron.decorate @Z do 
+              makeZDeco1 & argsN <&> regs0,
+            Cauldron.decorate @Z do
+              makeZDeco2 & argsN <&> regs0
           ]
      in case Cauldron.boil cauldron of 
           Left e -> Left e
           Right (beanGraph, beans) ->
-            Right (beanGraph, Cauldron.taste (Proxy @Z) beans)
+            Right (beanGraph, do
+                     reg <- Cauldron.taste (Proxy @(Sum Int)) beans
+                     z <- Cauldron.taste (Proxy @Z) beans
+                     pure (reg,z))
   
 
 main :: IO ()

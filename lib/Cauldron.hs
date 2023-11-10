@@ -25,6 +25,7 @@ module Cauldron
     argsN,
     Regs,
     regs0,
+    regs1,
     constructor,
     constructor0,
     constructor1,
@@ -99,7 +100,7 @@ empty = Cauldron {recipes = Map.empty}
 
 -- | Put a recipe (constructor) into the 'Cauldron'.
 insert ::
-  forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
+  forall (bean :: Type) (args :: [Type]) (accums :: [Type]) .
   (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
   -- | A curried function that takes the @args@ and returns the @bean@
   Args args (Regs accums bean) ->
@@ -127,7 +128,7 @@ insert con Cauldron {recipes} = do
     }
 
 decorate_ ::
-  forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
+  forall (bean :: Type) (args :: [Type]) (accums :: [Type]) .
   (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
   -- | Where to add the decorator is left to the caller to decide.
   (forall a. a -> Seq a -> Seq a) ->
@@ -159,7 +160,7 @@ decorate_ addToDecos con Cauldron {recipes} = do
     }
 
 decorate ::
-  forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
+  forall (bean :: Type) (args :: [Type]) (accums :: [Type]) .
   (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
   Args args (Regs accums (Endo bean)) ->
   Cauldron ->
@@ -434,6 +435,9 @@ data Regs (regs :: [Type]) r = Regs (NP I regs) r
 
 regs0 :: r -> Regs '[] r
 regs0 r = Regs Nil r
+
+regs1 :: reg1 -> r -> Regs '[reg1] r
+regs1 reg1 r = Regs (I reg1 :* Nil) r
 
 constructor :: 
   forall r (args :: [Type]) curried.
