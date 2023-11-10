@@ -130,37 +130,45 @@ coolWiring =
           Cauldron.empty
           [ Cauldron.insert @A 
               do SimpleBean do Constructor do makeA & argsN <&> \(reg,a) -> regs1 reg a,
-            Cauldron.insert @B Bean {
+            Cauldron.insert @B 
+              do Bean {
               constructor = Constructor do makeB & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @C Bean {
+            Cauldron.insert @C 
+              do Bean {
               constructor = Constructor do makeC & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @D Bean {
+            Cauldron.insert @D 
+              do Bean {
               constructor = Constructor do makeD & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @E Bean {
+            Cauldron.insert @E 
+             do Bean {
               constructor = Constructor do makeE & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @F Bean {
+            Cauldron.insert @F 
+            do Bean {
               constructor = Constructor do makeF & argsN <&> regs0,
               decos = mempty
             },
-            Cauldron.insert @G Bean {
+            Cauldron.insert @G 
+            do Bean {
               constructor = Constructor do makeG & argsN <&> regs0,
               decos = Cauldron.decosFromList [
                 Constructor do makeGDeco1 & argsN <&> regs0
               ]
             },
-            Cauldron.insert @H Bean {
+            Cauldron.insert @H 
+            do Bean {
               constructor = Constructor do makeH & argsN <&> \(reg,a ) -> regs1 reg a,
               decos = mempty
             },
-            Cauldron.insert @Z Bean {
+            Cauldron.insert @Z 
+            do Bean {
               constructor = Constructor do makeZ & argsN <&> regs0,
               decos = Cauldron.decosFromList [
                 Constructor do makeZDeco1 & argsN <&> regs0,
