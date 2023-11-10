@@ -199,11 +199,16 @@ constructorReps Constructor {constructor_ = (_ :: Args args (Regs accums compone
     typeRepHelper' = K (typeRep (Proxy @a), toDyn @a mempty)
 
 
-constructorEdges :: Typeable component => PlanItem -> Constructor component -> [(PlanItem,PlanItem)]
-constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) = 
+constructorEdges :: Typeable component => 
+  (TypeRep -> Bool) ->
+  PlanItem -> 
+  Constructor component -> 
+  [(PlanItem,PlanItem)]
+constructorEdges allowArg item (constructorReps -> ConstructorReps {argReps, regReps}) = 
   -- consumers depend on their args
   (do
     argRep <- Set.toList argReps
+    guard do allowArg argRep 
     let argItem = BuiltBean argRep 
     ignoreSelfLoop argItem
     [(item, argItem)])
@@ -310,7 +315,7 @@ checkCycles recipes = do
               Map.foldMapWithKey
               recipes
               \beanRep (SomeRecipe (Recipe { 
-                  beanConF = Identity beanCon,
+                  beanConF = Identity (beanCon :: Constructor bean),
                   decoCons
                 })) -> do
                 let bareBean = BareBean beanRep
@@ -318,8 +323,8 @@ checkCycles recipes = do
                     decos = do 
                       (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons) 
                       [(BeanDecorator beanRep decoIndex, decoCon)]
-                    beanDeps = constructorEdges bareBean beanCon
-                    decoDeps = concatMap (uncurry constructorEdges) decos
+                    beanDeps = constructorEdges (/= typeRep (Proxy @bean)) bareBean beanCon
+                    decoDeps = concatMap (uncurry do constructorEdges (const True)) decos
                     full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
                     innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full) 
                 beanDeps ++ decoDeps ++ innerDeps
@@ -466,17 +471,20 @@ constructor0 curried =
   regs0 <$> argsN curried 
 
 constructor1 :: 
-  forall r reg (args :: [Type]) curried.
-  (MulticurryableF args (reg, r) curried (IsFunction curried)) =>
+  forall r reg' reg (args :: [Type]) curried.
+  (MulticurryableF args (reg', r) curried (IsFunction curried)) =>
+  (reg' -> reg) ->
   curried ->
   Args args (Regs '[reg] r)
-constructor1 curried =
-  argsN curried <&> \(reg, r) -> Regs (I reg :* Nil) r 
+constructor1 f curried =
+  argsN curried <&> \(reg, r) -> Regs (I (f reg) :* Nil) r 
 
 constructor2 :: 
-  forall r reg1 reg2 (args :: [Type]) curried.
-  (MulticurryableF args (reg1, reg2, r) curried (IsFunction curried)) =>
+  forall r reg1' reg2' reg1 reg2 (args :: [Type]) curried.
+  (MulticurryableF args (reg1', reg2', r) curried (IsFunction curried)) =>
+  (reg1' -> reg1) ->
+  (reg2' -> reg2) ->
   curried ->
   Args args (Regs '[reg1, reg2] r)
-constructor2 curried =
-  argsN curried <&> \(reg1, reg2, r) -> Regs (I reg1 :* I reg2 :* Nil) r 
+constructor2 f1 f2 curried =
+  argsN curried <&> \(reg1, reg2, r) -> Regs (I (f1 reg1) :* I (f2 reg2) :* Nil) r 
