@@ -332,17 +332,17 @@ followPlan recipes =
   Data.List.foldl' \dynMap -> \case
     BareBean rep -> case fromJust do Map.lookup rep recipes of
       SomeRecipe (Recipe { beanConF = Identity beanCon }) -> do
-        let bean = followConstructor beanCon dynMap 
-        let dyn = toDyn bean
-        Map.insert (dynTypeRep dyn) dyn dynMap
+        let (dynMap', bean) = followConstructor beanCon dynMap 
+            dyn = toDyn bean
+        Map.insert (dynTypeRep dyn) dyn dynMap'
     BuiltBean _ -> dynMap
     BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
       SomeRecipe (Recipe { decoCons }) -> do
         let indexStartingAt0 = fromIntegral (pred index)
             decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
-            bean = followDecorator decoCon dynMap
+            (dynMap', bean) = followDecorator decoCon dynMap
             dyn = toDyn bean
-        Map.insert (dynTypeRep dyn) dyn dynMap
+        Map.insert (dynTypeRep dyn) dyn dynMap'
 
 data Mishap
   = BeanlessDecorator (Set TypeRep)
@@ -357,12 +357,17 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
-followConstructor :: Constructor component -> Map TypeRep Dynamic -> (Map TypeRep Dynamic, component)
+followConstructor :: 
+    Constructor component -> 
+    Map TypeRep Dynamic -> 
+    (Map TypeRep Dynamic, component)
 followConstructor Constructor {constructor_} dynMap = do
   let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor argsExtractor dynMap
-      Regs _ bean = runArgs constructor_ args
-  (dynMap, bean)
+  case runArgs constructor_ args of
+    Regs regs bean -> do
+      let inserters = cfoldMap_NP (Proxy @(Typeable `And` Monoid)) makeRegInserter regs
+      (appEndo inserters dynMap, bean)
 
 followDecorator :: 
     forall component . Typeable component => 
@@ -381,6 +386,14 @@ makeExtractor =
   let runExtractor dyns =
         fromJust do taste (Proxy @a) dyns
    in Extractor {runExtractor}
+
+makeRegInserter:: forall a. ((Typeable `And` Monoid) a) => I a -> Endo (Map TypeRep Dynamic)
+makeRegInserter (I a) =
+  let appEndo dynMap = do
+        let reg = fromJust do taste (Proxy @a) dynMap
+            dyn = toDyn (reg <> a)
+        Map.insert (dynTypeRep dyn) dyn dynMap
+   in Endo {appEndo}
 
 exportToDot :: FilePath -> BeanGraph -> IO ()
 exportToDot filepath BeanGraph {beanGraph} = do
