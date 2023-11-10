@@ -210,7 +210,6 @@ constructorEdges allowArg item (constructorReps -> ConstructorReps {argReps, reg
     argRep <- Set.toList argReps
     guard do allowArg argRep 
     let argItem = BuiltBean argRep 
-    ignoreSelfLoop argItem
     [(item, argItem)])
   ++
   -- regs depend on their producers
@@ -218,8 +217,6 @@ constructorEdges allowArg item (constructorReps -> ConstructorReps {argReps, reg
     (regRep, _) <- Map.toList regReps
     let repItem = BuiltBean regRep 
     [(repItem, item)])
-  where
-    ignoreSelfLoop a = guard do item /= a
 
 type Plan = [PlanItem]
 
@@ -323,7 +320,8 @@ checkCycles recipes = do
                     decos = do 
                       (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons) 
                       [(BeanDecorator beanRep decoIndex, decoCon)]
-                    beanDeps = constructorEdges (/= typeRep (Proxy @bean)) bareBean beanCon
+                    noEdgesForSelfLoops = (/=) do typeRep (Proxy @bean)
+                    beanDeps = constructorEdges noEdgesForSelfLoops bareBean beanCon
                     decoDeps = concatMap (uncurry do constructorEdges (const True)) decos
                     full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
                     innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full) 
