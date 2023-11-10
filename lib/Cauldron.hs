@@ -228,7 +228,7 @@ boil Cauldron {recipes} = do
   accumSet <- first DoubleDutyBeans do checkNoRegBeans recipes'
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes'
   (beanGraph, plan) <- first DependencyCycle do checkCycles recipes'
-  let beans = followPlan recipes' plan accumSet
+  let beans = followPlan recipes' accumSet plan 
   Right (BeanGraph {beanGraph}, beans)
 
 checkBeanlessDecos ::
@@ -325,10 +325,10 @@ checkCycles recipes = do
 
 followPlan ::
   Map TypeRep SomeRecipe ->
-  Plan ->
   Map TypeRep Dynamic ->
+  Plan ->
   Map TypeRep Dynamic
-followPlan recipes plan initial =
+followPlan recipes initial plan =
   Data.List.foldl'
     do
       \dynMap -> \case
