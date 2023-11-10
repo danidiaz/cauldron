@@ -328,25 +328,21 @@ followPlan ::
   Map TypeRep Dynamic ->
   Plan ->
   Map TypeRep Dynamic
-followPlan recipes initial plan =
-  Data.List.foldl'
-    do
-      \dynMap -> \case
-          BareBean rep -> case fromJust do Map.lookup rep recipes of
-            SomeRecipe (Recipe { beanConF = Identity beanCon }) -> do
-              let bean = followConstructor beanCon dynMap 
-              let dyn = toDyn bean
-              Map.insert (dynTypeRep dyn) dyn dynMap
-          BuiltBean _ -> dynMap
-          BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
-            SomeRecipe (Recipe { decoCons }) -> do
-              let indexStartingAt0 = fromIntegral (pred index)
-                  decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
-                  bean = followDecorator decoCon dynMap
-                  dyn = toDyn bean
-              Map.insert (dynTypeRep dyn) dyn dynMap
-    initial
-    plan
+followPlan recipes =
+  Data.List.foldl' \dynMap -> \case
+    BareBean rep -> case fromJust do Map.lookup rep recipes of
+      SomeRecipe (Recipe { beanConF = Identity beanCon }) -> do
+        let bean = followConstructor beanCon dynMap 
+        let dyn = toDyn bean
+        Map.insert (dynTypeRep dyn) dyn dynMap
+    BuiltBean _ -> dynMap
+    BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
+      SomeRecipe (Recipe { decoCons }) -> do
+        let indexStartingAt0 = fromIntegral (pred index)
+            decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
+            bean = followDecorator decoCon dynMap
+            dyn = toDyn bean
+        Map.insert (dynTypeRep dyn) dyn dynMap
 
 data Mishap
   = BeanlessDecorator (Set TypeRep)
@@ -361,23 +357,23 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
-followConstructor :: Constructor component -> Map TypeRep Dynamic -> component
-followConstructor Constructor {constructor_} theDyns = do
+followConstructor :: Constructor component -> Map TypeRep Dynamic -> (Map TypeRep Dynamic, component)
+followConstructor Constructor {constructor_} dynMap = do
   let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
-      args = runExtractor argsExtractor theDyns
+      args = runExtractor argsExtractor dynMap
       Regs _ bean = runArgs constructor_ args
-  bean
+  (dynMap, bean)
 
 followDecorator :: 
     forall component . Typeable component => 
     Constructor (Endo component) -> 
     Map TypeRep Dynamic -> 
-    component
-followDecorator decoCon theDyns = do
-  let Endo deco = followConstructor decoCon theDyns 
-      baseDyn = fromJust do Map.lookup (typeRep (Proxy @component)) theDyns
+    (Map TypeRep Dynamic,component)
+followDecorator decoCon dynMap = do
+  let (dynMap', Endo deco) = followConstructor decoCon dynMap 
+      baseDyn = fromJust do Map.lookup (typeRep (Proxy @component)) dynMap'
       base = fromJust do fromDynamic baseDyn
-  deco base
+  (dynMap', deco base)
 
 
 makeExtractor :: forall a. (Typeable a) => Extractor a
