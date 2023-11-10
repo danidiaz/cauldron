@@ -358,7 +358,7 @@ followConstructor :: Map TypeRep Dynamic -> Constructor component -> component
 followConstructor theDyns Constructor {constructor_} = do
   let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor argsExtractor theDyns
-      (_, bean) = runRegs do runArgs constructor_ args
+      Regs _ bean = runArgs constructor_ args
   bean
 
 followDecorator :: 
@@ -415,11 +415,11 @@ argsN ::
   Args args r
 argsN = Args . multiuncurry
 
-newtype Regs (regs :: [Type]) r = Regs {runRegs :: (NP I regs, r)}
-  deriving newtype (Functor)
+data Regs (regs :: [Type]) r = Regs (NP I regs) r
+  deriving Functor
 
 regs0 :: r -> Regs '[] r
-regs0 r = Regs (Nil, r)
+regs0 r = Regs Nil r
 
 constructor :: 
   forall r (args :: [Type]) curried.
@@ -442,7 +442,7 @@ constructor1 ::
   curried ->
   Args args (Regs '[reg] r)
 constructor1 curried =
-  argsN curried <&> \(reg, r) -> Regs ((I reg :* Nil), r) 
+  argsN curried <&> \(reg, r) -> Regs (I reg :* Nil) r 
 
 constructor2 :: 
   forall r reg1 reg2 (args :: [Type]) curried.
@@ -450,4 +450,4 @@ constructor2 ::
   curried ->
   Args args (Regs '[reg1, reg2] r)
 constructor2 curried =
-  argsN curried <&> \(reg1, reg2, r) -> Regs ((I reg1 :* I reg2 :* Nil), r) 
+  argsN curried <&> \(reg1, reg2, r) -> Regs (I reg1 :* I reg2 :* Nil) r 
