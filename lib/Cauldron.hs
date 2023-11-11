@@ -65,6 +65,7 @@ import qualified Data.List.NonEmpty
 import Data.Functor ((<&>))
 import Data.Type.Equality (testEquality)
 import qualified Type.Reflection
+import Control.Monad (guard)
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep (SomeRecipe_ Maybe)}
 
@@ -198,11 +199,16 @@ constructorReps Constructor {constructor_ = (_ :: Args args (Regs accums compone
     typeRepHelper' = K (typeRep (Proxy @a), toDyn @a mempty)
 
 
-constructorEdges :: Typeable component => PlanItem -> Constructor component -> [(PlanItem,PlanItem)]
-constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) = 
+constructorEdges :: Typeable component => 
+  (TypeRep -> Bool) ->
+  PlanItem -> 
+  Constructor component -> 
+  [(PlanItem,PlanItem)]
+constructorEdges allowArg item (constructorReps -> ConstructorReps {argReps, regReps}) = 
   -- consumers depend on their args
   (do
     argRep <- Set.toList argReps
+    guard do allowArg argRep 
     let argItem = BuiltBean argRep 
     [(item, argItem)])
   ++
@@ -306,7 +312,7 @@ checkCycles recipes = do
               Map.foldMapWithKey
               recipes
               \beanRep (SomeRecipe (Recipe { 
-                  beanConF = Identity beanCon,
+                  beanConF = Identity (beanCon :: Constructor bean),
                   decoCons
                 })) -> do
                 let bareBean = BareBean beanRep
@@ -314,8 +320,9 @@ checkCycles recipes = do
                     decos = do 
                       (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons) 
                       [(BeanDecorator beanRep decoIndex, decoCon)]
-                    beanDeps = constructorEdges bareBean beanCon
-                    decoDeps = concatMap (uncurry constructorEdges) decos
+                    noEdgesForSelfLoops = (/=) do typeRep (Proxy @bean)
+                    beanDeps = constructorEdges noEdgesForSelfLoops bareBean beanCon
+                    decoDeps = concatMap (uncurry do constructorEdges (const True)) decos
                     full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
                     innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full) 
                 beanDeps ++ decoDeps ++ innerDeps
@@ -329,21 +336,26 @@ followPlan ::
   Map TypeRep Dynamic ->
   Plan ->
   Map TypeRep Dynamic
-followPlan recipes =
-  Data.List.foldl' \dynMap -> \case
-    BareBean rep -> case fromJust do Map.lookup rep recipes of
-      SomeRecipe (Recipe { beanConF = Identity beanCon }) -> do
-        let (dynMap', bean) = followConstructor beanCon dynMap 
-            dyn = toDyn bean
-        Map.insert (dynTypeRep dyn) dyn dynMap'
-    BuiltBean _ -> dynMap
-    BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
-      SomeRecipe (Recipe { decoCons }) -> do
-        let indexStartingAt0 = fromIntegral (pred index)
-            decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
-            (dynMap', bean) = followDecorator decoCon dynMap
-            dyn = toDyn bean
-        Map.insert (dynTypeRep dyn) dyn dynMap'
+followPlan recipes initial plan = do
+  let final =
+        Data.List.foldl' 
+          do \super -> \case
+                BareBean rep -> case fromJust do Map.lookup rep recipes of
+                  SomeRecipe (Recipe { beanConF = Identity beanCon }) -> do
+                    let (super', bean) = followConstructor beanCon final super 
+                        dyn = toDyn bean
+                    Map.insert (dynTypeRep dyn) dyn super'
+                BuiltBean _ -> super
+                BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
+                  SomeRecipe (Recipe { decoCons }) -> do
+                    let indexStartingAt0 = fromIntegral (pred index)
+                        decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
+                        (super', bean) = followDecorator decoCon final super
+                        dyn = toDyn bean
+                    Map.insert (dynTypeRep dyn) dyn super'
+          initial
+          plan
+  final 
 
 data Mishap
   = BeanlessDecorator (Set TypeRep)
@@ -361,25 +373,27 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
 followConstructor :: 
     Constructor component -> 
     Map TypeRep Dynamic -> 
+    Map TypeRep Dynamic -> 
     (Map TypeRep Dynamic, component)
-followConstructor Constructor {constructor_} dynMap = do
+followConstructor Constructor {constructor_} final super = do
   let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
-      args = runExtractor argsExtractor dynMap
+      args = runExtractor argsExtractor final
   case runArgs constructor_ args of
     Regs regs bean -> do
       let inserters = cfoldMap_NP (Proxy @(Typeable `And` Monoid)) makeRegInserter regs
-      (appEndo inserters dynMap, bean)
+      (appEndo inserters super, bean)
 
 followDecorator :: 
     forall component . Typeable component => 
     Constructor (Endo component) -> 
     Map TypeRep Dynamic -> 
+    Map TypeRep Dynamic -> 
     (Map TypeRep Dynamic,component)
-followDecorator decoCon dynMap = do
-  let (dynMap', Endo deco) = followConstructor decoCon dynMap 
-      baseDyn = fromJust do Map.lookup (typeRep (Proxy @component)) dynMap'
+followDecorator decoCon final super = do
+  let (super', Endo deco) = followConstructor decoCon final super 
+      baseDyn = fromJust do Map.lookup (typeRep (Proxy @component)) super'
       base = fromJust do fromDynamic baseDyn
-  (dynMap', deco base)
+  (super', deco base)
 
 
 makeExtractor :: forall a. (Typeable a) => Extractor a
@@ -455,17 +469,20 @@ constructor0 curried =
   regs0 <$> argsN curried 
 
 constructor1 :: 
-  forall r reg (args :: [Type]) curried.
-  (MulticurryableF args (reg, r) curried (IsFunction curried)) =>
+  forall r reg' reg (args :: [Type]) curried.
+  (MulticurryableF args (reg', r) curried (IsFunction curried)) =>
+  (reg' -> reg) ->
   curried ->
   Args args (Regs '[reg] r)
-constructor1 curried =
-  argsN curried <&> \(reg, r) -> Regs (I reg :* Nil) r 
+constructor1 f curried =
+  argsN curried <&> \(reg, r) -> Regs (I (f reg) :* Nil) r 
 
 constructor2 :: 
-  forall r reg1 reg2 (args :: [Type]) curried.
-  (MulticurryableF args (reg1, reg2, r) curried (IsFunction curried)) =>
+  forall r reg1' reg2' reg1 reg2 (args :: [Type]) curried.
+  (MulticurryableF args (reg1', reg2', r) curried (IsFunction curried)) =>
+  (reg1' -> reg1) ->
+  (reg2' -> reg2) ->
   curried ->
   Args args (Regs '[reg1, reg2] r)
-constructor2 curried =
-  argsN curried <&> \(reg1, reg2, r) -> Regs (I reg1 :* I reg2 :* Nil) r 
+constructor2 f1 f2 curried =
+  argsN curried <&> \(reg1, reg2, r) -> Regs (I (f1 reg1) :* I (f2 reg2) :* Nil) r 

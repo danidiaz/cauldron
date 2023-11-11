@@ -84,8 +84,11 @@ makeE _ = E
 makeF :: B -> C -> F
 makeF _ _ = F
 
-makeG :: E -> F -> G
-makeG _ _ = G
+makeG :: E -> F -> G -> G -- self-dependency!
+makeG _ _ _ = G
+
+makeGDeco1 :: A -> Endo G
+makeGDeco1 _ = mempty 
 
 makeH :: A -> D -> G -> (Sum Int, H)
 makeH _ _ _ = (Sum 1, H)
@@ -99,9 +102,6 @@ makeZDeco1 _ _ = mempty
 makeZDeco2 :: F -> Endo Z
 makeZDeco2 _ = mempty
 
-makeGDeco1 :: A -> Endo G
-makeGDeco1 _ = mempty 
-
 boringWiring :: (Sum Int, Z)
 boringWiring =
   let acc = acc1 <> acc2
@@ -112,7 +112,7 @@ boringWiring =
       e = makeE a
       f = makeF b c
       gDeco1 = makeGDeco1 a
-      g = appEndo gDeco1 do makeG e f
+      g = appEndo gDeco1 do makeG e f g
       zDeco1 = makeZDeco1 b e
       zDeco2 = makeZDeco2 f
       (acc2, h) = makeH a d g
