@@ -129,32 +129,32 @@ coolWiring =
         foldr
           ($)
           mempty
-          [ insert @A do bare do makeA & pack \(reg, a) -> regs1 reg a,
-            insert @B do bare do makeB & pack_,
-            insert @C do bare do makeC & pack_,
-            insert @D do bare do makeD & pack_,
-            insert @E do bare do makeE & pack_,
-            insert @F do bare do makeF & pack_,
+          [ insert @A do bare do pack (\(reg, bean) -> regs1 reg bean) makeA,
+            insert @B do bare do pack_ makeB,
+            insert @C do bare do pack_ makeC,
+            insert @D do bare do pack_ makeD,
+            insert @E do bare do pack_ makeE,
+            insert @F do bare do pack_ makeF,
             insert @G do
               Bean
-                { constructor = makeG & pack_,
+                { constructor = pack_ makeG,
                   decos =
                     Cauldron.decosFromList
-                      [ makeGDeco1 & pack_
+                      [ pack_ makeGDeco1
                       ]
                 },
             insert @H do
               Bean
-                { constructor = makeH & pack \(reg, a) -> regs1 reg a,
+                { constructor = pack (\(reg, bean) -> regs1 reg bean) makeH,
                   decos = mempty
                 },
             insert @Z do
               Bean
-                { constructor = makeZ & pack_,
+                { constructor = pack_ makeZ,
                   decos =
                     Cauldron.decosFromList
-                      [ makeZDeco1 & pack_,
-                        makeZDeco2 & pack_
+                      [ pack_ makeZDeco1,
+                        pack_ makeZDeco2
                       ]
                 }
           ]
