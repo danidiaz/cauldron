@@ -56,3 +56,13 @@ test-suite tests
       tasty-hunit     ^>= 0.10,
       transformers,
       containers,
+
+test-suite app-tests
+    import:           common
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          appTests.hs
+    build-depends:    
+      cauldron,
+      tasty           ^>= 1.5,
+      tasty-hunit     ^>= 0.10,
