@@ -15,37 +15,38 @@
 module Cauldron
   ( Cauldron,
     empty,
-    Bean (..),
+    insert,
     adjust,
-    Constructor (Constructor),
-    BoiledBeans,
+    delete,
+    cook,
+    Bean (..),
+    bare,
     setConstructor,
     setDecos,
-    adjustDecos,
-    pack,
-    pack_,
+    overDecos,
     Decos,
     addFirst,
     addLast,
     fromConstructors,
-    insert,
-    -- insert',
-    bare,
-    delete,
-    cook,
-    Mishap (..),
+    Constructor,
+    pack_,
+    pack,
+    regs1,
+    regs2,
+    regs3,
     BeanGraph (..),
-    taste,
+    PlanItem(..),
     exportToDot,
+    BoiledBeans,
+    taste,
+    -- insert',
+    Mishap (..),
     --
     -- Args,
     -- args0,
     -- argsN,
-    Regs,
+    -- Regs,
     -- noRegs,
-    regs1,
-    regs2,
-    regs3,
   )
 where
 
@@ -59,7 +60,6 @@ import Data.ByteString qualified
 import Data.Dynamic
 import Data.Foldable qualified
 import Data.Functor ((<&>))
-import Data.Functor.Identity
 import Data.Kind
 import Data.List qualified
 import Data.List.NonEmpty (NonEmpty)
@@ -117,8 +117,8 @@ setConstructor constructor (Bean {decos}) = Bean {constructor,decos}
 setDecos :: Decos bean -> Bean bean -> Bean bean
 setDecos decos (Bean {constructor}) = Bean {constructor,decos}
 
-adjustDecos :: (Decos bean -> Decos bean) -> Bean bean -> Bean bean
-adjustDecos f (Bean {constructor, decos}) = Bean {constructor, decos = f decos}
+overDecos :: (Decos bean -> Decos bean) -> Bean bean -> Bean bean
+overDecos f (Bean {constructor, decos}) = Bean {constructor, decos = f decos}
 
 addFirst :: Constructor (Endo bean) -> Decos bean -> Decos bean
 addFirst con (Decos {decoCons}) = Decos do con Seq.<| decoCons
@@ -161,15 +161,6 @@ insert recipe Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
   Cauldron {recipes = Map.insert rep (SomeBean recipe) recipes}
 
---                Just (SomeBean (Bean
---                    { beanConF,
---                      decoCons = Seq.empty
---                    }))
---              Just (SomeBean (r :: Bean_ Maybe a)) ->
---                case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
---                  Nothing -> error "should never happen"
---                  Just Refl -> Just do SomeBean r {beanConF}
-
 adjust ::
   forall bean.
   (Typeable bean) =>
@@ -189,46 +180,6 @@ adjust f (Cauldron {recipes}) = do
           rep
           recipes
     }
-
--- decorate_ ::
---   forall (bean :: Type) (args :: [Type]) (accums :: [Type]) .
---   (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
---   -- | Where to add the decorator is left to the caller to decide.
---   (forall a. a -> Seq a -> Seq a) ->
---   Args args (Regs accums (Endo bean)) ->
---   Cauldron ->
---   Cauldron
--- decorate_ addToDecos con Cauldron {recipes} = do
---   let rep = typeRep (Proxy @bean)
---       decoCon = Constructor @args @accums @(Endo bean) con
---   Cauldron
---     { recipes =
---         Map.alter
---           do
---             \case
---               Nothing ->
---                 Just
---                   (SomeBean Bean
---                     { beanConF = Nothing,
---                       decoCons = Seq.singleton decoCon
---                     })
---               Just (SomeBean (r :: Bean_ Maybe a)) -> do
---                 case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
---                   Nothing -> error "should never happen"
---                   Just Refl -> do
---                     let Bean {decoCons} = r
---                     Just do SomeBean r {decoCons = addToDecos decoCon decoCons}
---           rep
---           recipes
---     }
---
--- decorate ::
---   forall (bean :: Type) (args :: [Type]) (accums :: [Type]) .
---   (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
---   Args args (Regs accums (Endo bean)) ->
---   Cauldron ->
---   Cauldron
--- decorate = decorate_ do flip (Seq.|>)
 
 delete ::
   (Typeable bean) =>

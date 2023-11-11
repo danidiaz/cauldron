@@ -158,7 +158,7 @@ coolWiring =
                       ]
                 }
           ]
-   in case Cauldron.cook cauldron of
+   in case cook cauldron of
         Left e -> Left e
         Right (beanGraph, beans) ->
           Right
