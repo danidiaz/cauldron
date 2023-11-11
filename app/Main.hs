@@ -9,11 +9,7 @@
 module Main where
 
 import Cauldron
-import Cauldron qualified
-import Data.Function ((&))
-import Data.Functor ((<&>))
 import Data.Monoid
-import Data.Proxy
 
 data A = A deriving (Show)
 
@@ -123,50 +119,50 @@ boringWiring =
 -- | Here we don't have to worry about positional parameters. We simply throw
 -- all the constructors into the 'Cauldron' and get the 'Z' value at the end,
 -- plus a graph we may want to draw.
-coolWiring :: Either Mishap (BeanGraph, Maybe (Sum Int, Z))
+coolWiring :: Either Mishap (BeanGraph, IO (Maybe (Sum Int, Z)))
 coolWiring =
-  let cauldron =
+  let cauldron :: Cauldron IO =
         foldr
           ($)
           mempty
-          [ insert @A do bare do pack (\(reg, bean) -> regs1 reg bean) makeA,
-            insert @B do bare do pack_ makeB,
-            insert @C do bare do pack_ makeC,
-            insert @D do bare do pack_ makeD,
-            insert @E do bare do pack_ makeE,
-            insert @F do bare do pack_ makeF,
+          [ insert @A do bare do pack (\(reg, bean) -> regs1 reg bean) do pure makeA,
+            insert @B do bare do pack_ do pure makeB,
+            insert @C do bare do pack_ do pure makeC,
+            insert @D do bare do pack_ do pure makeD,
+            insert @E do bare do pack_ do pure makeE,
+            insert @F do bare do pack_ do pure makeF,
             insert @G do
               Bean
-                { constructor = pack_ makeG,
+                { constructor = pack_ do pure makeG,
                   decos =
                     fromConstructors
-                      [ pack_ makeGDeco1
+                      [ pack_ do pure makeGDeco1
                       ]
                 },
             insert @H do
               Bean
-                { constructor = pack (\(reg, bean) -> regs1 reg bean) makeH,
+                { constructor = pack (\(reg, bean) -> regs1 reg bean) do pure makeH,
                   decos = mempty
                 },
             insert @Z do
               Bean
-                { constructor = pack_ makeZ,
+                { constructor = pack_ do pure makeZ,
                   decos =
                     fromConstructors
-                      [ pack_ makeZDeco1,
-                        pack_ makeZDeco2
+                      [ pack_ do pure makeZDeco1,
+                        pack_ do pure makeZDeco2
                       ]
                 }
           ]
    in case cook cauldron of
         Left e -> Left e
-        Right (beanGraph, beans) ->
-          Right
-            ( beanGraph,
-              do
-                reg <- taste @(Sum Int) beans
-                z <- taste @Z beans
-                pure (reg, z)
+        Right (beanGraph, action) ->
+          Right (beanGraph, do
+            beans <- action
+            pure do 
+              reg <- taste @(Sum Int) beans
+              z <- taste @Z beans
+              pure (reg, z)
             )
 
 main :: IO ()
@@ -175,6 +171,7 @@ main = do
   case coolWiring of
     Left mishap -> do
       print mishap
-    Right (beanGraph, bean) -> do
-      print bean
+    Right (beanGraph, action) -> do
+      result <- action
+      print result
       exportToDot "beans.dot" beanGraph
