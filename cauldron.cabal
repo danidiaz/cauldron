@@ -11,11 +11,14 @@ build-type:         Simple
 extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 
-common warnings
+common common
+    build-depends:
+        base
     ghc-options: -Wall
+    default-language: GHC2021
 
 library
-    import:           warnings
+    import:           common
     exposed-modules:  Cauldron
     -- other-modules:
     -- other-extensions:
@@ -28,18 +31,26 @@ library
         bytestring,
         text,
     hs-source-dirs:   lib
-    default-language: GHC2021
 
 executable cauldron-example-wiring
-    import:           warnings
+    import:           common
     main-is:          Main.hs
     -- other-modules:
     -- other-extensions:
     build-depends:
         base,
-        containers,
-        algebraic-graphs,
-        cauldron
+        cauldron,
 
     hs-source-dirs:   app
-    default-language: GHC2021
+
+test-suite tests
+    import:           common
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          tests.hs
+    build-depends:    
+      cauldron,
+      bytestring,
+      text,
+      tasty           ^>= 1.5,
+      tasty-hunit     ^>= 0.10,
