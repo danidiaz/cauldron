@@ -30,6 +30,9 @@ very beginning of the application, and it's easy to write an unit test for it.
 On the plus side, this library lets you render the graph of dependencies between
 components, something which is difficult to do with naive manual wiring.
 
+Another advantage is that you can easily modify an existing web of dependencies,
+be by inserting a new component, overriding another, or adding a decorator.
+
 # The expected shape of constructors
 
 **cauldron** expects component constructors with a shape like:
