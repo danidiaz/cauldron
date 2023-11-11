@@ -39,7 +39,7 @@ module Cauldron
     regs1,
     regs2,
     regs3,
-    BeanGraph (..),
+    DependencyGraph (..),
     PlanItem (..),
     exportToDot,
     BoiledBeans,
@@ -244,13 +244,13 @@ data PlanItem
 cook ::
   (Applicative m) =>
   Cauldron m ->
-  Either BadBeans (BeanGraph, m BoiledBeans)
+  Either BadBeans (DependencyGraph, m BoiledBeans)
 cook Cauldron {recipes} = do
   accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes
-  (beanGraph, plan) <- first DependencyCycle do checkCycles recipes
+  (graph, plan) <- first DependencyCycle do checkCycles recipes
   Right
-    ( BeanGraph {beanGraph},
+    ( DependencyGraph {graph},
       sequenceRecipes recipes <&> \recipes' -> do
         let beans = followPlan recipes' accumSet plan
         BoiledBeans {beans}
@@ -319,7 +319,7 @@ checkCycles ::
   Map TypeRep (SomeBean m) ->
   Either (Graph.Cycle PlanItem) (AdjacencyMap PlanItem, Plan)
 checkCycles recipes = do
-  let beanGraph =
+  let graph =
         Graph.edges
           do
             flip
@@ -344,10 +344,10 @@ checkCycles recipes = do
                       full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
                       innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
                   beanDeps ++ decoDeps ++ innerDeps
-  case Graph.topSort beanGraph of
+  case Graph.topSort graph of
     Left recipeCycle ->
       Left recipeCycle
-    Right (reverse -> plan) -> Right (beanGraph, plan)
+    Right (reverse -> plan) -> Right (graph, plan)
 
 followPlan ::
   Map TypeRep (SomeBean I) ->
@@ -384,7 +384,7 @@ data BadBeans
   | DependencyCycle (NonEmpty PlanItem)
   deriving stock (Show)
 
-newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
+newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap PlanItem}
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
@@ -429,8 +429,8 @@ makeRegInserter (I a) =
         Map.insert (dynTypeRep dyn) dyn dynMap
    in Endo {appEndo}
 
-exportToDot :: FilePath -> BeanGraph -> IO ()
-exportToDot filepath BeanGraph {beanGraph} = do
+exportToDot :: FilePath -> DependencyGraph -> IO ()
+exportToDot filepath DependencyGraph {graph} = do
   let prettyRep =
         let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
          in \case
@@ -440,7 +440,7 @@ exportToDot filepath BeanGraph {beanGraph} = do
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
-          beanGraph
+          graph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
 
 taste' :: forall a. (Typeable a) => Map TypeRep Dynamic -> Maybe a

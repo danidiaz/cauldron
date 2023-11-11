@@ -107,7 +107,7 @@ makeZDeco1 _ _ = mempty
 makeZDeco2 :: IO (F -> (Initializer, Endo Z))
 makeZDeco2 = pure \_ -> (Initializer (putStrLn "Z deco init"), mempty)
 
-coolWiring :: Either BadBeans (BeanGraph, IO (Maybe (Initializer, Inspector, Z)))
+coolWiring :: Either BadBeans (DependencyGraph, IO (Maybe (Initializer, Inspector, Z)))
 coolWiring =
   let cauldron :: Cauldron IO =
         empty

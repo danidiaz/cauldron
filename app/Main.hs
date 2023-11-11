@@ -192,7 +192,7 @@ boringWiring = do
 -- graph we may want to draw.
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Either BadBeans (BeanGraph, IO (Maybe (Initializer, Inspector, Z)))
+coolWiring :: Either BadBeans (DependencyGraph, IO (Maybe (Initializer, Inspector, Z)))
 coolWiring =
   let cauldron :: Cauldron IO =
         empty
