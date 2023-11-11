@@ -43,7 +43,7 @@ module Cauldron
     BoiledBeans,
     taste,
     -- insert',
-    Mishap (..),
+    BadBeans (..),
     --
     -- Args,
     -- args0,
@@ -245,9 +245,9 @@ data PlanItem
   deriving stock (Show, Eq, Ord)
 
 -- | Try to build a @bean@ from the recipes stored in the 'Cauldron'.
-cook :: Functor m =>
+cook :: Applicative m =>
   Cauldron m ->
-  Either Mishap (BeanGraph, m BoiledBeans)
+  Either BadBeans (BeanGraph, m BoiledBeans)
 cook Cauldron {recipes} = do
   accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes
@@ -256,8 +256,23 @@ cook Cauldron {recipes} = do
     let beans = followPlan recipes' accumSet plan
     BoiledBeans {beans})
 
-sequenceRecipes :: Map TypeRep (SomeBean m) -> m (Map TypeRep (SomeBean I))
-sequenceRecipes = undefined
+sequenceRecipes :: 
+  forall m. Applicative m => 
+  Map TypeRep (SomeBean m) -> 
+  m (Map TypeRep (SomeBean I))
+sequenceRecipes = traverse sequenceSomeBean
+  where
+  sequenceSomeBean :: SomeBean m -> m (SomeBean I)
+  sequenceSomeBean (SomeBean theBean) = 
+    SomeBean <$> sequenceBean theBean
+  sequenceBean :: Bean m a -> m (Bean I a)
+  sequenceBean Bean {constructor, decos}  = 
+    Bean <$> sequenceConstructor constructor <*> sequenceDecos decos
+  sequenceConstructor :: Constructor m a -> m (Constructor I a)
+  sequenceConstructor Constructor {constructor_} = 
+    Constructor . I <$> constructor_
+  sequenceDecos :: Decos m a -> m (Decos I a)
+  sequenceDecos Decos {decoCons} = Decos <$> traverse sequenceConstructor decoCons
 
 checkNoDoubleDutyBeans ::
   Map TypeRep (SomeBean m) ->
@@ -360,7 +375,7 @@ followPlan recipes initial plan = do
           plan
   final
 
-data Mishap
+data BadBeans
   = -- | Beans working as accumulartors and regular beans.
     DoubleDutyBeans (Set TypeRep)
   | MissingDependencies (Map TypeRep (Set TypeRep))
