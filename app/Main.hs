@@ -181,9 +181,9 @@ boringWiring = do
       gDeco1 = makeGDeco1 a
       -- Here we apply a single decorator.
       g = appEndo gDeco1 do makeG e f g
+      (init1, inspector3, h) = makeH a d g
       zDeco1 = makeZDeco1 b e
-      (init1, zDeco2) = makeZDeco2' f
-      (init2, inspector3, h) = makeH a d g
+      (init2, zDeco2) = makeZDeco2' f
       -- Compose the decorators before applying them.
       z = appEndo (zDeco2 <> zDeco1) do makeZ inspector d h
   pure (initializer, inspector , z)
