@@ -6,8 +6,8 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
@@ -18,15 +18,19 @@ module Cauldron
     Bean (..),
     adjust,
     Constructor (Constructor),
+    BoiledBeans,
+    setConstructor,
+    setDecos,
+    adjustDecos,
     pack,
     pack_,
     Decos,
     addFirst,
     addLast,
-    decosFromList,
+    fromConstructors,
     insert,
     -- insert',
-    simple,
+    bare,
     delete,
     cook,
     Mishap (..),
@@ -40,6 +44,8 @@ module Cauldron
     Regs,
     -- noRegs,
     regs1,
+    regs2,
+    regs3,
   )
 where
 
@@ -70,9 +76,9 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified
 import Data.Text.Encoding qualified
-import Data.Tuple (Solo (..))
 import Data.Type.Equality (testEquality)
 import Data.Typeable
+import GHC.Exts (IsList (..))
 import Multicurryable
 import Type.Reflection qualified
 
@@ -90,21 +96,38 @@ data Bean bean where
     } ->
     Bean bean
 
-simple :: Constructor a -> Bean a
-simple constructor = Bean {constructor, decos = mempty}
+newtype BoiledBeans where
+  BoiledBeans :: { beans :: Map TypeRep Dynamic } -> BoiledBeans
+
+bare :: Constructor a -> Bean a
+bare constructor = Bean {constructor, decos = mempty}
 
 newtype Decos bean where
-  Decos :: {decoSeq :: Seq (Constructor (Endo bean))} -> Decos bean
+  Decos :: {decoCons :: Seq (Constructor (Endo bean))} -> Decos bean
   deriving newtype (Semigroup, Monoid)
 
+instance IsList (Decos bean) where
+  type Item (Decos bean) = Constructor (Endo bean)
+  fromList decos = Decos do GHC.Exts.fromList decos
+  toList (Decos {decoCons}) = GHC.Exts.toList decoCons
+
+setConstructor :: Constructor bean -> Bean bean -> Bean bean
+setConstructor constructor (Bean {decos}) = Bean {constructor,decos}
+
+setDecos :: Decos bean -> Bean bean -> Bean bean
+setDecos decos (Bean {constructor}) = Bean {constructor,decos}
+
+adjustDecos :: (Decos bean -> Decos bean) -> Bean bean -> Bean bean
+adjustDecos f (Bean {constructor, decos}) = Bean {constructor, decos = f decos}
+
 addFirst :: Constructor (Endo bean) -> Decos bean -> Decos bean
-addFirst con (Decos {decoSeq}) = Decos do con Seq.<| decoSeq
+addFirst con (Decos {decoCons}) = Decos do con Seq.<| decoCons
 
 addLast :: Constructor (Endo bean) -> Decos bean -> Decos bean
-addLast con (Decos {decoSeq}) = Decos do decoSeq Seq.|> con
+addLast con (Decos {decoCons}) = Decos do decoCons Seq.|> con
 
-decosFromList :: [Constructor (Endo bean)] -> Decos bean
-decosFromList cons = Decos do Seq.fromList cons
+fromConstructors :: [Constructor (Endo bean)] -> Decos bean
+fromConstructors cons = Decos do Seq.fromList cons
 
 data Constructor component where
   Constructor ::
@@ -126,14 +149,6 @@ newtype Extractor a where
 
 empty :: Cauldron
 empty = mempty
-
-insert' ::
-  forall (bean :: Type).
-  (Typeable bean) =>
-  Constructor bean ->
-  Cauldron ->
-  Cauldron
-insert' constructor = insert Bean {constructor, decos = mempty}
 
 -- | Put a recipe (constructor) into the 'Cauldron'.
 insert ::
@@ -278,18 +293,18 @@ data PlanItem
 -- | Try to build a @bean@ from the recipes stored in the 'Cauldron'.
 cook ::
   Cauldron ->
-  Either Mishap (BeanGraph, Map TypeRep Dynamic)
+  Either Mishap (BeanGraph, BoiledBeans)
 cook Cauldron {recipes} = do
-  accumSet <- first DoubleDutyBeans do checkNoRegBeans recipes
+  accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes
   (beanGraph, plan) <- first DependencyCycle do checkCycles recipes
   let beans = followPlan recipes accumSet plan
-  Right (BeanGraph {beanGraph}, beans)
+  Right (BeanGraph {beanGraph}, BoiledBeans {beans})
 
-checkNoRegBeans ::
+checkNoDoubleDutyBeans ::
   Map TypeRep SomeBean ->
   Either (Set TypeRep) (Map TypeRep Dynamic)
-checkNoRegBeans recipes = do
+checkNoDoubleDutyBeans recipes = do
   let common = Set.intersection (Map.keysSet accumSet) (Map.keysSet recipes)
   if not (Set.null common)
     then Left common
@@ -298,10 +313,10 @@ checkNoRegBeans recipes = do
     accumSet = Map.fromList do
       recipe <- Data.Foldable.toList recipes
       case recipe of
-        (SomeBean Bean {constructor, decos = Decos {decoSeq}}) -> do
+        (SomeBean Bean {constructor, decos = Decos {decoCons}}) -> do
           let ConstructorReps {regReps = beanAccums} = constructorReps constructor
           Map.toList beanAccums ++ do
-            decoCon <- Data.Foldable.toList decoSeq
+            decoCon <- Data.Foldable.toList decoCons
             let ConstructorReps {regReps = decoAccums} = constructorReps decoCon
             Map.toList decoAccums
 
@@ -316,11 +331,11 @@ checkMissingDeps accumSet recipes = do
     else Right ()
   where
     demanded :: SomeBean -> Set TypeRep
-    demanded (SomeBean Bean {constructor, decos = Decos {decoSeq}}) =
+    demanded (SomeBean Bean {constructor, decos = Decos {decoCons}}) =
       ( Set.fromList do
           let ConstructorReps {argReps = beanArgReps} = constructorReps constructor
           Set.toList beanArgReps ++ do
-            decoCon <- Data.Foldable.toList decoSeq
+            decoCon <- Data.Foldable.toList decoCons
             let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
             Set.toList decoArgReps
       )
@@ -340,14 +355,14 @@ checkCycles recipes = do
                ( SomeBean
                    ( Bean
                        { constructor = constructor :: Constructor bean,
-                         decos = Decos {decoSeq}
+                         decos = Decos {decoCons}
                        }
                      )
                  ) -> do
                   let bareBean = BareBean beanRep
                       builtBean = BuiltBean beanRep
                       decos = do
-                        (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoSeq)
+                        (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons)
                         [(BeanDecorator beanRep decoIndex, decoCon)]
                       noEdgesForSelfLoops = (/=) do typeRep (Proxy @bean)
                       beanDeps = constructorEdges noEdgesForSelfLoops bareBean constructor
@@ -377,9 +392,9 @@ followPlan recipes initial plan = do
                   Map.insert (dynTypeRep dyn) dyn super'
               BuiltBean _ -> super
               BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
-                SomeBean (Bean {decos = Decos {decoSeq}}) -> do
+                SomeBean (Bean {decos = Decos {decoCons}}) -> do
                   let indexStartingAt0 = fromIntegral (pred index)
-                      decoCon = fromJust do Seq.lookup indexStartingAt0 decoSeq
+                      decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
                       (super', bean) = followDecorator decoCon final super
                       dyn = toDyn bean
                   Map.insert (dynTypeRep dyn) dyn super'
@@ -428,13 +443,13 @@ followDecorator decoCon final super = do
 makeExtractor :: forall a. (Typeable a) => Extractor a
 makeExtractor =
   let runExtractor dyns =
-        fromJust do taste (Proxy @a) dyns
+        fromJust do taste' @a dyns
    in Extractor {runExtractor}
 
 makeRegInserter :: forall a. ((Typeable `And` Monoid) a) => I a -> Endo (Map TypeRep Dynamic)
 makeRegInserter (I a) =
   let appEndo dynMap = do
-        let reg = fromJust do taste (Proxy @a) dynMap
+        let reg = fromJust do taste' @a dynMap
             dyn = toDyn (reg <> a)
         Map.insert (dynTypeRep dyn) dyn dynMap
    in Endo {appEndo}
@@ -453,17 +468,17 @@ exportToDot filepath BeanGraph {beanGraph} = do
           beanGraph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
 
-taste :: forall a. (Typeable a) => Proxy a -> Map TypeRep Dynamic -> Maybe a
-taste _ dyns = do
+taste' :: forall a. (Typeable a) => Map TypeRep Dynamic -> Maybe a
+taste' beans = do
   let rep = typeRep (Proxy @a)
-  dyn <- Map.lookup rep dyns
+  dyn <- Map.lookup rep beans
   fromDynamic @a dyn
+
+taste :: forall a. (Typeable a) => BoiledBeans -> Maybe a
+taste BoiledBeans {beans} = taste' beans
 
 newtype Args args r = Args {runArgs :: NP I args -> r}
   deriving newtype (Functor, Applicative, Monad)
-
-args0 :: r -> Args '[] r
-args0 r = Args do \_ -> r
 
 argsN ::
   forall (args :: [Type]) r curried.
@@ -475,11 +490,14 @@ argsN = Args . multiuncurry
 data Regs (regs :: [Type]) r = Regs (NP I regs) r
   deriving (Functor)
 
-noRegs :: r -> Regs '[] r
-noRegs r = Regs Nil r
+regs1 :: reg1 -> bean -> Regs '[reg1] bean
+regs1 reg1 bean = Regs (I reg1 :* Nil) bean
 
-regs1 :: reg1 -> r -> Regs '[reg1] r
-regs1 reg1 r = Regs (I reg1 :* Nil) r
+regs2 :: reg1 -> reg2 -> bean -> Regs '[reg1, reg2] bean
+regs2 reg1 reg2 bean = Regs (I reg1 :* I reg2 :* Nil) bean
+
+regs3 :: reg1 -> reg2 -> reg3 -> bean -> Regs '[reg1, reg2, reg3] bean
+regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
 pack ::
   forall (args :: [Type]) r curried regs bean.
@@ -500,12 +518,3 @@ pack_ ::
   curried ->
   Constructor bean
 pack_ curried = Constructor do argsN curried <&> Regs Nil
-
--- class ToRegs r regs bean | r -> regs bean where
---   regs :: r -> Regs regs bean
---
--- instance ToRegs (Solo bean) '[] bean where
---   regs (MkSolo bean) = Regs Nil bean
---
--- instance ToRegs (reg1,bean) '[reg1] bean where
---   regs (reg1, bean) = Regs Nil bean

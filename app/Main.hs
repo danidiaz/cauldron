@@ -139,7 +139,7 @@ coolWiring =
               Bean
                 { constructor = pack_ makeG,
                   decos =
-                    Cauldron.decosFromList
+                    fromConstructors
                       [ pack_ makeGDeco1
                       ]
                 },
@@ -152,7 +152,7 @@ coolWiring =
               Bean
                 { constructor = pack_ makeZ,
                   decos =
-                    Cauldron.decosFromList
+                    fromConstructors
                       [ pack_ makeZDeco1,
                         pack_ makeZDeco2
                       ]
@@ -164,8 +164,8 @@ coolWiring =
           Right
             ( beanGraph,
               do
-                reg <- Cauldron.taste (Proxy @(Sum Int)) beans
-                z <- Cauldron.taste (Proxy @Z) beans
+                reg <- taste @(Sum Int) beans
+                z <- taste @Z beans
                 pure (reg, z)
             )
 
