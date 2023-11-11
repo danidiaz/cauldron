@@ -2,15 +2,15 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FunctionalDependencies #-}
 
 module Cauldron
   ( Cauldron,
@@ -70,11 +70,11 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified
 import Data.Text.Encoding qualified
+import Data.Tuple (Solo (..))
 import Data.Type.Equality (testEquality)
 import Data.Typeable
 import Multicurryable
 import Type.Reflection qualified
-import Data.Tuple (Solo(..))
 
 newtype Cauldron where
   Cauldron :: {recipes :: Map TypeRep SomeBean} -> Cauldron
@@ -127,13 +127,13 @@ newtype Extractor a where
 empty :: Cauldron
 empty = mempty
 
-insert' :: 
+insert' ::
   forall (bean :: Type).
   (Typeable bean) =>
   Constructor bean ->
   Cauldron ->
   Cauldron
-insert' constructor = insert Bean { constructor, decos = mempty}
+insert' constructor = insert Bean {constructor, decos = mempty}
 
 -- | Put a recipe (constructor) into the 'Cauldron'.
 insert ::
@@ -481,21 +481,21 @@ noRegs r = Regs Nil r
 regs1 :: reg1 -> r -> Regs '[reg1] r
 regs1 reg1 r = Regs (I reg1 :* Nil) r
 
-pack :: 
+pack ::
   forall (args :: [Type]) r curried regs bean.
-  (MulticurryableF args r curried (IsFunction curried), 
-   All Typeable args, 
-   All (Typeable `And` Monoid) regs
+  ( MulticurryableF args r curried (IsFunction curried),
+    All Typeable args,
+    All (Typeable `And` Monoid) regs
   ) =>
   (r -> Regs regs bean) ->
   curried ->
   Constructor bean
 pack f curried = Constructor do argsN curried <&> f
 
-pack_ :: 
+pack_ ::
   forall (args :: [Type]) bean curried.
-  (MulticurryableF args bean curried (IsFunction curried), 
-   All Typeable args 
+  ( MulticurryableF args bean curried (IsFunction curried),
+    All Typeable args
   ) =>
   curried ->
   Constructor bean
@@ -503,9 +503,9 @@ pack_ curried = Constructor do argsN curried <&> Regs Nil
 
 -- class ToRegs r regs bean | r -> regs bean where
 --   regs :: r -> Regs regs bean
--- 
+--
 -- instance ToRegs (Solo bean) '[] bean where
 --   regs (MkSolo bean) = Regs Nil bean
--- 
+--
 -- instance ToRegs (reg1,bean) '[reg1] bean where
 --   regs (reg1, bean) = Regs Nil bean
