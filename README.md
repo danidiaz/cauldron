@@ -1,8 +1,11 @@
 # cauldron
 
 > Double, double toil and trouble;
+>
 > Fire burn and caldron bubble.
+>
 > Fillet of a fenny snake,
+>
 > In the caldron boil and bake;
 
 **cauldron** is a library for dependency injection. It's an alternative to manually wiring the constructors for the components of your application. 
@@ -17,8 +20,8 @@ It expects the component constructors to conform to a certain shape.
 
 To be honest, you probably shouldn't use this library. I have noticed that using
 **cauldron** is actually *more* verbose that manually doing the wiring yourself.
-Perhaps it starts to pay for complex components with many dependencies, but I'm
-not sure.
+Perhaps it would start to pay for complex components with many dependencies, but
+I'm not sure.
 
 Another possible objection to this library is that wiring errors are found at
 runtime. I don't find that to be a problem though: the wiring happens at the
@@ -47,9 +50,9 @@ can't make use of the `Logger` and `Repository` dependencies.
 In practice, the outer action doesn't need to be `IO`, it can be any other
 `Applicative`.
 
-Two or more constructors for the same component type are disallowed. The wiring
-is type-directed, so there can't be any ambiguity about what value constructor
-to use.
+Having more than one constructor for the same component type is disallowed. The
+wiring is type-directed, so there can't be any ambiguity about what value
+constructor to use.
 
 ## Monoidal registrations
 
@@ -64,7 +67,7 @@ must have `Monoid` instances. Unlike with the "primary" result component, they
 can be produced by more than one constructor. Their values will be aggregated
 across all constructors that produce them.
 
-Constructors can *depend* on these monoidal registrations, by having them as
+Constructors can depend on these monoidal registrations, by having them as
 arguments:
 
 ```
