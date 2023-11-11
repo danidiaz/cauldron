@@ -21,6 +21,8 @@ module Cauldron
     adjust,
     delete,
     cook,
+    taste,
+    BoiledBeans,
     Bean (..),
     bare,
     setConstructor,
@@ -31,19 +33,15 @@ module Cauldron
     addLast,
     fromConstructors,
     Constructor,
-    Regs,
     pack_,
-    -- packPure_,
     pack,
-    -- packPure,
+    Regs,
     regs1,
     regs2,
     regs3,
     DependencyGraph (..),
     PlanItem (..),
     exportToDot,
-    BoiledBeans,
-    taste,
     -- insert',
     BadBeans (..),
   )
@@ -88,19 +86,27 @@ newtype Cauldron m where
 data SomeBean m where
   SomeBean :: (Typeable a) => Bean m a -> SomeBean m
 
+-- | Instructions for building a value of type @bean@, possibly requiring
+-- actions in the monad @m@
 data Bean m bean where
   Bean ::
-    { constructor :: Constructor m bean,
+    { 
+      -- | How to build the bean itself.
+      constructor :: Constructor m bean,
+      -- | How to build the bean decorators.
       decos :: Decos m bean
     } ->
     Bean m bean
 
+-- | A map of fully constructed beans. See 'taste'.
 newtype BoiledBeans where
   BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
+-- | A 'Bean' without decorators, having only the main constructor.
 bare :: Constructor m a -> Bean m a
 bare constructor = Bean {constructor, decos = mempty}
 
+-- | A collection of 'Constructor's for the decorators of some 'Bean'.
 newtype Decos m bean where
   Decos :: {decoCons :: Seq (Constructor m (Endo bean))} -> Decos m bean
   deriving newtype (Semigroup, Monoid)
@@ -125,15 +131,23 @@ addFirst con (Decos {decoCons}) = Decos do con Seq.<| decoCons
 addLast :: Constructor m (Endo bean) -> Decos m bean -> Decos m bean
 addLast con (Decos {decoCons}) = Decos do decoCons Seq.|> con
 
-fromConstructors :: [Constructor m (Endo bean)] -> Decos m bean
+fromConstructors :: 
+    -- | The constructors end in 'Endo' because we are building decorators.
+    [Constructor m (Endo bean)] -> 
+    Decos m bean
 fromConstructors cons = Decos do Seq.fromList cons
 
-data Constructor m component where
+-- | A way of building some @bean@ value, potentially requiring some
+-- dependencies, also potentially returning some secondary beans along the
+-- primary @bean@ one.
+--
+-- See @pack_@ and @pack@.
+data Constructor m bean where
   Constructor ::
     (All Typeable args, All (Typeable `And` Monoid) regs) =>
-    { constructor_ :: m (Args args (Regs regs component))
+    { constructor_ :: m (Args args (Regs regs bean))
     } ->
-    Constructor m component
+    Constructor m bean
 
 data ConstructorReps where
   ConstructorReps ::
@@ -146,10 +160,11 @@ newtype Extractor a where
   Extractor :: {runExtractor :: Map TypeRep Dynamic -> a} -> Extractor a
   deriving newtype (Functor, Applicative)
 
+-- | The empty 'Cauldron'.
 empty :: Cauldron m
 empty = mempty
 
--- | Put a recipe (constructor) into the 'Cauldron'.
+-- | Put a recipe for a 'Bean' into the 'Cauldron'.
 insert ::
   forall (bean :: Type) m.
   (Typeable bean) =>
@@ -160,6 +175,7 @@ insert recipe Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
   Cauldron {recipes = Map.insert rep (SomeBean recipe) recipes}
 
+-- | Tweak an already existing 'Bean'.
 adjust ::
   forall bean m.
   (Typeable bean) =>
@@ -240,7 +256,7 @@ data PlanItem
   | BuiltBean TypeRep
   deriving stock (Show, Eq, Ord)
 
--- | Build the @bean@s using the constructors stored in the 'Cauldron'.
+-- | Build the beans using the constructors stored in the 'Cauldron'.
 cook ::
   (Applicative m) =>
   Cauldron m ->
@@ -377,10 +393,11 @@ followPlan recipes initial plan = do
   final
 
 data BadBeans
-  = -- | Weans that work both as primary beans and as monoidal
+  = -- | Beans that work both as primary beans and as monoidal
     -- registrations are disallowed.
     DoubleDutyBeans (Set TypeRep)
   | MissingDependencies (Map TypeRep (Set TypeRep))
+    -- | Dependency cycles are disallowed except for self-dependencies.
   | DependencyCycle (NonEmpty PlanItem)
   deriving stock (Show)
 
@@ -489,20 +506,23 @@ pack ::
   --
   -- See 'regs1' and similar functions.
   (r -> Regs regs bean) ->
-  -- | Constructor
+  -- | Action returning a function ending in @r@, some datatype containing
+  -- @regs@ and @bean@ values.
   m curried ->
   Constructor m bean
 pack f m = Constructor do go <$> m
   where
     go curried = argsN curried <&> f
 
+-- | Build a @Constructor m bean@ out of an action in @m@ which returns a curried
+-- function ending in @bean@.
 pack_ ::
   forall (args :: [Type]) bean curried m.
   ( MulticurryableF args bean curried (IsFunction curried),
     All Typeable args,
     Functor m
   ) =>
-  -- | Constructor
+  -- | Action returning a function ending in @bean@.
   m curried ->
   Constructor m bean
 pack_ m = Constructor do go <$> m
