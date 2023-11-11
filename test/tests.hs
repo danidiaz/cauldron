@@ -34,7 +34,7 @@ makeLogger :: M (Initializer, Logger M)
 makeLogger = do
   tell ["logger constructor"]
   pure
-    ( Initializer do tell ["initializing logger"],
+    ( Initializer do tell ["logger init"],
       Logger \message -> tell [message]
     )
 
@@ -43,10 +43,13 @@ data Repository m = Repository
     store :: Int -> Text -> m ()
   }
 
-makeRepository :: IO (Logger M -> Repository M)
+makeRepository :: IO (Logger M -> (Initializer, Repository M))
 makeRepository = do
   mapRef <- newIORef @(Map Int Text) mempty
   pure \Logger {logMessage} ->
+    (
+    Initializer do logMessage "repo init invoking logger"
+    , 
     Repository
       { findById = \key -> do
           logMessage "findById"
@@ -56,12 +59,13 @@ makeRepository = do
           logMessage "store"
           liftIO do modifyIORef mapRef do Map.insert key value
       }
+    )
 
 cauldron :: Cauldron M
 cauldron =
   empty
     & insert @(Logger M) do bare do pack (\(reg, bean) -> regs1 reg bean) do makeLogger
-    & insert @(Repository M) do bare do pack_ do lift makeRepository
+    & insert @(Repository M) do bare do pack (\(reg, bean) -> regs1 reg bean) do lift makeRepository
 
 tests :: TestTree
 tests =
@@ -92,7 +96,8 @@ tests =
         assertEqual
           "traces"
           [ "logger constructor",
-            "initializing logger",
+            "logger init",
+            "repo init invoking logger",
             "store",
             "findById"
           ]
