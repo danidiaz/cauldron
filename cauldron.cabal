@@ -54,3 +54,5 @@ test-suite tests
       text,
       tasty           ^>= 1.5,
       tasty-hunit     ^>= 0.10,
+      transformers,
+      containers,
