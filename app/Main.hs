@@ -177,4 +177,4 @@ main = do
       print mishap
     Right (beanGraph, bean) -> do
       print bean
-      Cauldron.exportToDot "beans.dot" beanGraph
+      exportToDot "beans.dot" beanGraph
