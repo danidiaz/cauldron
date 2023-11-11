@@ -47,18 +47,16 @@ makeRepository :: IO (Logger M -> (Initializer, Repository M))
 makeRepository = do
   mapRef <- newIORef @(Map Int Text) mempty
   pure \Logger {logMessage} ->
-    (
-    Initializer do logMessage "repo init invoking logger"
-    , 
-    Repository
-      { findById = \key -> do
-          logMessage "findById"
-          m <- liftIO do readIORef mapRef
-          pure do Map.lookup key m,
-        store = \key value -> do
-          logMessage "store"
-          liftIO do modifyIORef mapRef do Map.insert key value
-      }
+    ( Initializer do logMessage "repo init invoking logger",
+      Repository
+        { findById = \key -> do
+            logMessage "findById"
+            m <- liftIO do readIORef mapRef
+            pure do Map.lookup key m,
+          store = \key value -> do
+            logMessage "store"
+            liftIO do modifyIORef mapRef do Map.insert key value
+        }
     )
 
 cauldron :: Cauldron M
@@ -67,32 +65,42 @@ cauldron =
     & insert @(Logger M) do bare do pack (\(reg, bean) -> regs1 reg bean) do makeLogger
     & insert @(Repository M) do bare do pack (\(reg, bean) -> regs1 reg bean) do lift makeRepository
 
+cauldronMissingDep :: Cauldron M
+cauldronMissingDep = delete @(Logger M) cauldron
+
+cauldronDoubleDutyBean :: Cauldron M
+cauldronDoubleDutyBean =
+  cauldron
+    & insert @Initializer do bare do pack_ do pure do (Initializer (pure ()))
+
+cauldronWithCycle :: Cauldron M
+cauldronWithCycle =
+  cauldron
+    & insert @(Logger M) do bare do pack (\(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) <$> makeLogger
+
 tests :: TestTree
 tests =
   testGroup
     "All"
     [ testCase "simple" do
-        let cooked = cook cauldron
-            act :: M () =
-              case cooked of
-                Left _ -> liftIO do assertFailure "could not wire"
-                Right (_, beansAction) -> do
-                  beans <- beansAction
-                  case ( liftA2
-                           (,)
-                           (taste @Initializer beans)
-                           (taste @(Repository M) beans)
-                       ) of
-                    Nothing -> liftIO do assertFailure "bean not built"
-                    Just
-                      ( Initializer {runInitializer},
-                        Repository {findById, store}
-                        ) -> do
-                        runInitializer
-                        store 1 "foo"
-                        _ <- findById 1
-                        pure ()
-        (_, traces) <- runWriterT act
+        (_, traces) <- case cook cauldron of
+          Left _ -> assertFailure "could not wire"
+          Right (_, beansAction) -> runWriterT do
+            beans <- beansAction
+            case ( liftA2
+                     (,)
+                     (taste @Initializer beans)
+                     (taste @(Repository M) beans)
+                 ) of
+              Nothing -> liftIO do assertFailure "bean not built"
+              Just
+                ( Initializer {runInitializer},
+                  Repository {findById, store}
+                  ) -> do
+                  runInitializer
+                  store 1 "foo"
+                  _ <- findById 1
+                  pure ()
         assertEqual
           "traces"
           [ "logger constructor",
@@ -101,7 +109,22 @@ tests =
             "store",
             "findById"
           ]
-          traces
+          traces,
+      testCase "cauldron missing dep" do
+        case cook cauldronMissingDep of
+          Left (MissingDependencies _) -> pure ()
+          _ -> assertFailure "missing dependency not detected"
+        pure (),
+      testCase "cauldron with double duty bean" do
+        case cook cauldronDoubleDutyBean of
+          Left (DoubleDutyBeans _) -> pure ()
+          _ -> assertFailure "double duty beans not detected"
+        pure (),
+      testCase "cauldron with cycle" do
+        case cook cauldronWithCycle of
+          Left (DependencyCycle _) -> pure ()
+          _ -> assertFailure "dependency cycle not detected"
+        pure ()
     ]
 
 main :: IO ()
