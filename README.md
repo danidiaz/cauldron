@@ -88,6 +88,9 @@ Like normal constructors, decorators can have dependencies, and produce secondar
 ```
 makeServerDecorator :: IO (Logger -> (Initializer,Endo Server))
 ```
+# Example code
+
+See [the example application](/app/Main.hs).
 
 # See also
 
