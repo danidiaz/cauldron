@@ -129,12 +129,12 @@ coolWiring =
         foldr
           ($)
           mempty
-          [ insert @A do simple do makeA & pack \(reg, a) -> regs1 reg a,
-            insert @B do simple do makeB & pack_,
-            insert @C do simple do makeC & pack_,
-            insert @D do simple do makeD & pack_,
-            insert @E do simple do makeE & pack_,
-            insert @F do simple do makeF & pack_,
+          [ insert @A do bare do makeA & pack \(reg, a) -> regs1 reg a,
+            insert @B do bare do makeB & pack_,
+            insert @C do bare do makeC & pack_,
+            insert @D do bare do makeD & pack_,
+            insert @E do bare do makeE & pack_,
+            insert @F do bare do makeF & pack_,
             insert @G do
               Bean
                 { constructor = makeG & pack_,
