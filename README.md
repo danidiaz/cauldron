@@ -90,7 +90,7 @@ makeServerDecorator :: IO (Logger -> (Initializer,Endo Server))
 ```
 # Example code
 
-See [the example application](/app/Main.hs).
+See [this example application](/app/Main.hs) with dummy components.
 
 # See also
 

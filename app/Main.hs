@@ -224,9 +224,9 @@ coolWiring =
           ]
    in case cook cauldron of
         Left e -> Left e
-        Right (beanGraph, action) ->
+        Right (depGraph, action) ->
           Right
-            ( beanGraph,
+            ( depGraph,
               do
                 beans <- action
                 pure do
@@ -247,8 +247,8 @@ main = do
   case coolWiring of
     Left badBeans -> do
       print badBeans
-    Right (beanGraph, action) -> do
-      exportToDot "beans.dot" beanGraph
+    Right (depGraph, action) -> do
+      exportToDot "beans.dot" depGraph
       result <- action
       case result of
         Nothing -> print "oops"

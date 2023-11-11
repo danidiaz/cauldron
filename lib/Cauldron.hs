@@ -13,6 +13,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
+-- | A library for performing dependency injection.
 module Cauldron
   ( Cauldron,
     empty,
@@ -30,6 +31,7 @@ module Cauldron
     addLast,
     fromConstructors,
     Constructor,
+    Regs,
     pack_,
     -- packPure_,
     pack,
@@ -44,12 +46,6 @@ module Cauldron
     taste,
     -- insert',
     BadBeans (..),
-    --
-    -- Args,
-    -- args0,
-    -- argsN,
-    -- Regs,
-    -- noRegs,
   )
 where
 
@@ -244,7 +240,7 @@ data PlanItem
   | BuiltBean TypeRep
   deriving stock (Show, Eq, Ord)
 
--- | Try to build a @bean@ from the recipes stored in the 'Cauldron'.
+-- | Build the @bean@s using the constructors stored in the 'Cauldron'.
 cook ::
   (Applicative m) =>
   Cauldron m ->
@@ -381,7 +377,8 @@ followPlan recipes initial plan = do
   final
 
 data BadBeans
-  = -- | Beans working as accumulartors and regular beans.
+  = -- | Weans that work both as primary beans and as monoidal
+    -- registrations are disallowed.
     DoubleDutyBeans (Set TypeRep)
   | MissingDependencies (Map TypeRep (Set TypeRep))
   | DependencyCycle (NonEmpty PlanItem)
@@ -465,7 +462,9 @@ argsN ::
   Args args r
 argsN = Args . multiuncurry
 
-data Regs (regs :: [Type]) r = Regs (NP I regs) r
+-- | Auxiliary type which contains a primary bean along with zero or more
+-- secondary monoidal beans.
+data Regs (regs :: [Type]) bean = Regs (NP I regs) bean
   deriving (Functor)
 
 regs1 :: reg1 -> bean -> Regs '[reg1] bean
@@ -477,6 +476,8 @@ regs2 reg1 reg2 bean = Regs (I reg1 :* I reg2 :* Nil) bean
 regs3 :: reg1 -> reg2 -> reg3 -> bean -> Regs '[reg1, reg2, reg3] bean
 regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
+-- | To be used only for constructors which return monoidal secondary beans
+-- along with the primary bean.
 pack ::
   forall (args :: [Type]) r curried regs bean m.
   ( MulticurryableF args r curried (IsFunction curried),
@@ -484,24 +485,16 @@ pack ::
     All (Typeable `And` Monoid) regs,
     Functor m
   ) =>
+  -- | Fit the outputs of the constructor into the auxiliary 'Regs' type.
+  --
+  -- See 'regs1' and similar functions.
   (r -> Regs regs bean) ->
+  -- | Constructor
   m curried ->
   Constructor m bean
 pack f m = Constructor do go <$> m
   where
     go curried = argsN curried <&> f
-
--- packPure ::
---   forall (args :: [Type]) r curried regs bean m.
---   ( MulticurryableF args r curried (IsFunction curried),
---     All Typeable args,
---     All (Typeable `And` Monoid) regs,
---     Applicative m
---   ) =>
---   (r -> Regs regs bean) ->
---   curried ->
---   Constructor m bean
--- packPure f curried = pack f (pure curried)
 
 pack_ ::
   forall (args :: [Type]) bean curried m.
@@ -509,19 +502,9 @@ pack_ ::
     All Typeable args,
     Functor m
   ) =>
+  -- | Constructor
   m curried ->
   Constructor m bean
 pack_ m = Constructor do go <$> m
   where
     go curried = argsN curried <&> Regs Nil
-
--- packPure_ ::
---   forall (args :: [Type]) bean curried m.
---   ( MulticurryableF args bean curried (IsFunction curried),
---     All Typeable args,
---     Applicative m
---   ) =>
---   curried ->
---   Constructor m bean
--- packPure_ curried = pack_ (pure curried)
---
