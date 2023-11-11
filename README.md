@@ -23,7 +23,7 @@ To be honest, you probably shouldn't use this library. I have noticed that using
 Perhaps it would start to pay for complex components with many dependencies, but
 I'm not sure.
 
-Another possible objection to this library is that wiring errors are found at
+Another possible objection to this library is that wiring errors are detected at
 runtime. I don't find that to be a problem though: the wiring happens at the
 very beginning of the application, and it's easy to write an unit test for it.
 
