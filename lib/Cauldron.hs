@@ -25,6 +25,7 @@ module Cauldron
     argsN,
     Regs,
     regs0,
+    regs1,
     constructor,
     constructor0,
     constructor1,
@@ -67,12 +68,39 @@ import qualified Type.Reflection
 
 newtype Cauldron = Cauldron {recipes :: Map TypeRep (SomeRecipe_ Maybe)}
 
+data SomeRecipe_ f where
+  SomeRecipe :: Typeable a => Recipe_ f a -> SomeRecipe_ f
+
+type SomeRecipe = SomeRecipe_ Identity
+
+data Recipe_ f bean where
+  Recipe ::
+    { beanConF :: f (Constructor bean),
+      decoCons :: Seq (Constructor (Endo bean))
+    } ->
+    Recipe_ f bean
+
+data Constructor component where
+  Constructor ::
+    (All Typeable args, All (Typeable `And` Monoid) accums) =>
+    { constructor_ :: Args args (Regs accums component)
+    } ->
+    Constructor component
+
+data ConstructorReps = ConstructorReps
+  { argReps :: Set TypeRep,
+    regReps :: Map TypeRep Dynamic
+  }
+
+newtype Extractor a = Extractor {runExtractor :: Map TypeRep Dynamic -> a}
+  deriving newtype (Functor, Applicative)
+
 empty :: Cauldron
 empty = Cauldron {recipes = Map.empty}
 
 -- | Put a recipe (constructor) into the 'Cauldron'.
 insert ::
-  forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
+  forall (bean :: Type) (args :: [Type]) (accums :: [Type]) .
   (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
   -- | A curried function that takes the @args@ and returns the @bean@
   Args args (Regs accums bean) ->
@@ -100,7 +128,7 @@ insert con Cauldron {recipes} = do
     }
 
 decorate_ ::
-  forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
+  forall (bean :: Type) (args :: [Type]) (accums :: [Type]) .
   (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
   -- | Where to add the decorator is left to the caller to decide.
   (forall a. a -> Seq a -> Seq a) ->
@@ -132,7 +160,7 @@ decorate_ addToDecos con Cauldron {recipes} = do
     }
 
 decorate ::
-  forall (args :: [Type]) (accums :: [Type]) (bean :: Type).
+  forall (bean :: Type) (args :: [Type]) (accums :: [Type]) .
   (All Typeable args, All (Typeable `And` Monoid) accums, Typeable bean) =>
   Args args (Regs accums (Endo bean)) ->
   Cauldron ->
@@ -147,64 +175,40 @@ delete ::
 delete proxy Cauldron {recipes} =
   Cauldron {recipes = Map.delete (typeRep proxy) recipes}
 
-data SomeRecipe_ f where
-  SomeRecipe :: Typeable a => Recipe_ f a -> SomeRecipe_ f
-
-type SomeRecipe = SomeRecipe_ Identity
-
-data Recipe_ f bean where
-  Recipe ::
-    { beanConF :: f (Constructor bean),
-      decoCons :: Seq (Constructor (Endo bean))
-    } ->
-    Recipe_ f bean
-
-data Constructor component where
-  Constructor ::
-    (All Typeable args, All (Typeable `And` Monoid) accums) =>
-    { constructor_ :: Args args (Regs accums component)
-    } ->
-    Constructor component
-
-data ConstructorReps = ConstructorReps
-  { argReps :: [TypeRep],
-    regReps :: [TypeRep]
-  }
-
-
-
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 constructorReps :: Typeable component => Constructor component -> ConstructorReps
 constructorReps Constructor {constructor_ = (_ :: Args args (Regs accums component))} =
   ConstructorReps
-    { argReps =
+    { argReps = Set.fromList do
         collapse_NP do
           cpure_NP @_ @args
             do Proxy @Typeable
             typeRepHelper,
-      regReps =
+      regReps = Map.fromList do
         collapse_NP do
           cpure_NP @_ @accums
             do Proxy @(Typeable `And` Monoid)
-            typeRepHelper
+            typeRepHelper'
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
-    typeRepHelper = K do typeRep (Proxy @a)
+    typeRepHelper = K (typeRep (Proxy @a))
+    typeRepHelper' :: forall a. ((Typeable `And` Monoid) a) => K (TypeRep, Dynamic) a
+    typeRepHelper' = K (typeRep (Proxy @a), toDyn @a mempty)
 
 
 constructorEdges :: Typeable component => PlanItem -> Constructor component -> [(PlanItem,PlanItem)]
 constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) = 
   -- consumers depend on their args
   (do
-    argRep <- argReps
+    argRep <- Set.toList argReps
     let argItem = BuiltBean argRep 
     [(item, argItem)])
   ++
   -- regs depend on their producers
   (do
-    regRep <- regReps
+    (regRep, _) <- Map.toList regReps
     let repItem = BuiltBean regRep 
     [(repItem, item)])
 
@@ -223,9 +227,9 @@ boil ::
 boil Cauldron {recipes} = do
   recipes' <- first BeanlessDecorator do checkBeanlessDecos recipes
   accumSet <- first DoubleDutyBeans do checkNoRegBeans recipes'
-  () <- first MissingDependencies do checkMissingDeps accumSet recipes'
+  () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes'
   (beanGraph, plan) <- first DependencyCycle do checkCycles recipes'
-  let beans = build recipes' plan
+  let beans = followPlan recipes' accumSet plan 
   Right (BeanGraph {beanGraph}, beans)
 
 checkBeanlessDecos ::
@@ -249,22 +253,22 @@ checkBeanlessDecos recipes =
 
 checkNoRegBeans ::
   Map TypeRep SomeRecipe ->
-  Either (Set TypeRep) (Set TypeRep)
+  Either (Set TypeRep) (Map TypeRep Dynamic)
 checkNoRegBeans recipes = do
-  let common = Set.intersection accumSet (Map.keysSet recipes)
+  let common = Set.intersection (Map.keysSet accumSet) (Map.keysSet recipes)
   if not (Set.null common)
     then Left common
     else Right accumSet 
   where
-    accumSet = Set.fromList do
+    accumSet = Map.fromList do
       recipe <- Data.Foldable.toList recipes
       case recipe of 
         (SomeRecipe Recipe { beanConF = Identity beanCon, decoCons}) -> do
           let ConstructorReps { regReps = beanAccums } = constructorReps beanCon
-          beanAccums ++ do 
+          Map.toList beanAccums ++ do 
             decoCon <- Data.Foldable.toList decoCons
             let ConstructorReps { regReps = decoAccums } = constructorReps decoCon
-            decoAccums
+            Map.toList decoAccums
 
 -- | TODO: handle decorator and accum dependencies as well.
 -- TODO: reg dependencies should never count as missing, because they can
@@ -283,10 +287,10 @@ checkMissingDeps accumSet recipes = do
     demanded :: SomeRecipe -> Set TypeRep
     demanded (SomeRecipe Recipe { beanConF = Identity beanCon, decoCons}) = (Set.fromList do 
           let ConstructorReps { argReps = beanArgReps } = constructorReps beanCon
-          beanArgReps ++ do
+          Set.toList beanArgReps ++ do
             decoCon <- Data.Foldable.toList decoCons
             let ConstructorReps { argReps = decoArgReps } = constructorReps decoCon
-            decoArgReps) `Set.difference` accumSet
+            Set.toList decoArgReps) `Set.difference` accumSet
 
 
 
@@ -320,26 +324,26 @@ checkCycles recipes = do
       Left recipeCycle
     Right plan -> Right (beanGraph, plan)
 
-build ::
+followPlan ::
   Map TypeRep SomeRecipe ->
+  Map TypeRep Dynamic ->
   Plan ->
   Map TypeRep Dynamic
-build recipes =
-  Data.List.foldl'
-    do
-      \dynMap -> \case
-          BareBean rep -> case fromJust do Map.lookup rep recipes of
-            SomeRecipe (Recipe { beanConF = Identity beanCon }) -> do
-              let dyn = toDyn do followConstructor dynMap beanCon
-              Map.insert (dynTypeRep dyn) dyn dynMap
-          BuiltBean _ -> dynMap
-          BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
-            SomeRecipe (Recipe { decoCons }) -> do
-                let indexStartingAt0 = fromIntegral (pred index)
-                    decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
-                    dyn = toDyn do followDecorator dynMap decoCon
-                Map.insert (dynTypeRep dyn) dyn dynMap
-    Map.empty
+followPlan recipes =
+  Data.List.foldl' \dynMap -> \case
+    BareBean rep -> case fromJust do Map.lookup rep recipes of
+      SomeRecipe (Recipe { beanConF = Identity beanCon }) -> do
+        let (dynMap', bean) = followConstructor beanCon dynMap 
+            dyn = toDyn bean
+        Map.insert (dynTypeRep dyn) dyn dynMap'
+    BuiltBean _ -> dynMap
+    BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
+      SomeRecipe (Recipe { decoCons }) -> do
+        let indexStartingAt0 = fromIntegral (pred index)
+            decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
+            (dynMap', bean) = followDecorator decoCon dynMap
+            dyn = toDyn bean
+        Map.insert (dynTypeRep dyn) dyn dynMap'
 
 data Mishap
   = BeanlessDecorator (Set TypeRep)
@@ -354,32 +358,43 @@ newtype BeanGraph = BeanGraph {beanGraph :: AdjacencyMap PlanItem}
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
-followConstructor :: Map TypeRep Dynamic -> Constructor component -> component
-followConstructor theDyns Constructor {constructor_} = do
+followConstructor :: 
+    Constructor component -> 
+    Map TypeRep Dynamic -> 
+    (Map TypeRep Dynamic, component)
+followConstructor Constructor {constructor_} dynMap = do
   let argsExtractor = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
-      args = runExtractor argsExtractor theDyns
-      Regs _ bean = runArgs constructor_ args
-  bean
+      args = runExtractor argsExtractor dynMap
+  case runArgs constructor_ args of
+    Regs regs bean -> do
+      let inserters = cfoldMap_NP (Proxy @(Typeable `And` Monoid)) makeRegInserter regs
+      (appEndo inserters dynMap, bean)
 
 followDecorator :: 
     forall component . Typeable component => 
-    Map TypeRep Dynamic -> 
     Constructor (Endo component) -> 
-    component
-followDecorator theDyns decoCon  = do
-  let Endo deco = followConstructor theDyns decoCon
-      baseDyn = fromJust do Map.lookup (typeRep (Proxy @component)) theDyns
+    Map TypeRep Dynamic -> 
+    (Map TypeRep Dynamic,component)
+followDecorator decoCon dynMap = do
+  let (dynMap', Endo deco) = followConstructor decoCon dynMap 
+      baseDyn = fromJust do Map.lookup (typeRep (Proxy @component)) dynMap'
       base = fromJust do fromDynamic baseDyn
-  deco base
+  (dynMap', deco base)
 
-newtype Extractor a = Extractor {runExtractor :: Map TypeRep Dynamic -> a}
-  deriving newtype (Functor, Applicative)
 
 makeExtractor :: forall a. (Typeable a) => Extractor a
 makeExtractor =
   let runExtractor dyns =
         fromJust do taste (Proxy @a) dyns
    in Extractor {runExtractor}
+
+makeRegInserter:: forall a. ((Typeable `And` Monoid) a) => I a -> Endo (Map TypeRep Dynamic)
+makeRegInserter (I a) =
+  let appEndo dynMap = do
+        let reg = fromJust do taste (Proxy @a) dynMap
+            dyn = toDyn (reg <> a)
+        Map.insert (dynTypeRep dyn) dyn dynMap
+   in Endo {appEndo}
 
 exportToDot :: FilePath -> BeanGraph -> IO ()
 exportToDot filepath BeanGraph {beanGraph} = do
@@ -420,6 +435,9 @@ data Regs (regs :: [Type]) r = Regs (NP I regs) r
 
 regs0 :: r -> Regs '[] r
 regs0 r = Regs Nil r
+
+regs1 :: reg1 -> r -> Regs '[reg1] r
+regs1 reg1 r = Regs (I reg1 :* Nil) r
 
 constructor :: 
   forall r (args :: [Type]) curried.
