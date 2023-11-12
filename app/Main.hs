@@ -12,7 +12,7 @@ module Main where
 import Cauldron
 import Data.Monoid
 
-{- 
+{-
   HERE ARE A BUNCH OF DATATYPES.
 
   The idea is that each datatype represents a bean, a component of our application.
@@ -73,24 +73,23 @@ data Y = Y deriving (Show)
 
 data Z = Z deriving (Show)
 
-{- 
+{-
   These beans are a bit special: they are "secondary" beans which are optionally
   produced by the constructors of other beans.
-  
+
   They have Monoid instances. The values returned by all the constructors that
   produce them will be combined.
 -}
 
 -- | A window into the internal state of some bean.
-newtype Inspector = Inspector { inspect :: IO [String] }
-    deriving newtype (Semigroup, Monoid)
+newtype Inspector = Inspector {inspect :: IO [String]}
+  deriving newtype (Semigroup, Monoid)
 
 -- | And initialization action which some beans might register.
-newtype Initializer = Initializer { runInitializer :: IO () }
-    deriving newtype (Semigroup, Monoid)
+newtype Initializer = Initializer {runInitializer :: IO ()}
+  deriving newtype (Semigroup, Monoid)
 
-
-{- 
+{-
   HERE ARE A BUNCH OF CONSTRUCTORS AND DECORATORS.
 
 -}
@@ -98,7 +97,7 @@ makeA :: A
 makeA = A
 
 -- A bean with a monoidal registration.
--- 
+--
 -- The registration could be some generic introspection mechanism, or perhaps
 -- some effectful action that sets up a worker thread.
 makeB :: (Inspector, B)
@@ -119,19 +118,19 @@ makeE = pure \_ -> E
 
 -- | A bean with an effectful constructor and a monoidal registration.
 makeF :: IO (B -> C -> (Inspector, F))
-makeF = pure \_ _ -> (Inspector (pure ["F stuff"]),F)
+makeF = pure \_ _ -> (Inspector (pure ["F stuff"]), F)
 
--- | A bean with a self-dependency! 
+-- | A bean with a self-dependency!
 --
 -- We need this if we want self-invocations to be decorated.
 --
 -- Dependency cycles of more than one bean are forbidden, however.
-makeG :: E -> F -> G -> G 
+makeG :: E -> F -> G -> G
 makeG _ _ _ = G
 
 -- | A decorator.
 --
---  Decorators are basically normal constructors, only that they return 
+--  Decorators are basically normal constructors, only that they return
 --  a Endo that knows how to tweak the value of a bean.
 --
 -- Because they are normal constructors, they can be effectful, and they
@@ -145,8 +144,8 @@ makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
 
 -- | Notice that this bean has "Inspector" as a dependency. Inspector is a
 -- monoidal bean which is aggregated across all the constructor that register
--- it. This is OK as long as there are no dependency cycles. 
--- 
+-- it. This is OK as long as there are no dependency cycles.
+--
 -- Why would a bean depend on such a aggregated bean? Well, for example, a
 -- server bean might want to publish diagnostic information collected from beans
 -- that register it.
@@ -166,10 +165,9 @@ boringWiring = do
   makeE' <- makeE
   makeF' <- makeF
   makeZDeco2' <- makeZDeco2
-  let 
-      -- We have to remember to collect the monoidal registrations. 
+  let -- We have to remember to collect the monoidal registrations.
       initializer = init1 <> init2
-      -- We have to remember to collect the monoidal registrations. 
+      -- We have to remember to collect the monoidal registrations.
       inspector = inspector1 <> inspector2 <> inspector3
       -- Now let's tie the constructors together.
       a = makeA
@@ -186,14 +184,14 @@ boringWiring = do
       (init2, zDeco2) = makeZDeco2' f
       -- Compose the decorators before applying them.
       z = appEndo (zDeco2 <> zDeco1) do makeZ inspector d h
-  pure (initializer, inspector , z)
+  pure (initializer, inspector, z)
 
 -- | Here we don't have to worry about positional parameters. We throw all the
 -- constructors into the 'Cauldron' and taste the bean values at the end, plus a
 -- graph we may want to draw.
--- 
+--
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Either BadBeans (BeanGraph, IO (Maybe (Initializer,Inspector,Z)))
+coolWiring :: Either BadBeans (BeanGraph, IO (Maybe (Initializer, Inspector, Z)))
 coolWiring =
   let cauldron :: Cauldron IO =
         foldr
@@ -227,29 +225,32 @@ coolWiring =
    in case cook cauldron of
         Left e -> Left e
         Right (beanGraph, action) ->
-          Right (beanGraph, do
-            beans <- action
-            pure do 
-              initializer <- taste @Initializer beans
-              inspector <- taste @Inspector beans
-              z <- taste @Z beans
-              pure (initializer, inspector, z)
+          Right
+            ( beanGraph,
+              do
+                beans <- action
+                pure do
+                  initializer <- taste @Initializer beans
+                  inspector <- taste @Inspector beans
+                  z <- taste @Z beans
+                  pure (initializer, inspector, z)
             )
 
 main :: IO ()
 main = do
-  do (Initializer {runInitializer} , Inspector {inspect}, z) <- boringWiring
-     inspection <- inspect
-     print inspection
-     print z
-     runInitializer
+  do
+    (Initializer {runInitializer}, Inspector {inspect}, z) <- boringWiring
+    inspection <- inspect
+    print inspection
+    print z
+    runInitializer
   case coolWiring of
     Left badBeans -> do
       print badBeans
     Right (beanGraph, action) -> do
       exportToDot "beans.dot" beanGraph
       result <- action
-      case result of 
+      case result of
         Nothing -> print "oops"
         Just (Initializer {runInitializer}, Inspector {inspect}, z) -> do
           inspection <- inspect

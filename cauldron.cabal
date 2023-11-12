@@ -30,7 +30,7 @@ library
     hs-source-dirs:   lib
     default-language: GHC2021
 
-executable cauldron
+executable cauldron-example-wiring
     import:           warnings
     main-is:          Main.hs
     -- other-modules:

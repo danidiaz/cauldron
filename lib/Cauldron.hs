@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -11,7 +12,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Cauldron
   ( Cauldron,
@@ -38,7 +38,7 @@ module Cauldron
     regs2,
     regs3,
     BeanGraph (..),
-    PlanItem(..),
+    PlanItem (..),
     exportToDot,
     BoiledBeans,
     taste,
@@ -86,7 +86,7 @@ import Multicurryable
 import Type.Reflection qualified
 
 newtype Cauldron m where
-  Cauldron :: {recipes :: Map TypeRep (SomeBean m) } -> Cauldron m
+  Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype (Semigroup, Monoid)
 
 data SomeBean m where
@@ -100,7 +100,7 @@ data Bean m bean where
     Bean m bean
 
 newtype BoiledBeans where
-  BoiledBeans :: { beans :: Map TypeRep Dynamic } -> BoiledBeans
+  BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
 bare :: Constructor m a -> Bean m a
 bare constructor = Bean {constructor, decos = mempty}
@@ -115,10 +115,10 @@ instance IsList (Decos m bean) where
   toList (Decos {decoCons}) = GHC.Exts.toList decoCons
 
 setConstructor :: Constructor m bean -> Bean m bean -> Bean m bean
-setConstructor constructor (Bean {decos}) = Bean {constructor,decos}
+setConstructor constructor (Bean {decos}) = Bean {constructor, decos}
 
 setDecos :: Decos m bean -> Bean m bean -> Bean m bean
-setDecos decos (Bean {constructor}) = Bean {constructor,decos}
+setDecos decos (Bean {constructor}) = Bean {constructor, decos}
 
 overDecos :: (Decos m bean -> Decos m bean) -> Bean m bean -> Bean m bean
 overDecos f (Bean {constructor, decos}) = Bean {constructor, decos = f decos}
@@ -245,34 +245,39 @@ data PlanItem
   deriving stock (Show, Eq, Ord)
 
 -- | Try to build a @bean@ from the recipes stored in the 'Cauldron'.
-cook :: Applicative m =>
+cook ::
+  (Applicative m) =>
   Cauldron m ->
   Either BadBeans (BeanGraph, m BoiledBeans)
 cook Cauldron {recipes} = do
   accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes
   (beanGraph, plan) <- first DependencyCycle do checkCycles recipes
-  Right (BeanGraph {beanGraph}, sequenceRecipes recipes <&> \recipes' -> do
-    let beans = followPlan recipes' accumSet plan
-    BoiledBeans {beans})
+  Right
+    ( BeanGraph {beanGraph},
+      sequenceRecipes recipes <&> \recipes' -> do
+        let beans = followPlan recipes' accumSet plan
+        BoiledBeans {beans}
+    )
 
-sequenceRecipes :: 
-  forall m. Applicative m => 
-  Map TypeRep (SomeBean m) -> 
+sequenceRecipes ::
+  forall m.
+  (Applicative m) =>
+  Map TypeRep (SomeBean m) ->
   m (Map TypeRep (SomeBean I))
 sequenceRecipes = traverse sequenceSomeBean
   where
-  sequenceSomeBean :: SomeBean m -> m (SomeBean I)
-  sequenceSomeBean (SomeBean theBean) = 
-    SomeBean <$> sequenceBean theBean
-  sequenceBean :: Bean m a -> m (Bean I a)
-  sequenceBean Bean {constructor, decos}  = 
-    Bean <$> sequenceConstructor constructor <*> sequenceDecos decos
-  sequenceConstructor :: Constructor m a -> m (Constructor I a)
-  sequenceConstructor Constructor {constructor_} = 
-    Constructor . I <$> constructor_
-  sequenceDecos :: Decos m a -> m (Decos I a)
-  sequenceDecos Decos {decoCons} = Decos <$> traverse sequenceConstructor decoCons
+    sequenceSomeBean :: SomeBean m -> m (SomeBean I)
+    sequenceSomeBean (SomeBean theBean) =
+      SomeBean <$> sequenceBean theBean
+    sequenceBean :: Bean m a -> m (Bean I a)
+    sequenceBean Bean {constructor, decos} =
+      Bean <$> sequenceConstructor constructor <*> sequenceDecos decos
+    sequenceConstructor :: Constructor m a -> m (Constructor I a)
+    sequenceConstructor Constructor {constructor_} =
+      Constructor . I <$> constructor_
+    sequenceDecos :: Decos m a -> m (Decos I a)
+    sequenceDecos Decos {decoCons} = Decos <$> traverse sequenceConstructor decoCons
 
 checkNoDoubleDutyBeans ::
   Map TypeRep (SomeBean m) ->
@@ -346,7 +351,7 @@ checkCycles recipes = do
   case Graph.topSort beanGraph of
     Left recipeCycle ->
       Left recipeCycle
-    Right plan -> Right (beanGraph, plan)
+    Right (reverse -> plan) -> Right (beanGraph, plan)
 
 followPlan ::
   Map TypeRep (SomeBean I) ->
@@ -483,10 +488,10 @@ pack ::
   m curried ->
   Constructor m bean
 pack f m = Constructor do go <$> m
-   where 
-   go curried = argsN curried <&> f
+  where
+    go curried = argsN curried <&> f
 
--- packPure :: 
+-- packPure ::
 --   forall (args :: [Type]) r curried regs bean m.
 --   ( MulticurryableF args r curried (IsFunction curried),
 --     All Typeable args,
@@ -507,8 +512,8 @@ pack_ ::
   m curried ->
   Constructor m bean
 pack_ m = Constructor do go <$> m
-   where 
-   go curried = argsN curried <&> Regs Nil
+  where
+    go curried = argsN curried <&> Regs Nil
 
 -- packPure_ ::
 --   forall (args :: [Type]) bean curried m.
@@ -519,4 +524,4 @@ pack_ m = Constructor do go <$> m
 --   curried ->
 --   Constructor m bean
 -- packPure_ curried = pack_ (pure curried)
--- 
+--
