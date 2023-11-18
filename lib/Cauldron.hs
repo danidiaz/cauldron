@@ -228,15 +228,13 @@ constructorReps Constructor {constructor_ = (_ :: m (Args args (Regs accums comp
 
 constructorEdges ::
   (Typeable component) =>
-  (TypeRep -> Bool) ->
   PlanItem ->
   Constructor m component ->
   [(PlanItem, PlanItem)]
-constructorEdges allowArg item (constructorReps -> ConstructorReps {argReps, regReps}) =
+constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
   -- consumers depend on their args
   ( do
       argRep <- Set.toList argReps
-      guard do allowArg argRep
       let argItem = BuiltBean argRep
       [(item, argItem)]
   )
@@ -354,9 +352,8 @@ checkCycles recipes = do
                       decos = do
                         (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons)
                         [(BeanDecorator beanRep decoIndex, decoCon)]
-                      noEdgesForSelfLoops = (/=) do typeRep (Proxy @bean)
-                      beanDeps = constructorEdges noEdgesForSelfLoops bareBean constructor
-                      decoDeps = concatMap (uncurry do constructorEdges (const True)) decos
+                      beanDeps = constructorEdges bareBean constructor
+                      decoDeps = concatMap (uncurry constructorEdges) decos
                       full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
                       innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
                   beanDeps ++ decoDeps ++ innerDeps
@@ -371,13 +368,12 @@ followPlan ::
   Plan ->
   Map TypeRep Dynamic
 followPlan recipes initial plan = do
-  let final =
         Data.List.foldl'
           do
             \super -> \case
               BareBean rep -> case fromJust do Map.lookup rep recipes of
                 SomeBean (Bean {constructor}) -> do
-                  let (super', bean) = followConstructor constructor final super
+                  let (super', bean) = followConstructor constructor super
                       dyn = toDyn bean
                   Map.insert (dynTypeRep dyn) dyn super'
               BuiltBean _ -> super
@@ -385,12 +381,11 @@ followPlan recipes initial plan = do
                 SomeBean (Bean {decos = Decos {decoCons}}) -> do
                   let indexStartingAt0 = fromIntegral (pred index)
                       decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
-                      (super', bean) = followDecorator decoCon final super
+                      (super', bean) = followDecorator decoCon super
                       dyn = toDyn bean
                   Map.insert (dynTypeRep dyn) dyn super'
           initial
           plan
-  final
 
 data BadBeans
   = -- | Beans that work both as primary beans and as monoidal
@@ -409,11 +404,10 @@ newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap PlanItem}
 followConstructor ::
   Constructor I component ->
   Map TypeRep Dynamic ->
-  Map TypeRep Dynamic ->
   (Map TypeRep Dynamic, component)
-followConstructor Constructor {constructor_ = I (Args {runArgs})} final super = do
+followConstructor Constructor {constructor_ = I (Args {runArgs})} super = do
   let Extractor {runExtractor} = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
-      args = runExtractor final
+      args = runExtractor super
   case runArgs args of
     Regs regs bean -> do
       let inserters = cfoldMap_NP (Proxy @(Typeable `And` Monoid)) makeRegInserter regs
@@ -424,10 +418,9 @@ followDecorator ::
   (Typeable component) =>
   Constructor I (Endo component) ->
   Map TypeRep Dynamic ->
-  Map TypeRep Dynamic ->
   (Map TypeRep Dynamic, component)
-followDecorator decoCon final super = do
-  let (super', Endo deco) = followConstructor decoCon final super
+followDecorator decoCon super = do
+  let (super', Endo deco) = followConstructor decoCon super
       baseDyn = fromJust do Map.lookup (typeRep (Proxy @component)) super'
       base = fromJust do fromDynamic baseDyn
   (super', deco base)
