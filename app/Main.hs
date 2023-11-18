@@ -121,13 +121,8 @@ makeE = pure \_ -> E
 makeF :: IO (B -> C -> (Inspector, F))
 makeF = pure \_ _ -> (Inspector (pure ["F stuff"]), F)
 
--- | A bean with a self-dependency!
---
--- We need this if we want self-invocations to be decorated.
---
--- Dependency cycles of more than one bean are forbidden, however.
-makeG :: E -> F -> G -> G
-makeG _ _ _ = G
+makeG :: E -> F -> G
+makeG _ _ = G
 
 -- | A decorator.
 --
@@ -179,7 +174,7 @@ boringWiring = do
       (inspector2, f) = makeF' b c
       gDeco1 = makeGDeco1 a
       -- Here we apply a single decorator.
-      g = appEndo gDeco1 do makeG e f g
+      g = appEndo gDeco1 do makeG e f
       (init1, inspector3, h) = makeH a d g
       zDeco1 = makeZDeco1 b e
       (init2, zDeco2) = makeZDeco2' f

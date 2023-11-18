@@ -89,8 +89,8 @@ makeE = pure \_ -> E
 makeF :: IO (B -> C -> (Inspector, F))
 makeF = pure \_ _ -> (Inspector (pure ["F stuff"]), F)
 
-makeG :: E -> F -> G -> G
-makeG _ _ _ = G
+makeG :: E -> F -> G
+makeG _ _ = G
 
 makeGDeco1 :: A -> Endo G
 makeGDeco1 _ = mempty
