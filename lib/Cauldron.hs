@@ -51,7 +51,6 @@ import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
-import Control.Monad (guard)
 import Data.Bifunctor (first)
 import Data.ByteString qualified
 import Data.Dynamic
@@ -108,11 +107,11 @@ bare constructor = Bean {constructor, decos = mempty}
 
 -- | A collection of 'Constructor's for the decorators of some 'Bean'.
 newtype Decos m bean where
-  Decos :: {decoCons :: Seq (Constructor m (Endo bean))} -> Decos m bean
+  Decos :: {decoCons :: Seq (Constructor m bean)} -> Decos m bean
   deriving newtype (Semigroup, Monoid)
 
 instance IsList (Decos m bean) where
-  type Item (Decos m bean) = Constructor m (Endo bean)
+  type Item (Decos m bean) = Constructor m bean
   fromList decos = Decos do GHC.Exts.fromList decos
   toList (Decos {decoCons}) = GHC.Exts.toList decoCons
 
@@ -125,15 +124,15 @@ setDecos decos (Bean {constructor}) = Bean {constructor, decos}
 overDecos :: (Decos m bean -> Decos m bean) -> Bean m bean -> Bean m bean
 overDecos f (Bean {constructor, decos}) = Bean {constructor, decos = f decos}
 
-addFirst :: Constructor m (Endo bean) -> Decos m bean -> Decos m bean
+addFirst :: Constructor m bean -> Decos m bean -> Decos m bean
 addFirst con (Decos {decoCons}) = Decos do con Seq.<| decoCons
 
-addLast :: Constructor m (Endo bean) -> Decos m bean -> Decos m bean
+addLast :: Constructor m bean -> Decos m bean -> Decos m bean
 addLast con (Decos {decoCons}) = Decos do decoCons Seq.|> con
 
 fromConstructors :: 
     -- | The constructors end in 'Endo' because we are building decorators.
-    [Constructor m (Endo bean)] -> 
+    [Constructor m bean] -> 
     Decos m bean
 fromConstructors cons = Decos do Seq.fromList cons
 
@@ -228,10 +227,11 @@ constructorReps Constructor {constructor_ = (_ :: m (Args args (Regs accums comp
 
 constructorEdges ::
   (Typeable component) =>
+  (Set TypeRep -> Set TypeRep) ->
   PlanItem ->
   Constructor m component ->
   [(PlanItem, PlanItem)]
-constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
+constructorEdges tweakArgs item (constructorReps -> ConstructorReps {argReps = tweakArgs -> argReps, regReps}) =
   -- consumers depend on their args
   ( do
       argRep <- Set.toList argReps
@@ -352,8 +352,10 @@ checkCycles recipes = do
                       decos = do
                         (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons)
                         [(BeanDecorator beanRep decoIndex, decoCon)]
-                      beanDeps = constructorEdges bareBean constructor
-                      decoDeps = concatMap (uncurry constructorEdges) decos
+                      beanDeps = constructorEdges id bareBean constructor
+                      -- We remove dependencies on bean itself from the decos. We already depend on the
+                      -- previous deco.
+                      decoDeps = concatMap (uncurry (constructorEdges (Set.delete beanRep))) decos
                       full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
                       innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
                   beanDeps ++ decoDeps ++ innerDeps
@@ -380,8 +382,8 @@ followPlan recipes initial plan = do
               BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
                 SomeBean (Bean {decos = Decos {decoCons}}) -> do
                   let indexStartingAt0 = fromIntegral (pred index)
-                      decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
-                      (super', bean) = followDecorator decoCon super
+                  let decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
+                  let (super', bean) = followConstructor decoCon super
                       dyn = toDyn bean
                   Map.insert (dynTypeRep dyn) dyn super'
           initial
@@ -412,18 +414,6 @@ followConstructor Constructor {constructor_ = I (Args {runArgs})} super = do
     Regs regs bean -> do
       let inserters = cfoldMap_NP (Proxy @(Typeable `And` Monoid)) makeRegInserter regs
       (appEndo inserters super, bean)
-
-followDecorator ::
-  forall component.
-  (Typeable component) =>
-  Constructor I (Endo component) ->
-  Map TypeRep Dynamic ->
-  (Map TypeRep Dynamic, component)
-followDecorator decoCon super = do
-  let (super', Endo deco) = followConstructor decoCon super
-      baseDyn = fromJust do Map.lookup (typeRep (Proxy @component)) super'
-      base = fromJust do fromDynamic baseDyn
-  (super', deco base)
 
 makeExtractor :: forall a. (Typeable a) => Extractor a
 makeExtractor =

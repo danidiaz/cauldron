@@ -92,8 +92,8 @@ makeF = pure \_ _ -> (Inspector (pure ["F stuff"]), F)
 makeG :: E -> F -> G
 makeG _ _ = G
 
-makeGDeco1 :: A -> Endo G
-makeGDeco1 _ = mempty
+makeGDeco1 :: A -> G -> G
+makeGDeco1 _ g = g 
 
 makeH :: A -> D -> G -> (Initializer, Inspector, H)
 makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
@@ -101,11 +101,11 @@ makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
 makeZ :: Inspector -> D -> H -> Z
 makeZ _ _ _ = Z
 
-makeZDeco1 :: B -> E -> Endo Z
-makeZDeco1 _ _ = mempty
+makeZDeco1 :: B -> E -> Z -> Z
+makeZDeco1 _ _ z = z
 
-makeZDeco2 :: IO (F -> (Initializer, Endo Z))
-makeZDeco2 = pure \_ -> (Initializer (putStrLn "Z deco init"), mempty)
+makeZDeco2 :: IO (F -> Z -> (Initializer, Z))
+makeZDeco2 = pure \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
 coolWiring :: Either BadBeans (DependencyGraph, IO (Maybe (Initializer, Inspector, Z)))
 coolWiring =

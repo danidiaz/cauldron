@@ -131,8 +131,8 @@ makeG _ _ = G
 --
 -- Because they are normal constructors, they can be effectful, and they
 -- might have dependencies of their own.
-makeGDeco1 :: A -> Endo G
-makeGDeco1 _ = mempty
+makeGDeco1 :: A -> G ->  G
+makeGDeco1 _ g = g
 
 -- | A bean with two monoidal registrations.
 makeH :: A -> D -> G -> (Initializer, Inspector, H)
@@ -148,12 +148,12 @@ makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
 makeZ :: Inspector -> D -> H -> Z
 makeZ _ _ _ = Z
 
-makeZDeco1 :: B -> E -> Endo Z
-makeZDeco1 _ _ = mempty
+makeZDeco1 :: B -> E -> Z-> Z
+makeZDeco1 _ _ z = z
 
 -- | A decorator with an effectful constructor and a monoidal registration.
-makeZDeco2 :: IO (F -> (Initializer, Endo Z))
-makeZDeco2 = pure \_ -> (Initializer (putStrLn "Z deco init"), mempty)
+makeZDeco2 :: IO (F -> Z -> (Initializer, Z))
+makeZDeco2 = pure \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
 boringWiring :: IO (Initializer, Inspector, Z)
 boringWiring = do
@@ -172,14 +172,16 @@ boringWiring = do
       d = makeD
       e = makeE' a
       (inspector2, f) = makeF' b c
-      gDeco1 = makeGDeco1 a
+      g0 = makeG e f
+      g1 = makeGDeco1 a g0
+      g = g1
       -- Here we apply a single decorator.
-      g = appEndo gDeco1 do makeG e f
       (init1, inspector3, h) = makeH a d g
-      zDeco1 = makeZDeco1 b e
-      (init2, zDeco2) = makeZDeco2' f
       -- Compose the decorators before applying them.
-      z = appEndo (zDeco2 <> zDeco1) do makeZ inspector d h
+      z0 = makeZ inspector d h
+      z1 = makeZDeco1 b e z0
+      (init2, z2) = makeZDeco2' f z1
+      z = z2
   pure (initializer, inspector, z)
 
 -- | Here we don't have to worry about positional parameters. We throw all the
