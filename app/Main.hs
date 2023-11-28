@@ -191,30 +191,30 @@ boringWiring = do
 -- Note that we detect wiring errors *before* running the effectful constructors.
 coolWiring :: Either BadBeans (DependencyGraph, IO (Maybe (Initializer, Inspector, Z)))
 coolWiring =
-  let cauldron :: Cauldron IO =
+  let cauldron :: Cauldron IO IO =
         empty
-          & insert @A do bare do pack_ do pure makeA
-          & insert @B do bare do pack (\(reg, bean) -> regs1 reg bean) do pure makeB
-          & insert @C do bare do pack_ do pure makeC
-          & insert @D do bare do pack_ do pure makeD
-          & insert @E do bare do pack_ do makeE
-          & insert @F do bare do pack (\(reg, bean) -> regs1 reg bean) do makeF
+          & insert @A do bare do pack (pure . regs0) do pure makeA
+          & insert @B do bare do pack (pure . (\(reg, bean) -> regs1 reg bean)) do pure makeB
+          & insert @C do bare do pack (pure . regs0) do pure makeC
+          & insert @D do bare do pack (pure . regs0) do pure makeD
+          & insert @E do bare do pack (pure . regs0) do makeE
+          & insert @F do bare do pack (pure . (\(reg, bean) -> regs1 reg bean)) do makeF
           & insert @G do
             Bean
-              { constructor = pack_ do pure makeG,
+              { constructor = pack (pure . regs0) do pure makeG,
                 decos =
                   fromConstructors
-                    [ pack_ do pure makeGDeco1
+                    [ pack (pure . regs0) do pure makeGDeco1
                     ]
               }
-          & insert @H do bare do pack (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do pure makeH
+          & insert @H do bare do pack (pure . (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean)) do pure makeH
           & insert @Z do
             Bean
-              { constructor = pack_ do pure makeZ,
+              { constructor = pack (pure .  regs0) do pure makeZ,
                 decos =
                   fromConstructors
-                    [ pack_ do pure makeZDeco1,
-                      pack (\(reg, bean) -> regs1 reg bean) do makeZDeco2
+                    [ pack (pure . regs0) do pure makeZDeco1,
+                      pack (pure . (\(reg, bean) -> regs1 reg bean)) do makeZDeco2
                     ]
               }
    in case cook cauldron of
@@ -223,7 +223,8 @@ coolWiring =
           Right
             ( depGraph,
               do
-                beans <- action
+                innerAction <- action
+                beans <- innerAction
                 pure do
                   initializer <- taste @Initializer beans
                   inspector <- taste @Inspector beans

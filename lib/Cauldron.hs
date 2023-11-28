@@ -33,9 +33,9 @@ module Cauldron
     addLast,
     fromConstructors,
     Constructor,
-    pack_,
     pack,
     Regs,
+    regs0,
     regs1,
     regs2,
     regs3,
@@ -57,7 +57,6 @@ import Data.Dynamic
 import Data.Foldable qualified
 import Data.Functor ((<&>))
 import Data.Kind
-import Data.List qualified
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified
 import Data.Map.Strict (Map)
@@ -256,9 +255,9 @@ data PlanItem
 
 -- | Build the beans using the constructors stored in the 'Cauldron'.
 cook ::
-  (Applicative ap) =>
+  (Applicative ap, Monad m) =>
   Cauldron ap m ->
-  Either BadBeans (DependencyGraph, ap BoiledBeans)
+  Either BadBeans (DependencyGraph, ap (m BoiledBeans))
 cook Cauldron {recipes} = do
   accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes
@@ -266,8 +265,8 @@ cook Cauldron {recipes} = do
   Right
     ( DependencyGraph {graph},
       sequenceRecipes recipes <&> \recipes' -> do
-        let beans = followPlan recipes' accumSet plan
-        BoiledBeans {beans}
+        beans <- followPlan recipes' accumSet plan
+        pure do BoiledBeans {beans}
     )
 
 sequenceRecipes ::
@@ -364,28 +363,28 @@ checkCycles recipes = do
       Left recipeCycle
     Right (reverse -> plan) -> Right (graph, plan)
 
-followPlan ::
+followPlan :: Monad m =>
   Map TypeRep (SomeBean I m) ->
   Map TypeRep Dynamic ->
   Plan ->
-  Map TypeRep Dynamic
+  m (Map TypeRep Dynamic)
 followPlan recipes initial plan = do
-        Data.List.foldl'
+        Data.Foldable.foldlM
           do
             \super -> \case
               BareBean rep -> case fromJust do Map.lookup rep recipes of
                 SomeBean (Bean {constructor}) -> do
-                  let (super', bean) = followConstructor constructor super
-                      dyn = toDyn bean
-                  Map.insert (dynTypeRep dyn) dyn super'
-              BuiltBean _ -> super
+                  (super', bean) <- followConstructor constructor super
+                  let dyn = toDyn bean
+                  pure do Map.insert (dynTypeRep dyn) dyn super'
+              BuiltBean _ -> pure super
               BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
                 SomeBean (Bean {decos = Decos {decoCons}}) -> do
                   let indexStartingAt0 = fromIntegral (pred index)
                   let decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
-                  let (super', bean) = followConstructor decoCon super
-                      dyn = toDyn bean
-                  Map.insert (dynTypeRep dyn) dyn super'
+                  (super', bean) <- followConstructor decoCon super
+                  let dyn = toDyn bean
+                  pure do Map.insert (dynTypeRep dyn) dyn super'
           initial
           plan
 
@@ -403,17 +402,18 @@ newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap PlanItem}
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
-followConstructor ::
+followConstructor :: Monad m =>
   Constructor I m component ->
   Map TypeRep Dynamic ->
-  (Map TypeRep Dynamic, component)
+  m (Map TypeRep Dynamic, component)
 followConstructor Constructor {constructor_ = I (Args {runArgs})} super = do
   let Extractor {runExtractor} = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor super
-  case runArgs args of
+  results <- runArgs args
+  case results of
     Regs regs bean -> do
       let inserters = cfoldMap_NP (Proxy @(Typeable `And` Monoid)) makeRegInserter regs
-      (appEndo inserters super, bean)
+      pure (appEndo inserters super, bean)
 
 makeExtractor :: forall a. (Typeable a) => Extractor a
 makeExtractor =
@@ -467,6 +467,10 @@ argsN = Args . multiuncurry
 data Regs (regs :: [Type]) bean = Regs (NP I regs) bean
   deriving (Functor)
 
+
+regs0 :: bean -> Regs '[] bean
+regs0 bean = Regs Nil bean
+
 regs1 :: reg1 -> bean -> Regs '[reg1] bean
 regs1 reg1 bean = Regs (I reg1 :* Nil) bean
 
@@ -488,26 +492,11 @@ pack ::
   -- | Fit the outputs of the constructor into the auxiliary 'Regs' type.
   --
   -- See 'regs1' and similar functions.
-  (r -> Regs regs bean) ->
+  (r -> m (Regs regs bean)) ->
   -- | Action returning a function ending in @r@, some datatype containing
   -- @regs@ and @bean@ values.
   ap curried ->
   Constructor ap m bean
-pack f m = Constructor do go <$> m
+pack f a = Constructor do go <$> a
   where
     go curried = argsN curried <&> f
-
--- | Build a @Constructor m bean@ out of an action in @m@ which returns a curried
--- function ending in @bean@.
-pack_ ::
-  forall (args :: [Type]) bean curried ap m.
-  ( MulticurryableF args bean curried (IsFunction curried),
-    All Typeable args,
-    Functor ap
-  ) =>
-  -- | Action returning a function ending in @bean@.
-  ap curried ->
-  Constructor ap m bean
-pack_ n = Constructor do go <$> n
-  where
-    go curried = argsN curried <&> Regs Nil
