@@ -1,1 +1,1 @@
-- define "packPure"
+- cook should take a bean type, and fail early.

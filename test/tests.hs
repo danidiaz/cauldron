@@ -62,8 +62,8 @@ makeRepository = do
 cauldron :: Cauldron M M
 cauldron =
   empty
-    & insert @(Logger M) do bare do pack (pure . (\(reg, bean) -> regs1 reg bean)) do makeLogger
-    & insert @(Repository M) do bare do pack (pure . (\(reg, bean) -> regs1 reg bean)) do lift makeRepository
+    & insert @(Logger M) do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeLogger
+    & insert @(Repository M) do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do lift makeRepository
 
 cauldronMissingDep :: Cauldron M M
 cauldronMissingDep = delete @(Logger M) cauldron
@@ -71,12 +71,12 @@ cauldronMissingDep = delete @(Logger M) cauldron
 cauldronDoubleDutyBean :: Cauldron M M
 cauldronDoubleDutyBean =
   cauldron
-    & insert @Initializer do bare do pack (pure . regs0) do pure do (Initializer (pure ()))
+    & insert @Initializer do makeBean do packPure regs0 do pure do (Initializer (pure ()))
 
 cauldronWithCycle :: Cauldron M M
 cauldronWithCycle =
   cauldron
-    & insert @(Logger M) do bare do pack (pure . (\(reg, bean) -> regs1 reg bean)) do const @_ @(Repository M) <$> makeLogger
+    & insert @(Logger M) do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) <$> makeLogger
 
 tests :: TestTree
 tests =

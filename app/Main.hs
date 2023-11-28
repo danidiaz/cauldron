@@ -193,28 +193,28 @@ coolWiring :: Either BadBeans (DependencyGraph, IO (Maybe (Initializer, Inspecto
 coolWiring =
   let cauldron :: Cauldron IO IO =
         empty
-          & insert @A do bare do pack (pure . regs0) do pure makeA
-          & insert @B do bare do pack (pure . (\(reg, bean) -> regs1 reg bean)) do pure makeB
-          & insert @C do bare do pack (pure . regs0) do pure makeC
-          & insert @D do bare do pack (pure . regs0) do pure makeD
-          & insert @E do bare do pack (pure . regs0) do makeE
-          & insert @F do bare do pack (pure . (\(reg, bean) -> regs1 reg bean)) do makeF
+          & insert @A do makeBean do packPure regs0 do pure makeA
+          & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do pure makeB
+          & insert @C do makeBean do packPure regs0 do pure makeC
+          & insert @D do makeBean do packPure regs0 do pure makeD
+          & insert @E do makeBean do packPure regs0 do makeE
+          & insert @F do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeF
           & insert @G do
             Bean
-              { constructor = pack (pure . regs0) do pure makeG,
+              { constructor = packPure regs0 do pure makeG,
                 decos =
                   fromConstructors
-                    [ pack (pure . regs0) do pure makeGDeco1
+                    [ packPure regs0 do pure makeGDeco1
                     ]
               }
-          & insert @H do bare do pack (pure . (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean)) do pure makeH
+          & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do pure makeH
           & insert @Z do
             Bean
-              { constructor = pack (pure .  regs0) do pure makeZ,
+              { constructor = packPure regs0 do pure makeZ,
                 decos =
                   fromConstructors
-                    [ pack (pure . regs0) do pure makeZDeco1,
-                      pack (pure . (\(reg, bean) -> regs1 reg bean)) do makeZDeco2
+                    [ packPure regs0 do pure makeZDeco1,
+                      packPure (\(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
    in case cook cauldron of

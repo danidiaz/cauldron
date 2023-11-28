@@ -24,7 +24,7 @@ module Cauldron
     taste,
     BoiledBeans,
     Bean (..),
-    bare,
+    makeBean,
     setConstructor,
     setDecos,
     overDecos,
@@ -34,6 +34,7 @@ module Cauldron
     fromConstructors,
     Constructor,
     pack,
+    packPure,
     Regs,
     regs0,
     regs1,
@@ -101,8 +102,8 @@ newtype BoiledBeans where
   BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
 -- | A 'Bean' without decorators, having only the main constructor.
-bare :: Constructor ap m a -> Bean ap m a
-bare constructor = Bean {constructor, decos = mempty}
+makeBean :: Constructor ap m a -> Bean ap m a
+makeBean constructor = Bean {constructor, decos = mempty}
 
 -- | A collection of 'Constructor's for the decorators of some 'Bean'.
 newtype Decos ap m bean where
@@ -500,3 +501,23 @@ pack ::
 pack f a = Constructor do go <$> a
   where
     go curried = argsN curried <&> f
+
+packPure ::
+  forall (args :: [Type]) r curried regs bean ap m.
+  ( MulticurryableF args r curried (IsFunction curried),
+    All Typeable args,
+    All (Typeable `And` Monoid) regs,
+    Functor ap,
+    Applicative m
+  ) =>
+  -- | Fit the outputs of the constructor into the auxiliary 'Regs' type.
+  --
+  -- See 'regs1' and similar functions.
+  (r -> Regs regs bean) ->
+  -- | Action returning a function ending in @r@, some datatype containing
+  -- @regs@ and @bean@ values.
+  ap curried ->
+  Constructor ap m bean
+packPure f a = Constructor do go <$> a
+  where
+    go curried = argsN curried <&> pure . f
