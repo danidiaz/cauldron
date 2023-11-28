@@ -206,7 +206,7 @@ delete Cauldron {recipes} =
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 constructorReps :: (Typeable component) => Constructor ap m component -> ConstructorReps
-constructorReps Constructor {constructor_ = (_ :: ap (Args args (Regs accums component)))} =
+constructorReps Constructor {constructor_ = (_ :: ap (Args args (m (Regs accums component))))} =
   ConstructorReps
     { argReps = Set.fromList do
         collapse_NP do
