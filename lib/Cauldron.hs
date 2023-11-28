@@ -78,62 +78,62 @@ import GHC.Exts (IsList (..))
 import Multicurryable
 import Type.Reflection qualified
 
-newtype Cauldron ap where
-  Cauldron :: {recipes :: Map TypeRep (SomeBean ap)} -> Cauldron ap
+newtype Cauldron ap m where
+  Cauldron :: {recipes :: Map TypeRep (SomeBean ap m)} -> Cauldron ap m
   deriving newtype (Semigroup, Monoid)
 
-data SomeBean ap where
-  SomeBean :: (Typeable a) => Bean ap a -> SomeBean ap
+data SomeBean ap m where
+  SomeBean :: (Typeable a) => Bean ap m a -> SomeBean ap m
 
 -- | Instructions for building a value of type @bean@, possibly requiring
 -- actions in the monad @m@
-data Bean ap bean where
+data Bean ap m bean where
   Bean ::
     { 
       -- | How to build the bean itself.
-      constructor :: Constructor ap bean,
+      constructor :: Constructor ap m bean,
       -- | How to build the bean decorators.
-      decos :: Decos ap bean
+      decos :: Decos ap m bean
     } ->
-    Bean ap bean
+    Bean ap m bean
 
 -- | A map of fully constructed beans. See 'taste'.
 newtype BoiledBeans where
   BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
 -- | A 'Bean' without decorators, having only the main constructor.
-bare :: Constructor ap a -> Bean ap a
+bare :: Constructor ap m a -> Bean ap m a
 bare constructor = Bean {constructor, decos = mempty}
 
 -- | A collection of 'Constructor's for the decorators of some 'Bean'.
-newtype Decos ap bean where
-  Decos :: {decoCons :: Seq (Constructor ap bean)} -> Decos ap bean
+newtype Decos ap m bean where
+  Decos :: {decoCons :: Seq (Constructor ap m bean)} -> Decos ap m bean
   deriving newtype (Semigroup, Monoid)
 
-instance IsList (Decos ap bean) where
-  type Item (Decos ap bean) = Constructor ap bean
+instance IsList (Decos ap m bean) where
+  type Item (Decos ap m bean) = Constructor ap m bean
   fromList decos = Decos do GHC.Exts.fromList decos
   toList (Decos {decoCons}) = GHC.Exts.toList decoCons
 
-setConstructor :: Constructor ap bean -> Bean ap bean -> Bean ap bean
+setConstructor :: Constructor ap m bean -> Bean ap m bean -> Bean ap m bean
 setConstructor constructor (Bean {decos}) = Bean {constructor, decos}
 
-setDecos :: Decos ap bean -> Bean ap bean -> Bean ap bean
+setDecos :: Decos ap m bean -> Bean ap m bean -> Bean ap m bean
 setDecos decos (Bean {constructor}) = Bean {constructor, decos}
 
-overDecos :: (Decos ap bean -> Decos ap bean) -> Bean ap bean -> Bean ap bean
+overDecos :: (Decos ap m bean -> Decos ap m bean) -> Bean ap m bean -> Bean ap m bean
 overDecos f (Bean {constructor, decos}) = Bean {constructor, decos = f decos}
 
-addFirst :: Constructor ap bean -> Decos ap bean -> Decos ap bean
+addFirst :: Constructor ap m bean -> Decos ap m bean -> Decos ap m bean
 addFirst con (Decos {decoCons}) = Decos do con Seq.<| decoCons
 
-addLast :: Constructor ap bean -> Decos ap bean -> Decos ap bean
+addLast :: Constructor ap m bean -> Decos ap m bean -> Decos ap m bean
 addLast con (Decos {decoCons}) = Decos do decoCons Seq.|> con
 
 fromConstructors :: 
     -- | The constructors end in 'Endo' because we are building decorators.
-    [Constructor ap bean] -> 
-    Decos ap bean
+    [Constructor ap m bean] -> 
+    Decos ap m bean
 fromConstructors cons = Decos do Seq.fromList cons
 
 -- | A way of building some @bean@ value, potentially requiring some
@@ -141,12 +141,12 @@ fromConstructors cons = Decos do Seq.fromList cons
 -- primary @bean@ one.
 --
 -- See @pack_@ and @pack@.
-data Constructor ap bean where
+data Constructor ap m bean where
   Constructor ::
     (All Typeable args, All (Typeable `And` Monoid) regs) =>
-    { constructor_ :: ap (Args args (Regs regs bean))
+    { constructor_ :: ap (Args args (m (Regs regs bean)))
     } ->
-    Constructor ap bean
+    Constructor ap m bean
 
 data ConstructorReps where
   ConstructorReps ::
@@ -160,34 +160,34 @@ newtype Extractor a where
   deriving newtype (Functor, Applicative)
 
 -- | The empty 'Cauldron'.
-empty :: Cauldron ap
+empty :: Cauldron ap m
 empty = mempty
 
 -- | Put a recipe for a 'Bean' into the 'Cauldron'.
 insert ::
-  forall (bean :: Type) ap.
+  forall (bean :: Type) ap m.
   (Typeable bean) =>
-  Bean ap bean ->
-  Cauldron ap ->
-  Cauldron ap
+  Bean ap m bean ->
+  Cauldron ap m ->
+  Cauldron ap m
 insert recipe Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
   Cauldron {recipes = Map.insert rep (SomeBean recipe) recipes}
 
 -- | Tweak an already existing 'Bean'.
 adjust ::
-  forall bean ap.
+  forall bean ap m.
   (Typeable bean) =>
-  (Bean ap bean -> Bean ap bean) ->
-  Cauldron ap ->
-  Cauldron ap
+  (Bean ap m bean -> Bean ap m bean) ->
+  Cauldron ap m ->
+  Cauldron ap m
 adjust f (Cauldron {recipes}) = do
   let rep = typeRep (Proxy @bean)
   Cauldron
     { recipes =
         Map.adjust
           do
-            \(SomeBean (r :: Bean ap a)) ->
+            \(SomeBean (r :: Bean ap m a)) ->
               case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
                 Nothing -> error "should never happen"
                 Just Refl -> SomeBean (f r)
@@ -196,16 +196,16 @@ adjust f (Cauldron {recipes}) = do
     }
 
 delete ::
-  forall bean ap.
+  forall bean ap m.
   (Typeable bean) =>
-  Cauldron ap ->
-  Cauldron ap
+  Cauldron ap m ->
+  Cauldron ap m
 delete Cauldron {recipes} =
   Cauldron {recipes = Map.delete (typeRep (Proxy @bean)) recipes}
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
-constructorReps :: (Typeable component) => Constructor ap component -> ConstructorReps
+constructorReps :: (Typeable component) => Constructor ap m component -> ConstructorReps
 constructorReps Constructor {constructor_ = (_ :: ap (Args args (Regs accums component)))} =
   ConstructorReps
     { argReps = Set.fromList do
@@ -229,7 +229,7 @@ constructorEdges ::
   (Typeable component) =>
   (Set TypeRep -> Set TypeRep) ->
   PlanItem ->
-  Constructor ap component ->
+  Constructor ap m component ->
   [(PlanItem, PlanItem)]
 constructorEdges tweakArgs item (constructorReps -> ConstructorReps {argReps = tweakArgs -> argReps, regReps}) =
   -- consumers depend on their args
@@ -257,7 +257,7 @@ data PlanItem
 -- | Build the beans using the constructors stored in the 'Cauldron'.
 cook ::
   (Applicative ap) =>
-  Cauldron ap ->
+  Cauldron ap m ->
   Either BadBeans (DependencyGraph, ap BoiledBeans)
 cook Cauldron {recipes} = do
   accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
@@ -271,26 +271,26 @@ cook Cauldron {recipes} = do
     )
 
 sequenceRecipes ::
-  forall ap.
+  forall ap m.
   (Applicative ap) =>
-  Map TypeRep (SomeBean ap) ->
-  ap (Map TypeRep (SomeBean I))
+  Map TypeRep (SomeBean ap m) ->
+  ap (Map TypeRep (SomeBean I m))
 sequenceRecipes = traverse sequenceSomeBean
   where
-    sequenceSomeBean :: SomeBean ap -> ap (SomeBean I)
+    sequenceSomeBean :: SomeBean ap m -> ap (SomeBean I m)
     sequenceSomeBean (SomeBean theBean) =
       SomeBean <$> sequenceBean theBean
-    sequenceBean :: Bean ap a -> ap (Bean I a)
+    sequenceBean :: Bean ap m a -> ap (Bean I m a)
     sequenceBean Bean {constructor, decos} =
       Bean <$> sequenceConstructor constructor <*> sequenceDecos decos
-    sequenceConstructor :: Constructor ap a -> ap (Constructor I a)
+    sequenceConstructor :: Constructor ap m a -> ap (Constructor I m a)
     sequenceConstructor Constructor {constructor_} =
       Constructor . I <$> constructor_
-    sequenceDecos :: Decos ap a -> ap (Decos I a)
+    sequenceDecos :: Decos ap m a -> ap (Decos I m a)
     sequenceDecos Decos {decoCons} = Decos <$> traverse sequenceConstructor decoCons
 
 checkNoDoubleDutyBeans ::
-  Map TypeRep (SomeBean ap) ->
+  Map TypeRep (SomeBean ap m) ->
   Either (Set TypeRep) (Map TypeRep Dynamic)
 checkNoDoubleDutyBeans recipes = do
   let common = Set.intersection (Map.keysSet accumSet) (Map.keysSet recipes)
@@ -310,7 +310,7 @@ checkNoDoubleDutyBeans recipes = do
 
 checkMissingDeps ::
   Set TypeRep ->
-  Map TypeRep (SomeBean ap) ->
+  Map TypeRep (SomeBean ap m) ->
   Either (Map TypeRep (Set TypeRep)) ()
 checkMissingDeps accumSet recipes = do
   let demandedMap = Set.filter (`Map.notMember` recipes) . demanded <$> recipes
@@ -318,7 +318,7 @@ checkMissingDeps accumSet recipes = do
     then Left demandedMap
     else Right ()
   where
-    demanded :: SomeBean ap -> Set TypeRep
+    demanded :: SomeBean ap m -> Set TypeRep
     demanded (SomeBean Bean {constructor, decos = Decos {decoCons}}) =
       ( Set.fromList do
           let ConstructorReps {argReps = beanArgReps} = constructorReps constructor
@@ -330,7 +330,7 @@ checkMissingDeps accumSet recipes = do
         `Set.difference` accumSet
 
 checkCycles ::
-  Map TypeRep (SomeBean ap) ->
+  Map TypeRep (SomeBean ap m) ->
   Either (Graph.Cycle PlanItem) (AdjacencyMap PlanItem, Plan)
 checkCycles recipes = do
   let graph =
@@ -342,7 +342,7 @@ checkCycles recipes = do
               \beanRep
                ( SomeBean
                    ( Bean
-                       { constructor = constructor :: Constructor m bean,
+                       { constructor = constructor :: Constructor ap m bean,
                          decos = Decos {decoCons}
                        }
                      )
@@ -365,7 +365,7 @@ checkCycles recipes = do
     Right (reverse -> plan) -> Right (graph, plan)
 
 followPlan ::
-  Map TypeRep (SomeBean I) ->
+  Map TypeRep (SomeBean I m) ->
   Map TypeRep Dynamic ->
   Plan ->
   Map TypeRep Dynamic
@@ -404,7 +404,7 @@ newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap PlanItem}
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
 followConstructor ::
-  Constructor I component ->
+  Constructor I m component ->
   Map TypeRep Dynamic ->
   (Map TypeRep Dynamic, component)
 followConstructor Constructor {constructor_ = I (Args {runArgs})} super = do
@@ -479,7 +479,7 @@ regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 -- | To be used only for constructors which return monoidal secondary beans
 -- along with the primary bean.
 pack ::
-  forall (args :: [Type]) r curried regs bean ap.
+  forall (args :: [Type]) r curried regs bean ap m.
   ( MulticurryableF args r curried (IsFunction curried),
     All Typeable args,
     All (Typeable `And` Monoid) regs,
@@ -492,7 +492,7 @@ pack ::
   -- | Action returning a function ending in @r@, some datatype containing
   -- @regs@ and @bean@ values.
   ap curried ->
-  Constructor ap bean
+  Constructor ap m bean
 pack f m = Constructor do go <$> m
   where
     go curried = argsN curried <&> f
@@ -500,14 +500,14 @@ pack f m = Constructor do go <$> m
 -- | Build a @Constructor m bean@ out of an action in @m@ which returns a curried
 -- function ending in @bean@.
 pack_ ::
-  forall (args :: [Type]) bean curried ap.
+  forall (args :: [Type]) bean curried ap m.
   ( MulticurryableF args bean curried (IsFunction curried),
     All Typeable args,
     Functor ap
   ) =>
   -- | Action returning a function ending in @bean@.
   ap curried ->
-  Constructor ap bean
+  Constructor ap m bean
 pack_ n = Constructor do go <$> n
   where
     go curried = argsN curried <&> Regs Nil
