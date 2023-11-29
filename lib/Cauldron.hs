@@ -34,6 +34,7 @@ module Cauldron
     Constructor,
     pack,
     packPure,
+    packPure0,
     Regs,
     regs0,
     regs1,
@@ -200,8 +201,8 @@ delete Cauldron {recipes} =
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
-constructorReps :: (Typeable component) => Constructor m component -> ConstructorReps
-constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums component)))} =
+constructorReps :: (Typeable bean) => Constructor m bean -> ConstructorReps
+constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean)))} =
   ConstructorReps
     { argReps = Set.fromList do
         collapse_NP do
@@ -221,10 +222,10 @@ constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums comp
     typeRepHelper' = K (typeRep (Proxy @a), toDyn @a mempty)
 
 constructorEdges ::
-  (Typeable component) =>
+  (Typeable bean) =>
   (Set TypeRep -> Set TypeRep) ->
   PlanItem ->
-  Constructor m component ->
+  Constructor m bean ->
   [(PlanItem, PlanItem)]
 constructorEdges tweakArgs item (constructorReps -> ConstructorReps {argReps = tweakArgs -> argReps, regReps}) =
   -- consumers depend on their args
@@ -270,7 +271,7 @@ cook Cauldron {recipes} = do
     ( DependencyGraph {graph},
       do
         beans <- followPlan recipes accumSet plan
-        pure do fromJust do taste' beans
+        pure do fromJust do taste beans
     )
 
 checkNoDoubleDutyBeans ::
@@ -344,32 +345,39 @@ followPlan :: Monad m =>
   Map TypeRep Dynamic ->
   Plan ->
   m (Map TypeRep Dynamic)
-followPlan recipes initial plan = do
+followPlan recipes initial plan = 
         Data.Foldable.foldlM
-          do
-            \super -> \case
-              BareBean rep -> case fromJust do Map.lookup rep recipes of
-                SomeBean (Bean {constructor}) -> do
-                  (super', bean) <- followConstructor constructor super
-                  let dyn = toDyn bean
-                  pure do Map.insert (dynTypeRep dyn) dyn super'
-              BuiltBean _ -> pure super
-              BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
-                SomeBean (Bean {decos = Decos {decoCons}}) -> do
-                  let indexStartingAt0 = fromIntegral (pred index)
-                  let decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
-                  (super', bean) <- followConstructor decoCon super
-                  let dyn = toDyn bean
-                  pure do Map.insert (dynTypeRep dyn) dyn super'
+          do followPlanStep recipes
           initial
           plan
 
+followPlanStep :: Monad m =>
+ Map TypeRep (SomeBean m) ->
+ Map TypeRep Dynamic -> 
+ PlanItem -> 
+ m (Map TypeRep Dynamic)
+followPlanStep recipes super = \case
+  BareBean rep -> case fromJust do Map.lookup rep recipes of
+    SomeBean (Bean {constructor}) -> do
+      (super', bean) <- followConstructor constructor super
+      let dyn = toDyn bean
+      pure do Map.insert (dynTypeRep dyn) dyn super'
+  BuiltBean _ -> pure super
+  BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
+    SomeBean (Bean {decos = Decos {decoCons}}) -> do
+      let indexStartingAt0 = fromIntegral (pred index)
+      let decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
+      (super', bean) <- followConstructor decoCon super
+      let dyn = toDyn bean
+      pure do Map.insert (dynTypeRep dyn) dyn super'
+
 data BadBeans
-  = -- | Beans that work both as primary beans and as monoidal
-    -- registrations are disallowed.
-    DoubleDutyBeans (Set TypeRep)
+  = 
+    MissingTarget TypeRep
   | MissingDependencies (Map TypeRep (Set TypeRep))
-  | MissingTarget TypeRep
+    -- | Beans that work both as primary beans and as monoidal
+    -- registrations are disallowed.
+  | DoubleDutyBeans (Set TypeRep)
     -- | Dependency cycles are disallowed except for self-dependencies.
   | DependencyCycle (NonEmpty PlanItem)
   deriving stock (Show)
@@ -380,9 +388,9 @@ newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap PlanItem}
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
 followConstructor :: Monad m =>
-  Constructor m component ->
+  Constructor m bean ->
   Map TypeRep Dynamic ->
-  m (Map TypeRep Dynamic, component)
+  m (Map TypeRep Dynamic, bean)
 followConstructor Constructor {constructor_ = Args {runArgs}} super = do
   let Extractor {runExtractor} = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
       args = runExtractor super
@@ -395,13 +403,13 @@ followConstructor Constructor {constructor_ = Args {runArgs}} super = do
 makeExtractor :: forall a. (Typeable a) => Extractor a
 makeExtractor =
   let runExtractor dyns =
-        fromJust do taste' @a dyns
+        fromJust do taste @a dyns
    in Extractor {runExtractor}
 
 makeRegInserter :: forall a. ((Typeable `And` Monoid) a) => I a -> Endo (Map TypeRep Dynamic)
 makeRegInserter (I a) =
   let appEndo dynMap = do
-        let reg = fromJust do taste' @a dynMap
+        let reg = fromJust do taste @a dynMap
             dyn = toDyn (reg <> a)
         Map.insert (dynTypeRep dyn) dyn dynMap
    in Endo {appEndo}
@@ -420,8 +428,8 @@ exportToDot filepath DependencyGraph {graph} = do
           graph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
 
-taste' :: forall a. (Typeable a) => Map TypeRep Dynamic -> Maybe a
-taste' beans = do
+taste :: forall a. (Typeable a) => Map TypeRep Dynamic -> Maybe a
+taste beans = do
   let rep = typeRep (Proxy @a)
   dyn <- Map.lookup rep beans
   fromDynamic @a dyn
@@ -488,6 +496,19 @@ packPure ::
   curried ->
   Constructor m bean
 packPure f curried = Constructor do pure . f <$> do argsN curried
+
+packPure0 ::
+  forall (args :: [Type]) bean curried m.
+  ( MulticurryableF args bean curried (IsFunction curried),
+    All Typeable args,
+    Applicative m
+  ) =>
+  -- | Action returning a function ending in @r@, some datatype containing
+  -- @regs@ and @bean@ values.
+  curried ->
+  Constructor m bean
+packPure0 = packPure regs0
+
 
 restrict :: Ord a => AdjacencyMap a -> a -> AdjacencyMap a
 restrict g v = do
