@@ -1,1 +1,1 @@
-- cook should take a bean type, and fail early.
+- cook should only build those beans required by the target
