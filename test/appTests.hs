@@ -107,7 +107,7 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: IO (F -> Z -> (Initializer, Z))
 makeZDeco2 = pure \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-coolWiring :: Either BadBeans (DependencyGraph, IO (Maybe (Initializer, Inspector, Z)))
+coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring =
   let cauldron :: Cauldron IO IO =
         empty
@@ -135,6 +135,7 @@ coolWiring =
                       packPure (\(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
+          & insert @(Initializer, Inspector, Z) do makeBean do packPure regs0 do pure \a b c -> (a,b,c)
    in case cook cauldron of
         Left e -> Left e
         Right (depGraph, action) ->
@@ -142,12 +143,7 @@ coolWiring =
             ( depGraph,
               do
                 innerAction <- action
-                beans <- innerAction
-                pure do
-                  initializer <- taste @Initializer beans
-                  inspector <- taste @Inspector beans
-                  z <- taste @Z beans
-                  pure (initializer, inspector, z)
+                innerAction
             )
 
 tests :: TestTree

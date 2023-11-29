@@ -64,6 +64,7 @@ cauldron =
   empty
     & insert @(Logger M) do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeLogger
     & insert @(Repository M) do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do lift makeRepository
+    & insert @(Initializer, Repository M) do makeBean do packPure regs0 do pure \a b -> (a,b)
 
 cauldronMissingDep :: Cauldron M M
 cauldronMissingDep = delete @(Logger M) cauldron
@@ -87,21 +88,11 @@ tests =
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
             innerBeansAction <- beansAction
-            beans <- innerBeansAction
-            case ( liftA2
-                     (,)
-                     (taste @Initializer beans)
-                     (taste @(Repository M) beans)
-                 ) of
-              Nothing -> liftIO do assertFailure "bean not built"
-              Just
-                ( Initializer {runInitializer},
-                  Repository {findById, store}
-                  ) -> do
-                  runInitializer
-                  store 1 "foo"
-                  _ <- findById 1
-                  pure ()
+            (Initializer {runInitializer},Repository {findById, store}) <- innerBeansAction
+            runInitializer
+            store 1 "foo"
+            _ <- findById 1
+            pure ()
         assertEqual
           "traces"
           [ "logger constructor",
@@ -112,17 +103,17 @@ tests =
           ]
           traces,
       testCase "cauldron missing dep" do
-        case cook cauldronMissingDep of
+        case cook @(Repository M) cauldronMissingDep of
           Left (MissingDependencies _) -> pure ()
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do
-        case cook cauldronDoubleDutyBean of
+        case cook @(Repository M) cauldronDoubleDutyBean of
           Left (DoubleDutyBeans _) -> pure ()
           _ -> assertFailure "double duty beans not detected"
         pure (),
       testCase "cauldron with cycle" do
-        case cook cauldronWithCycle of
+        case cook @(Repository M) cauldronWithCycle of
           Left (DependencyCycle _) -> pure ()
           _ -> assertFailure "dependency cycle not detected"
         pure ()

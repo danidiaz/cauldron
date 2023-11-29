@@ -21,8 +21,7 @@ module Cauldron
     adjust,
     delete,
     cook,
-    taste,
-    BoiledBeans,
+    -- taste,
     Bean (..),
     makeBean,
     setConstructor,
@@ -96,10 +95,6 @@ data Bean ap m bean where
       decos :: Decos ap m bean
     } ->
     Bean ap m bean
-
--- | A map of fully constructed beans. See 'taste'.
-newtype BoiledBeans where
-  BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
 -- | A 'Bean' without decorators, having only the main constructor.
 makeBean :: Constructor ap m a -> Bean ap m a
@@ -255,11 +250,15 @@ data PlanItem
   deriving stock (Show, Eq, Ord)
 
 -- | Build the beans using the constructors stored in the 'Cauldron'.
-cook ::
-  (Applicative ap, Monad m) =>
+cook :: forall bean ap m.
+  (Applicative ap, Monad m, Typeable bean) =>
   Cauldron ap m ->
-  Either BadBeans (DependencyGraph, ap (m BoiledBeans))
+  Either BadBeans (DependencyGraph, ap (m bean))
 cook Cauldron {recipes} = do
+  let rep = typeRep (Proxy @bean)
+  case Map.lookup rep recipes of
+    Nothing -> Left (MissingTarget rep) 
+    Just _ -> Right ()
   accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes
   (graph, plan) <- first DependencyCycle do checkCycles recipes
@@ -267,7 +266,7 @@ cook Cauldron {recipes} = do
     ( DependencyGraph {graph},
       sequenceRecipes recipes <&> \recipes' -> do
         beans <- followPlan recipes' accumSet plan
-        pure do BoiledBeans {beans}
+        pure do fromJust do taste' beans
     )
 
 sequenceRecipes ::
@@ -394,6 +393,7 @@ data BadBeans
     -- registrations are disallowed.
     DoubleDutyBeans (Set TypeRep)
   | MissingDependencies (Map TypeRep (Set TypeRep))
+  | MissingTarget TypeRep
     -- | Dependency cycles are disallowed except for self-dependencies.
   | DependencyCycle (NonEmpty PlanItem)
   deriving stock (Show)
@@ -449,9 +449,6 @@ taste' beans = do
   let rep = typeRep (Proxy @a)
   dyn <- Map.lookup rep beans
   fromDynamic @a dyn
-
-taste :: forall a. (Typeable a) => BoiledBeans -> Maybe a
-taste BoiledBeans {beans} = taste' beans
 
 newtype Args args r = Args {runArgs :: NP I args -> r}
   deriving newtype (Functor, Applicative, Monad)
