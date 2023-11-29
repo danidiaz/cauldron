@@ -110,16 +110,11 @@ makeC = C
 makeD :: D
 makeD = D
 
--- | A bean with an effectful constructor.
---
--- We might want this in order to allocate some internal IORef,
--- or perhaps to read some configuration file.
-makeE :: IO (A -> E)
-makeE = pure \_ -> E
+makeE :: A -> E
+makeE = \_ -> E
 
--- | A bean with an effectful constructor and a monoidal registration.
-makeF :: IO (B -> C -> (Inspector, F))
-makeF = pure \_ _ -> (Inspector (pure ["F stuff"]), F)
+makeF :: B -> C -> (Inspector, F)
+makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 
 makeG :: E -> F -> G
 makeG _ _ = G
@@ -151,16 +146,12 @@ makeZ _ _ _ = Z
 makeZDeco1 :: B -> E -> Z-> Z
 makeZDeco1 _ _ z = z
 
--- | A decorator with an effectful constructor and a monoidal registration.
-makeZDeco2 :: IO (F -> Z -> (Initializer, Z))
-makeZDeco2 = pure \_ z -> (Initializer (putStrLn "Z deco init"), z)
+-- | A decorator with a monoidal registration.
+makeZDeco2 :: (F -> Z -> (Initializer, Z))
+makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
 boringWiring :: IO (Initializer, Inspector, Z)
 boringWiring = do
-  -- We need to run the effectful constructors first.
-  makeE' <- makeE
-  makeF' <- makeF
-  makeZDeco2' <- makeZDeco2
   let -- We have to remember to collect the monoidal registrations.
       initializer = init1 <> init2
       -- We have to remember to collect the monoidal registrations.
@@ -170,8 +161,8 @@ boringWiring = do
       (inspector1, b) = makeB
       c = makeC
       d = makeD
-      e = makeE' a
-      (inspector2, f) = makeF' b c
+      e = makeE a
+      (inspector2, f) = makeF b c
       g0 = makeG e f
       g1 = makeGDeco1 a g0
       g = g1
@@ -180,7 +171,7 @@ boringWiring = do
       -- Compose the decorators before applying them.
       z0 = makeZ inspector d h
       z1 = makeZDeco1 b e z0
-      (init2, z2) = makeZDeco2' f z1
+      (init2, z2) = makeZDeco2 f z1
       z = z2
   pure (initializer, inspector, z)
 
@@ -190,43 +181,35 @@ boringWiring = do
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
 coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
-coolWiring =
-  let cauldron :: Cauldron IO IO =
+coolWiring = do
+  let cauldron :: Cauldron IO =
         empty
-          & insert @A do makeBean do packPure regs0 do pure makeA
-          & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do pure makeB
-          & insert @C do makeBean do packPure regs0 do pure makeC
-          & insert @D do makeBean do packPure regs0 do pure makeD
+          & insert @A do makeBean do packPure regs0 do makeA
+          & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeB
+          & insert @C do makeBean do packPure regs0 do makeC
+          & insert @D do makeBean do packPure regs0 do makeD
           & insert @E do makeBean do packPure regs0 do makeE
           & insert @F do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeF
           & insert @G do
             Bean
-              { constructor = packPure regs0 do pure makeG,
+              { constructor = packPure regs0 do makeG,
                 decos =
                   fromConstructors
-                    [ packPure regs0 do pure makeGDeco1
+                    [ packPure regs0 do makeGDeco1
                     ]
               }
-          & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do pure makeH
+          & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z do
             Bean
-              { constructor = packPure regs0 do pure makeZ,
+              { constructor = packPure regs0 do makeZ,
                 decos =
                   fromConstructors
-                    [ packPure regs0 do pure makeZDeco1,
+                    [ packPure regs0 do makeZDeco1,
                       packPure (\(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-          & insert @(Initializer, Inspector, Z) do makeBean do packPure regs0 do pure \a b c -> (a,b,c)
-   in case cook cauldron of
-        Left e -> Left e
-        Right (depGraph, action) ->
-          Right
-            ( depGraph,
-              do
-                innerAction <- action
-                innerAction
-            )
+          & insert @(Initializer, Inspector, Z) do makeBean do packPure regs0 do \a b c -> (a,b,c)
+  cook cauldron
 
 main :: IO ()
 main = do

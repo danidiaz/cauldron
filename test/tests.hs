@@ -16,7 +16,6 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Monoid
 import Data.Text (Text)
-import Data.Text qualified
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -43,11 +42,11 @@ data Repository m = Repository
     store :: Int -> Text -> m ()
   }
 
-makeRepository :: IO (Logger M -> (Initializer, Repository M))
-makeRepository = do
-  mapRef <- newIORef @(Map Int Text) mempty
-  pure \Logger {logMessage} ->
-    ( Initializer do logMessage "repo init invoking logger",
+makeRepository :: Logger M -> M (Initializer, Repository M)
+makeRepository Logger {logMessage} = do
+    mapRef <- liftIO do newIORef @(Map Int Text) mempty
+    pure ( 
+      Initializer do logMessage "repo init invoking logger",
       Repository
         { findById = \key -> do
             logMessage "findById"
@@ -57,27 +56,27 @@ makeRepository = do
             logMessage "store"
             liftIO do modifyIORef mapRef do Map.insert key value
         }
-    )
+      )
 
-cauldron :: Cauldron M M
+cauldron :: Cauldron M
 cauldron =
   empty
-    & insert @(Logger M) do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeLogger
-    & insert @(Repository M) do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do lift makeRepository
-    & insert @(Initializer, Repository M) do makeBean do packPure regs0 do pure \a b -> (a,b)
+    & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
+    & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+    & insert @(Initializer, Repository M) do makeBean do packPure regs0 do \a b -> (a,b)
 
-cauldronMissingDep :: Cauldron M M
+cauldronMissingDep :: Cauldron M
 cauldronMissingDep = delete @(Logger M) cauldron
 
-cauldronDoubleDutyBean :: Cauldron M M
+cauldronDoubleDutyBean :: Cauldron M
 cauldronDoubleDutyBean =
   cauldron
-    & insert @Initializer do makeBean do packPure regs0 do pure do (Initializer (pure ()))
+    & insert @Initializer do makeBean do packPure regs0 do do (Initializer (pure ()))
 
-cauldronWithCycle :: Cauldron M M
+cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
-    & insert @(Logger M) do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) <$> makeLogger
+    & insert @(Logger M) do makeBean do pack (fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
 
 tests :: TestTree
 tests =
@@ -87,8 +86,7 @@ tests =
         (_, traces) <- case cook cauldron of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
-            innerBeansAction <- beansAction
-            (Initializer {runInitializer},Repository {findById, store}) <- innerBeansAction
+            (Initializer {runInitializer},Repository {findById, store}) <- beansAction
             runInitializer
             store 1 "foo"
             _ <- findById 1
