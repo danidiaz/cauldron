@@ -56,7 +56,6 @@ import Data.Bifunctor (first)
 import Data.ByteString qualified
 import Data.Dynamic
 import Data.Foldable qualified
-import Data.Functor ((<&>))
 import Data.Kind
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified
@@ -151,10 +150,6 @@ data ConstructorReps where
     } ->
     ConstructorReps
 
-newtype Extractor a where
-  Extractor :: {runExtractor :: Map TypeRep Dynamic -> a} -> Extractor a
-  deriving newtype (Functor, Applicative)
-
 -- | The empty 'Cauldron'.
 empty :: Cauldron m
 empty = mempty
@@ -220,27 +215,6 @@ constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean
     typeRepHelper = K (typeRep (Proxy @a))
     typeRepHelper' :: forall a. ((Typeable `And` Monoid) a) => K (TypeRep, Dynamic) a
     typeRepHelper' = K (typeRep (Proxy @a), toDyn @a mempty)
-
-constructorEdges ::
-  (Typeable bean) =>
-  (Set TypeRep -> Set TypeRep) ->
-  PlanItem ->
-  Constructor m bean ->
-  [(PlanItem, PlanItem)]
-constructorEdges tweakArgs item (constructorReps -> ConstructorReps {argReps = tweakArgs -> argReps, regReps}) =
-  -- consumers depend on their args
-  ( do
-      argRep <- Set.toList argReps
-      let argItem = BuiltBean argRep
-      [(item, argItem)]
-  )
-    ++
-    -- regs depend on their producers
-    ( do
-        (regRep, _) <- Map.toList regReps
-        let repItem = BuiltBean regRep
-        [(repItem, item)]
-    )
 
 type Plan = [PlanItem]
 
@@ -340,6 +314,27 @@ buildDepGraph recipes = Graph.edges
               innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
           beanDeps ++ decoDeps ++ innerDeps
 
+constructorEdges ::
+  (Typeable bean) =>
+  (Set TypeRep -> Set TypeRep) ->
+  PlanItem ->
+  Constructor m bean ->
+  [(PlanItem, PlanItem)]
+constructorEdges tweakArgs item (constructorReps -> ConstructorReps {argReps = tweakArgs -> argReps, regReps}) =
+  -- consumers depend on their args
+  ( do
+      argRep <- Set.toList argReps
+      let argItem = BuiltBean argRep
+      [(item, argItem)]
+  )
+    ++
+    -- regs depend on their producers
+    ( do
+        (regRep, _) <- Map.toList regReps
+        let repItem = BuiltBean regRep
+        [(repItem, item)]
+    )
+
 followPlan :: Monad m =>
   Map TypeRep (SomeBean m) ->
   Map TypeRep Dynamic ->
@@ -371,19 +366,6 @@ followPlanStep recipes super = \case
       let dyn = toDyn bean
       pure do Map.insert (dynTypeRep dyn) dyn super'
 
-data BadBeans
-  = 
-    MissingTarget TypeRep
-  | MissingDependencies (Map TypeRep (Set TypeRep))
-    -- | Beans that work both as primary beans and as monoidal
-    -- registrations are disallowed.
-  | DoubleDutyBeans (Set TypeRep)
-    -- | Dependency cycles are disallowed except for self-dependencies.
-  | DependencyCycle (NonEmpty PlanItem)
-  deriving stock (Show)
-
-newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap PlanItem}
-
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
@@ -400,6 +382,10 @@ followConstructor Constructor {constructor_ = Args {runArgs}} super = do
       let inserters = cfoldMap_NP (Proxy @(Typeable `And` Monoid)) makeRegInserter regs
       pure (appEndo inserters super, bean)
 
+newtype Extractor a where
+  Extractor :: {runExtractor :: Map TypeRep Dynamic -> a} -> Extractor a
+  deriving newtype (Functor, Applicative)
+
 makeExtractor :: forall a. (Typeable a) => Extractor a
 makeExtractor =
   let runExtractor dyns =
@@ -413,6 +399,30 @@ makeRegInserter (I a) =
             dyn = toDyn (reg <> a)
         Map.insert (dynTypeRep dyn) dyn dynMap
    in Endo {appEndo}
+
+restrict :: Ord a => AdjacencyMap a -> a -> AdjacencyMap a
+restrict g v = do
+  let relevantSet = Set.fromList do Graph.reachable g v
+  let relevant = (`Set.member` relevantSet)
+  Graph.induce relevant g 
+
+taste :: forall a. (Typeable a) => Map TypeRep Dynamic -> Maybe a
+taste beans = do
+  let rep = typeRep (Proxy @a)
+  dyn <- Map.lookup rep beans
+  fromDynamic @a dyn
+data BadBeans
+  = 
+    MissingTarget TypeRep
+  | MissingDependencies (Map TypeRep (Set TypeRep))
+    -- | Beans that work both as primary beans and as monoidal
+    -- registrations are disallowed.
+  | DoubleDutyBeans (Set TypeRep)
+    -- | Dependency cycles are disallowed except for self-dependencies.
+  | DependencyCycle (NonEmpty PlanItem)
+  deriving stock (Show)
+
+newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap PlanItem}
 
 exportToDot :: FilePath -> DependencyGraph -> IO ()
 exportToDot filepath DependencyGraph {graph} = do
@@ -428,11 +438,6 @@ exportToDot filepath DependencyGraph {graph} = do
           graph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
 
-taste :: forall a. (Typeable a) => Map TypeRep Dynamic -> Maybe a
-taste beans = do
-  let rep = typeRep (Proxy @a)
-  dyn <- Map.lookup rep beans
-  fromDynamic @a dyn
 
 newtype Args args r = Args {runArgs :: NP I args -> r}
   deriving newtype (Functor, Applicative, Monad)
@@ -508,10 +513,3 @@ packPure0 ::
   curried ->
   Constructor m bean
 packPure0 = packPure regs0
-
-
-restrict :: Ord a => AdjacencyMap a -> a -> AdjacencyMap a
-restrict g v = do
-  let relevantSet = Set.fromList do Graph.reachable g v
-  let relevant = (`Set.member` relevantSet)
-  Graph.induce relevant g 
