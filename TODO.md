@@ -1,1 +1,1 @@
-- cook should only build those beans required by the target
+- Remove applicative initializers.

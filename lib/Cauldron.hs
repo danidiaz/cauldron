@@ -261,7 +261,11 @@ cook Cauldron {recipes} = do
     Just _ -> Right ()
   accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes
-  (graph, plan) <- first DependencyCycle do checkCycles recipes
+  let graph = restrict (buildDepGraph recipes) (BuiltBean rep)
+  plan <- case Graph.topSort graph of
+    Left recipeCycle ->
+      Left do DependencyCycle recipeCycle
+    Right (reverse -> plan) -> Right plan
   Right
     ( DependencyGraph {graph},
       sequenceRecipes recipes <&> \recipes' -> do
@@ -328,40 +332,31 @@ checkMissingDeps accumSet recipes = do
       )
         `Set.difference` accumSet
 
-checkCycles ::
-  Map TypeRep (SomeBean ap m) ->
-  Either (Graph.Cycle PlanItem) (AdjacencyMap PlanItem, Plan)
-checkCycles recipes = do
-  let graph =
-        Graph.edges
-          do
-            flip
-              Map.foldMapWithKey
-              recipes
-              \beanRep
-               ( SomeBean
-                   ( Bean
-                       { constructor = constructor :: Constructor ap m bean,
-                         decos = Decos {decoCons}
-                       }
-                     )
-                 ) -> do
-                  let bareBean = BareBean beanRep
-                      builtBean = BuiltBean beanRep
-                      decos = do
-                        (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons)
-                        [(BeanDecorator beanRep decoIndex, decoCon)]
-                      beanDeps = constructorEdges id bareBean constructor
-                      -- We remove dependencies on bean itself from the decos. We already depend on the
-                      -- previous deco.
-                      decoDeps = concatMap (uncurry (constructorEdges (Set.delete beanRep))) decos
-                      full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
-                      innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
-                  beanDeps ++ decoDeps ++ innerDeps
-  case Graph.topSort graph of
-    Left recipeCycle ->
-      Left recipeCycle
-    Right (reverse -> plan) -> Right (graph, plan)
+buildDepGraph :: Map TypeRep (SomeBean ap m) -> AdjacencyMap PlanItem
+buildDepGraph recipes = Graph.edges 
+  do
+    (flip Map.foldMapWithKey)
+      recipes
+      \beanRep
+        ( SomeBean
+            ( Bean
+                { constructor = constructor :: Constructor ap m bean,
+                  decos = Decos {decoCons}
+                }
+              )
+          ) -> do
+          let bareBean = BareBean beanRep
+              builtBean = BuiltBean beanRep
+              decos = do
+                (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons)
+                [(BeanDecorator beanRep decoIndex, decoCon)]
+              beanDeps = constructorEdges id bareBean constructor
+              -- We remove dependencies on bean itself from the decos. We already depend on the
+              -- previous deco.
+              decoDeps = concatMap (uncurry (constructorEdges (Set.delete beanRep))) decos
+              full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
+              innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
+          beanDeps ++ decoDeps ++ innerDeps
 
 followPlan :: Monad m =>
   Map TypeRep (SomeBean I m) ->
@@ -518,3 +513,9 @@ packPure ::
 packPure f a = Constructor do go <$> a
   where
     go curried = argsN curried <&> pure . f
+
+restrict :: Ord a => AdjacencyMap a -> a -> AdjacencyMap a
+restrict g v = do
+  let relevantSet = Set.fromList do Graph.reachable g v
+  let relevant = (`Set.member` relevantSet)
+  Graph.induce relevant g 
