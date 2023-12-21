@@ -246,7 +246,7 @@ cook Cauldron {recipes} = do
     ( DependencyGraph {graph},
       do
         beans <- followPlan recipes accumSet plan
-        pure do fromJust do taste' beans
+        pure do BoiledBeans {beans}
     )
 
 checkNoDoubleDutyBeans ::
