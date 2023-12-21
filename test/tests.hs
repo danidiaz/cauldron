@@ -86,7 +86,7 @@ tests =
         (_, traces) <- case cook cauldron of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
-            (Initializer {runInitializer},Repository {findById, store}) <- fromJust . taste @(Initializer, Repository M) <$> beansAction
+            (Initializer {runInitializer},Repository {findById, store}) <- fromJust . taste <$> beansAction
             runInitializer
             store 1 "foo"
             _ <- findById 1
