@@ -20,8 +20,8 @@ module Cauldron
     insert,
     adjust,
     delete,
+    restrict,
     cook,
-    -- taste,
     Bean (..),
     makeBean,
     setConstructor,
@@ -45,10 +45,12 @@ module Cauldron
     exportToDot,
     -- insert',
     BadBeans (..),
+    BoiledBeans,
+    taste,
   )
 where
 
-import Algebra.Graph.AdjacencyMap (AdjacencyMap)
+import Algebra.Graph.AdjacencyMap (AdjacencyMap, vertexSet)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
@@ -224,19 +226,18 @@ data PlanItem
   | BuiltBean TypeRep
   deriving stock (Show, Eq, Ord)
 
+newtype BoiledBeans where
+  BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
+
 -- | Build the beans using the constructors stored in the 'Cauldron'.
-cook :: forall bean m.
-  (Monad m, Typeable bean) =>
+cook :: forall m.
+  (Monad m) =>
   Cauldron m ->
-  Either BadBeans (DependencyGraph, m bean)
+  Either BadBeans (DependencyGraph, m BoiledBeans)
 cook Cauldron {recipes} = do
-  let rep = typeRep (Proxy @bean)
-  case Map.lookup rep recipes of
-    Nothing -> Left (MissingTarget rep) 
-    Just _ -> Right ()
   accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes
-  let graph = restrict (buildDepGraph recipes) (BuiltBean rep)
+  let graph = buildDepGraph recipes
   plan <- case Graph.topSort graph of
     Left recipeCycle ->
       Left do DependencyCycle recipeCycle
@@ -245,7 +246,7 @@ cook Cauldron {recipes} = do
     ( DependencyGraph {graph},
       do
         beans <- followPlan recipes accumSet plan
-        pure do fromJust do taste beans
+        pure do fromJust do taste' beans
     )
 
 checkNoDoubleDutyBeans ::
@@ -389,32 +390,47 @@ newtype Extractor a where
 makeExtractor :: forall a. (Typeable a) => Extractor a
 makeExtractor =
   let runExtractor dyns =
-        fromJust do taste @a dyns
+        fromJust do taste' @a dyns
    in Extractor {runExtractor}
 
 makeRegInserter :: forall a. ((Typeable `And` Monoid) a) => I a -> Endo (Map TypeRep Dynamic)
 makeRegInserter (I a) =
   let appEndo dynMap = do
-        let reg = fromJust do taste @a dynMap
+        let reg = fromJust do taste' @a dynMap
             dyn = toDyn (reg <> a)
         Map.insert (dynTypeRep dyn) dyn dynMap
    in Endo {appEndo}
 
-restrict :: Ord a => AdjacencyMap a -> a -> AdjacencyMap a
-restrict g v = do
+
+restrict :: forall bean m . Typeable bean => Cauldron m -> Cauldron m
+restrict Cauldron {recipes} = do
+  let graph = buildDepGraph recipes
+      restrictedGraph = restrict' graph (BuiltBean (typeRep (Proxy @bean))) 
+      vertices = do
+        Set.map 
+          \case BareBean r -> r
+                BeanDecorator r _ -> r
+                BuiltBean r -> r
+          do vertexSet restrictedGraph
+  Cauldron { recipes = recipes `Map.restrictKeys` vertices }
+
+restrict' :: Ord a => AdjacencyMap a -> a -> AdjacencyMap a
+restrict' g v = do
   let relevantSet = Set.fromList do Graph.reachable g v
   let relevant = (`Set.member` relevantSet)
   Graph.induce relevant g 
 
-taste :: forall a. (Typeable a) => Map TypeRep Dynamic -> Maybe a
-taste beans = do
+taste :: forall a. (Typeable a) => BoiledBeans -> Maybe a
+taste BoiledBeans {beans} = taste' beans
+
+taste' :: forall a. (Typeable a) => Map TypeRep Dynamic -> Maybe a
+taste' beans = do
   let rep = typeRep (Proxy @a)
   dyn <- Map.lookup rep beans
   fromDynamic @a dyn
 data BadBeans
   = 
-    MissingTarget TypeRep
-  | MissingDependencies (Map TypeRep (Set TypeRep))
+    MissingDependencies (Map TypeRep (Set TypeRep))
     -- | Beans that work both as primary beans and as monoidal
     -- registrations are disallowed.
   | DoubleDutyBeans (Set TypeRep)

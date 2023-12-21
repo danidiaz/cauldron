@@ -9,6 +9,7 @@ module Main (main) where
 
 import Cauldron
 import Data.Function ((&))
+import Data.Maybe (fromJust)
 import Data.Monoid
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -136,7 +137,7 @@ coolWiring = do
                     ]
               }
           & insert @(Initializer, Inspector, Z) do makeBean do packPure0 do \a b c -> (a,b,c)
-  cook cauldron
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook cauldron
 
 tests :: TestTree
 tests =

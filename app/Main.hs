@@ -10,7 +10,7 @@
 module Main where
 
 import Cauldron
-import Data.Monoid
+import Data.Maybe (fromJust)
 import Data.Function ((&))
 
 {-
@@ -209,7 +209,7 @@ coolWiring = do
                     ]
               }
           & insert @(Initializer, Inspector, Z) do makeBean do packPure0 do \a b c -> (a,b,c)
-  cook cauldron
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook cauldron
 
 main :: IO ()
 main = do

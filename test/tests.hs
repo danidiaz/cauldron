@@ -8,11 +8,11 @@ module Main (main) where
 
 import Cauldron
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Class
 import Control.Monad.Trans.Writer
 import Data.Function ((&))
 import Data.IORef
 import Data.Map (Map)
+import Data.Maybe (fromJust)
 import Data.Map qualified as Map
 import Data.Monoid
 import Data.Text (Text)
@@ -86,7 +86,7 @@ tests =
         (_, traces) <- case cook cauldron of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
-            (Initializer {runInitializer},Repository {findById, store}) <- beansAction
+            (Initializer {runInitializer},Repository {findById, store}) <- fromJust . taste @(Initializer, Repository M) <$> beansAction
             runInitializer
             store 1 "foo"
             _ <- findById 1
@@ -101,17 +101,17 @@ tests =
           ]
           traces,
       testCase "cauldron missing dep" do
-        case cook @(Repository M) cauldronMissingDep of
+        case cook cauldronMissingDep of
           Left (MissingDependencies _) -> pure ()
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do
-        case cook @(Repository M) cauldronDoubleDutyBean of
+        case cook cauldronDoubleDutyBean of
           Left (DoubleDutyBeans _) -> pure ()
           _ -> assertFailure "double duty beans not detected"
         pure (),
       testCase "cauldron with cycle" do
-        case cook @(Repository M) cauldronWithCycle of
+        case cook cauldronWithCycle of
           Left (DependencyCycle _) -> pure ()
           _ -> assertFailure "dependency cycle not detected"
         pure ()
