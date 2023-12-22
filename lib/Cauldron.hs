@@ -20,7 +20,6 @@ module Cauldron
     insert,
     adjust,
     delete,
-    restrict,
     cook,
     Bean (..),
     makeBean,
@@ -402,23 +401,23 @@ makeRegInserter (I a) =
    in Endo {appEndo}
 
 
-restrict :: forall bean m . Typeable bean => Cauldron m -> Cauldron m
-restrict Cauldron {recipes} = do
-  let graph = buildDepGraph recipes
-      restrictedGraph = restrict' graph (BuiltBean (typeRep (Proxy @bean))) 
-      vertices = do
-        Set.map 
-          \case BareBean r -> r
-                BeanDecorator r _ -> r
-                BuiltBean r -> r
-          do vertexSet restrictedGraph
-  Cauldron { recipes = recipes `Map.restrictKeys` vertices }
-
-restrict' :: Ord a => AdjacencyMap a -> a -> AdjacencyMap a
-restrict' g v = do
-  let relevantSet = Set.fromList do Graph.reachable g v
-  let relevant = (`Set.member` relevantSet)
-  Graph.induce relevant g 
+-- restrict :: forall bean m . Typeable bean => Cauldron m -> Cauldron m
+-- restrict Cauldron {recipes} = do
+--   let graph = buildDepGraph recipes
+--       restrictedGraph = restrict' graph (BuiltBean (typeRep (Proxy @bean))) 
+--       vertices = do
+--         Set.map 
+--           \case BareBean r -> r
+--                 BeanDecorator r _ -> r
+--                 BuiltBean r -> r
+--           do vertexSet restrictedGraph
+--   Cauldron { recipes = recipes `Map.restrictKeys` vertices }
+-- 
+-- restrict' :: Ord a => AdjacencyMap a -> a -> AdjacencyMap a
+-- restrict' g v = do
+--   let relevantSet = Set.fromList do Graph.reachable g v
+--   let relevant = (`Set.member` relevantSet)
+--   Graph.induce relevant g 
 
 taste :: forall a. (Typeable a) => BoiledBeans -> Maybe a
 taste BoiledBeans {beans} = taste' beans
