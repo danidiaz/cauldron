@@ -116,8 +116,13 @@ makeE = \_ -> E
 makeF :: B -> C -> (Inspector, F)
 makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 
-makeG :: E -> F -> G
-makeG _ _ = G
+-- | A bean with a self-dependency!
+--
+-- We need this if we want self-invocations to be decorated.
+--
+-- Dependency cycles of more than one bean are forbidden, however.
+makeG :: E -> F -> G -> G
+makeG _ _ _ = G
 
 -- | A decorator.
 --
@@ -163,7 +168,7 @@ boringWiring = do
       d = makeD
       e = makeE a
       (inspector2, f) = makeF b c
-      g0 = makeG e f
+      g0 = makeG e f g
       g1 = makeGDeco1 a g0
       g = g1
       -- Here we apply a single decorator.
@@ -183,7 +188,7 @@ boringWiring = do
 coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring = do
   let cauldron :: Cauldron IO =
-        empty
+        emptyCauldron
           & insert @A do makeBean do packPure0 makeA
           & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeB
           & insert @C do makeBean do packPure0 do makeC

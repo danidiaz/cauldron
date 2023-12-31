@@ -90,8 +90,8 @@ makeE = \_ -> E
 makeF :: B -> C -> (Inspector, F)
 makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 
-makeG :: E -> F -> G
-makeG _ _ = G
+makeG :: E -> F -> G -> G
+makeG _ _ _ = G
 
 makeGDeco1 :: A -> G -> G
 makeGDeco1 _ g = g 
