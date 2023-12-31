@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
@@ -16,7 +17,7 @@
 -- | A library for performing dependency injection.
 module Cauldron
   ( Cauldron,
-    empty,
+    emptyCauldron,
     insert,
     adjust,
     delete,
@@ -77,6 +78,9 @@ import Data.Typeable
 import GHC.Exts (IsList (..))
 import Multicurryable
 import Type.Reflection qualified
+import Control.Monad.Fix
+import Data.Functor.Compose
+import Control.Applicative
 
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
@@ -152,8 +156,8 @@ data ConstructorReps where
     ConstructorReps
 
 -- | The empty 'Cauldron'.
-empty :: Cauldron m
-empty = mempty
+emptyCauldron :: Cauldron m
+emptyCauldron = mempty
 
 -- | Put a recipe for a 'Bean' into the 'Cauldron'.
 insert ::
@@ -235,7 +239,7 @@ newtype BoiledBeans where
 
 -- | Build the beans using the constructors stored in the 'Cauldron'.
 cook :: forall m.
-  (Monad m) =>
+  (MonadFix m) =>
   Cauldron m ->
   Either BadBeans (DependencyGraph, m BoiledBeans)
 cook Cauldron {recipes} = do
@@ -336,26 +340,27 @@ constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
         [(repItem, item)]
     )
 
-followPlan :: Monad m =>
+followPlan :: MonadFix m =>
   Map TypeRep (SomeBean m) ->
   Map TypeRep Dynamic ->
   Plan ->
   m (Map TypeRep Dynamic)
 followPlan recipes initial plan = 
-        Data.Foldable.foldlM
-          do followPlanStep recipes
-          initial
-          plan
+  mfix do \final -> Data.Foldable.foldlM
+            do followPlanStep recipes final
+            initial
+            plan
 
 followPlanStep :: Monad m =>
  Map TypeRep (SomeBean m) ->
  Map TypeRep Dynamic -> 
+ Map TypeRep Dynamic -> 
  PlanItem -> 
  m (Map TypeRep Dynamic)
-followPlanStep recipes super = \case
+followPlanStep recipes final super = \case
   BareBean rep -> case fromJust do Map.lookup rep recipes of
     SomeBean (Bean {constructor}) -> do
-      (super', bean) <- followConstructor constructor super
+      (super', bean) <- followConstructor constructor final super
       let dyn = toDyn bean
       pure do Map.insert (dynTypeRep dyn) dyn super'
   BuiltBean _ -> pure super
@@ -363,7 +368,7 @@ followPlanStep recipes super = \case
     SomeBean (Bean {decos = Decos {decoCons}}) -> do
       let indexStartingAt0 = fromIntegral (pred index)
       let decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
-      (super', bean) <- followConstructor decoCon super
+      (super', bean) <- followConstructor decoCon final super
       let dyn = toDyn bean
       pure do Map.insert (dynTypeRep dyn) dyn super'
 
@@ -373,10 +378,11 @@ followPlanStep recipes super = \case
 followConstructor :: Monad m =>
   Constructor m bean ->
   Map TypeRep Dynamic ->
+  Map TypeRep Dynamic ->
   m (Map TypeRep Dynamic, bean)
-followConstructor Constructor {constructor_ = Args {runArgs}} super = do
+followConstructor Constructor {constructor_ = Args {runArgs}} final super = do
   let Extractor {runExtractor} = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
-      args = runExtractor super
+      args = runExtractor final super
   results <- runArgs args
   case results of
     Regs regs bean -> do
@@ -384,13 +390,13 @@ followConstructor Constructor {constructor_ = Args {runArgs}} super = do
       pure (appEndo inserters super, bean)
 
 newtype Extractor a where
-  Extractor :: {runExtractor :: Map TypeRep Dynamic -> a} -> Extractor a
-  deriving newtype (Functor, Applicative)
+  Extractor :: {runExtractor :: Map TypeRep Dynamic -> Map TypeRep Dynamic -> a} -> Extractor a
+  deriving (Functor, Applicative) via ((->) (Map TypeRep Dynamic) `Compose` ((->) (Map TypeRep Dynamic)))
 
 makeExtractor :: forall a. (Typeable a) => Extractor a
 makeExtractor =
-  let runExtractor dyns =
-        fromJust do taste' @a dyns
+  let runExtractor final super =
+        fromJust do taste' @a super <|> taste' @a final
    in Extractor {runExtractor}
 
 makeRegInserter :: forall a. ((Typeable `And` Monoid) a) => I a -> Endo (Map TypeRep Dynamic)

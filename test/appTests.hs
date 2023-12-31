@@ -111,7 +111,7 @@ makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring = do
   let cauldron :: Cauldron IO =
-        empty
+        emptyCauldron
           & insert @A do makeBean do packPure0 makeA
           & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeB
           & insert @C do makeBean do packPure0 do makeC
