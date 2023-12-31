@@ -197,25 +197,30 @@ delete Cauldron {recipes} =
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
+-- | This function DOESN'T return the bean rep itself in the argreps.
 constructorReps :: (Typeable bean) => Constructor m bean -> ConstructorReps
 constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean)))} =
   ConstructorReps
-    { argReps = Set.fromList do
-        collapse_NP do
-          cpure_NP @_ @args
-            do Proxy @Typeable
-            typeRepHelper,
-      regReps = Map.fromList do
-        collapse_NP do
-          cpure_NP @_ @accums
-            do Proxy @(Typeable `And` Monoid)
-            typeRepHelper'
+    { argReps = 
+        Set.delete beanRep do 
+          Set.fromList do
+            collapse_NP do
+              cpure_NP @_ @args
+                do Proxy @Typeable
+                typeRepHelper,
+      regReps = 
+          Map.fromList do
+            collapse_NP do
+              cpure_NP @_ @accums
+                do Proxy @(Typeable `And` Monoid)
+                typeRepHelper'
     }
   where
     typeRepHelper :: forall a. (Typeable a) => K TypeRep a
     typeRepHelper = K (typeRep (Proxy @a))
     typeRepHelper' :: forall a. ((Typeable `And` Monoid) a) => K (TypeRep, Dynamic) a
     typeRepHelper' = K (typeRep (Proxy @a), toDyn @a mempty)
+    beanRep = typeRep (Proxy @bean)
 
 type Plan = [PlanItem]
 
@@ -306,28 +311,24 @@ buildDepGraph recipes = Graph.edges
               decos = do
                 (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons)
                 [(BeanDecorator beanRep decoIndex, decoCon)]
-              beanDeps = constructorEdges id bareBean constructor
-              -- We remove dependencies on bean itself from the decos. We already depend on the
-              -- previous deco.
-              decoDeps = concatMap (uncurry (constructorEdges (Set.delete beanRep))) decos
+              beanDeps = constructorEdges bareBean constructor
+              decoDeps = concatMap (uncurry constructorEdges) decos
               full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
               innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
           beanDeps ++ decoDeps ++ innerDeps
 
-constructorEdges ::
-  (Typeable bean) =>
-  (Set TypeRep -> Set TypeRep) ->
+constructorEdges ::forall bean m.
+  (Typeable bean) => 
   PlanItem ->
   Constructor m bean ->
   [(PlanItem, PlanItem)]
-constructorEdges tweakArgs item (constructorReps -> ConstructorReps {argReps = tweakArgs -> argReps, regReps}) =
+constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
   -- consumers depend on their args
-  ( do
+  (do
       argRep <- Set.toList argReps
       let argItem = BuiltBean argRep
       [(item, argItem)]
-  )
-    ++
+  ) ++
     -- regs depend on their producers
     ( do
         (regRep, _) <- Map.toList regReps
