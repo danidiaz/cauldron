@@ -36,7 +36,8 @@ module Cauldron
     Constructor,
     pack,
     packPure,
-    packPure0,
+    Packer,
+    plain,
     Regs,
     regs0,
     regs1,
@@ -566,6 +567,11 @@ regs2 reg1 reg2 bean = Regs (I reg1 :* I reg2 :* Nil) bean
 regs3 :: reg1 -> reg2 -> reg3 -> bean -> Regs '[reg1, reg2, reg3] bean
 regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
+type Packer m regs bean r = r -> m (Regs regs bean)
+
+plain :: Applicative m => Packer m '[] bean bean 
+plain bean = pure do regs0 bean
+
 -- | To be used only for constructors which return monoidal secondary beans
 -- along with the primary bean.
 pack ::
@@ -600,18 +606,6 @@ packPure ::
   curried ->
   Constructor m bean
 packPure f curried = Constructor do pure . f <$> do argsN curried
-
-packPure0 ::
-  forall (args :: [Type]) bean curried m.
-  ( MulticurryableF args bean curried (IsFunction curried),
-    All Typeable args,
-    Applicative m
-  ) =>
-  -- | Action returning a function ending in @r@, some datatype containing
-  -- @regs@ and @bean@ values.
-  curried ->
-  Constructor m bean
-packPure0 = packPure regs0
 
 nonEmptyToTree :: NonEmpty a -> Tree a
 nonEmptyToTree = \case
