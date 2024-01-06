@@ -60,6 +60,30 @@ makeRepository Logger {logMessage} = do
         }
       )
 
+data Weird m = Weird 
+  {
+    weirdOp :: m (),
+    anotherWeirdOp :: m ()
+  }
+
+makeWeird :: M (Weird M)
+makeWeird = do
+  tell ["weird constructor"]
+  pure Weird  {
+     weirdOp = tell ["weirdOp"],
+     anotherWeirdOp  = tell ["another weirdOp"]
+    }
+
+makeSelfInvokingWeird :: Weird M -> M (Weird M)
+makeSelfInvokingWeird Weird { weirdOp = selfWeirdOp } = do
+  tell ["self-invoking weird constructor"]
+  pure Weird  {
+     weirdOp = tell ["weirdOp 2"],
+     anotherWeirdOp  = do
+      tell ["another weirdOp 2"]
+      selfWeirdOp
+    }
+
 cauldron :: Cauldron M
 cauldron =
   emptyCauldron
@@ -83,12 +107,15 @@ cauldronWithCycle =
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty = 
   (emptyCauldron
-    & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger)
+    & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
+    & insert @(Weird M) do makeBean do pack (fmap regs0) makeWeird
+    )
   Data.List.NonEmpty.:|
   [
     emptyCauldron
     & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Initializer, Repository M) do makeBean do packPure regs0 do \a b -> (a,b)
+    -- & insert @(Weird M) do makeBean do pack (fmap regs0) makeSelfInvokingWeird
+    & insert @(Initializer, Repository M, Weird M) do makeBean do packPure regs0 do \a b c -> (a,b,c)
   ]
 
 tests :: TestTree
@@ -120,18 +147,23 @@ tests =
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
             _ Data.List.NonEmpty.:| [boiledBeans] <- beansAction
-            let (Initializer {runInitializer},Repository {findById, store}) = fromJust . taste $ boiledBeans
+            let (Initializer {runInitializer},
+                 Repository {findById, store}, 
+                 Weird {anotherWeirdOp}) = fromJust . taste $ boiledBeans
             runInitializer
             store 1 "foo"
             _ <- findById 1
+            anotherWeirdOp
             pure ()
         assertEqual
           "traces"
           [ "logger constructor",
+            "weird constructor",
             "logger init",
             "repo init invoking logger",
             "store",
-            "findById"
+            "findById",
+            "another weirdOp"
           ]
           traces,
       testCase "cauldron missing dep" do
