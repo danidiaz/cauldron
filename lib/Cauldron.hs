@@ -13,6 +13,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 
 -- | A library for performing dependency injection.
 module Cauldron
@@ -265,25 +266,29 @@ cookTree :: forall m .
   Either BadBeans (DependencyGraph, m (Tree (BoiledBeans)))
 cookTree = undefined
 
-
 checkNoDoubleDutyBeans ::
   Map TypeRep (SomeBean m) ->
   Either (Set TypeRep) (Map TypeRep Dynamic)
 checkNoDoubleDutyBeans recipes = do
+  let accumSet = foldMap recipeRegs recipes
   let common = Set.intersection (Map.keysSet accumSet) (Map.keysSet recipes)
   if not (Set.null common)
     then Left common
     else Right accumSet
-  where
-    accumSet = Map.fromList do
-      recipe <- Data.Foldable.toList recipes
-      case recipe of
-        (SomeBean Bean {constructor, decos = Decos {decoCons}}) -> do
-          let ConstructorReps {regReps = beanAccums} = constructorReps constructor
-          Map.toList beanAccums ++ do
-            decoCon <- Data.Foldable.toList decoCons
-            let ConstructorReps {regReps = decoAccums} = constructorReps decoCon
-            Map.toList decoAccums
+
+cauldronTreeRegs :: Tree (Map TypeRep (SomeBean m)) -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronTreeRegs = foldMap cauldronRegs 
+
+cauldronRegs :: Map TypeRep (SomeBean m) -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronRegs = 
+  Map.foldMapWithKey \rep recipe -> (recipeRegs recipe, Set.singleton rep)
+
+-- | Returns the accumulators, not the main bean
+recipeRegs :: SomeBean m -> Map TypeRep Dynamic
+recipeRegs (SomeBean Bean {constructor, decos = Decos {decoCons}}) = do
+    let extractRegReps = (.regReps) . constructorReps
+    extractRegReps constructor 
+      <> foldMap extractRegReps decoCons
 
 checkMissingDeps ::
   Set TypeRep ->
