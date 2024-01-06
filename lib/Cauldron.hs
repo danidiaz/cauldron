@@ -23,6 +23,7 @@ module Cauldron
     adjust,
     delete,
     cook,
+    cookNonEmpty,
     cookTree,
     Bean (..),
     makeBean,
@@ -254,6 +255,14 @@ cook cauldron = do
   let result = cookTree (Node cauldron [])
   result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
 
+cookNonEmpty :: forall m.
+  (MonadFix m) =>
+  NonEmpty (Cauldron m) ->
+  Either BadBeans (NonEmpty DependencyGraph, m (NonEmpty BoiledBeans))
+cookNonEmpty nonemptyCauldronList = do
+  let result = cookTree (nonEmptyToTree nonemptyCauldronList)
+  result <&> \(ng, m) -> (unsafeTreeToNonEmpty ng, unsafeTreeToNonEmpty <$> m)
+
 cookTree :: forall m .
   (MonadFix m) =>
   Tree (Cauldron m) ->
@@ -427,7 +436,7 @@ followPlanStep recipes final super = \case
       let ConstructorReps {beanRep} = constructorReps constructor
       -- We delete the beanRep before running the constructor, 
       -- because if we have a self-dependency, we don't want to use the bean
-      -- from a previous context if it exists, we want the bean from final.
+      -- from a previous context (if it exists) we want the bean from final.
       (super', bean) <- followConstructor constructor final (Map.delete beanRep super)
       pure do Map.insert beanRep (toDyn bean) super'
   BuiltBean _ -> pure super
@@ -602,3 +611,14 @@ packPure0 ::
   curried ->
   Constructor m bean
 packPure0 = packPure regs0
+
+nonEmptyToTree :: NonEmpty a -> Tree a
+nonEmptyToTree = \case
+  a Data.List.NonEmpty.:| [] -> Node a []
+  a Data.List.NonEmpty.:| (b : rest) -> Node a [nonEmptyToTree (b Data.List.NonEmpty.:| rest)]
+
+unsafeTreeToNonEmpty :: Tree a -> NonEmpty a
+unsafeTreeToNonEmpty = \case
+  Node a [] -> a Data.List.NonEmpty.:| []
+  Node a [b] -> Data.List.NonEmpty.cons a (unsafeTreeToNonEmpty b)
+  _ -> error "tree not list-shaped"

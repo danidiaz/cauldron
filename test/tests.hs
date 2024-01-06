@@ -18,6 +18,8 @@ import Data.Monoid
 import Data.Text (Text)
 import Test.Tasty
 import Test.Tasty.HUnit
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified
 
 type M = WriterT [Text] IO
 
@@ -78,15 +80,47 @@ cauldronWithCycle =
   cauldron
     & insert @(Logger M) do makeBean do pack (fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
 
+cauldronNonEmpty :: NonEmpty (Cauldron M)
+cauldronNonEmpty = 
+  (emptyCauldron
+    & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger)
+  Data.List.NonEmpty.:|
+  [
+    emptyCauldron
+    & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+    & insert @(Initializer, Repository M) do makeBean do packPure regs0 do \a b -> (a,b)
+  ]
+
 tests :: TestTree
 tests =
   testGroup
     "All"
-    [ testCase "simple" do
+    [ 
+      testCase "simple" do
         (_, traces) <- case cook cauldron of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
-            (Initializer {runInitializer},Repository {findById, store}) <- fromJust . taste <$> beansAction
+            boiledBeans <- beansAction 
+            let (Initializer {runInitializer},Repository {findById, store}) = fromJust . taste $ boiledBeans
+            runInitializer
+            store 1 "foo"
+            _ <- findById 1
+            pure ()
+        assertEqual
+          "traces"
+          [ "logger constructor",
+            "logger init",
+            "repo init invoking logger",
+            "store",
+            "findById"
+          ]
+          traces,
+      testCase "simple sequential" do
+        (_, traces) <- case cookNonEmpty cauldronNonEmpty of
+          Left _ -> assertFailure "could not wire"
+          Right (_, beansAction) -> runWriterT do
+            _ Data.List.NonEmpty.:| [boiledBeans] <- beansAction
+            let (Initializer {runInitializer},Repository {findById, store}) = fromJust . taste $ boiledBeans
             runInitializer
             store 1 "foo"
             _ <- findById 1
