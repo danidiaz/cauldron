@@ -74,8 +74,10 @@ makeWeird = do
      anotherWeirdOp  = tell ["another weirdOp"]
     }
 
+-- | Note that the patter-match on the self-dependency must be lazy, or else a
+-- nasty, difficult to diagnose infinite loop will happen!
 makeSelfInvokingWeird :: Weird M -> M (Weird M)
-makeSelfInvokingWeird Weird { weirdOp = selfWeirdOp } = do
+makeSelfInvokingWeird ~Weird { weirdOp = selfWeirdOp } = do
   tell ["self-invoking weird constructor"]
   pure Weird  {
      weirdOp = tell ["weirdOp 2"],
@@ -114,7 +116,7 @@ cauldronNonEmpty =
   [
     emptyCauldron
     & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    -- & insert @(Weird M) do makeBean do pack (fmap regs0) makeSelfInvokingWeird
+    & insert @(Weird M) do makeBean do pack (fmap regs0) makeSelfInvokingWeird
     & insert @(Initializer, Repository M, Weird M) do makeBean do packPure regs0 do \a b c -> (a,b,c)
   ]
 
@@ -159,11 +161,14 @@ tests =
           "traces"
           [ "logger constructor",
             "weird constructor",
+            "self-invoking weird constructor",
             "logger init",
             "repo init invoking logger",
             "store",
             "findById",
-            "another weirdOp"
+            "another weirdOp 2",
+            -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
+            "weirdOp 2"
           ]
           traces,
       testCase "cauldron missing dep" do
