@@ -352,21 +352,7 @@ checkMissingDeps ::
   Map TypeRep (SomeBean m) ->
   Either (Map TypeRep (Set TypeRep)) ()
 checkMissingDeps accumSet recipes = do
-  let demandedMap = Set.filter (`Map.notMember` recipes) . demanded <$> recipes
-  if Data.Foldable.any (not . Set.null) demandedMap
-    then Left demandedMap
-    else Right ()
-  where
-    demanded :: SomeBean m -> Set TypeRep
-    demanded (SomeBean Bean {constructor, decos = Decos {decoCons}}) =
-      ( Set.fromList do
-          let ConstructorReps {argReps = beanArgReps} = constructorReps constructor
-          Set.toList beanArgReps ++ do
-            decoCon <- Data.Foldable.toList decoCons
-            let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
-            Set.toList decoArgReps
-      )
-        `Set.difference` accumSet
+  checkMissingDeps' accumSet (Node recipes [])
 
 buildDepGraph :: Map TypeRep (SomeBean m) -> AdjacencyMap PlanItem
 buildDepGraph recipes = Graph.edges 
