@@ -111,31 +111,31 @@ coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring = do
   let cauldron :: Cauldron IO =
         mempty
-          & insert @A do makeBean do pack plain makeA
-          & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeB
-          & insert @C do makeBean do pack plain do makeC
-          & insert @D do makeBean do pack plain do makeD
-          & insert @E do makeBean do pack plain do makeE
-          & insert @F do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeF
+          & insert @A do makeBean do pack easy do makeA
+          & insert @B do makeBean do pack (pure . \(reg, bean) -> regs1 reg bean) do makeB
+          & insert @C do makeBean do pack easy do makeC
+          & insert @D do makeBean do pack easy do makeD
+          & insert @E do makeBean do pack easy do makeE
+          & insert @F do makeBean do pack (pure . \(reg, bean) -> regs1 reg bean) do makeF
           & insert @G do
             Bean
-              { constructor =  pack plain do makeG,
+              { constructor =  pack easy do makeG,
                 decos =
                   fromConstructors
-                    [  pack plain do makeGDeco1
+                    [  pack easy do makeGDeco1
                     ]
               }
           & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z do
             Bean
-              { constructor =  pack plain do makeZ,
+              { constructor =  pack easy do makeZ,
                 decos =
                   fromConstructors
-                    [  pack plain do makeZDeco1,
+                    [  pack easy do makeZDeco1,
                       packPure (\(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-          & insert @(Initializer, Inspector, Z) do makeBean do  pack plain do \a b c -> (a,b,c)
+          & insert @(Initializer, Inspector, Z) do makeBean do  pack easy do \a b c -> (a,b,c)
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook cauldron
 
 tests :: TestTree

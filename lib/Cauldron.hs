@@ -37,7 +37,7 @@ module Cauldron
     pack,
     packPure,
     Packer,
-    plain,
+    easy,
     Regs,
     regs0,
     regs1,
@@ -569,8 +569,8 @@ regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
 type Packer m regs bean r = r -> m (Regs regs bean)
 
-plain :: Applicative m => Packer m '[] bean bean 
-plain bean = pure do regs0 bean
+easy :: Applicative m => Packer m '[] bean bean 
+easy bean = pure do regs0 bean
 
 -- | To be used only for constructors which return monoidal secondary beans
 -- along with the primary bean.
