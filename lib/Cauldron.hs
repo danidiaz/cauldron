@@ -31,8 +31,8 @@ module Cauldron
     setDecos,
     overDecos,
     Decos,
-    addFirst,
-    addLast,
+    addInner,
+    addOuter,
     fromConstructors,
     Constructor,
     pack,
@@ -129,11 +129,11 @@ setDecos decos (Bean {constructor}) = Bean {constructor, decos}
 overDecos :: (Decos m bean -> Decos m bean) -> Bean m bean -> Bean m bean
 overDecos f (Bean {constructor, decos}) = Bean {constructor, decos = f decos}
 
-addFirst :: Constructor m bean -> Decos m bean -> Decos m bean
-addFirst con (Decos {decoCons}) = Decos do con Seq.<| decoCons
+addInner :: Constructor m bean -> Decos m bean -> Decos m bean
+addInner con (Decos {decoCons}) = Decos do con Seq.<| decoCons
 
-addLast :: Constructor m bean -> Decos m bean -> Decos m bean
-addLast con (Decos {decoCons}) = Decos do decoCons Seq.|> con
+addOuter :: Constructor m bean -> Decos m bean -> Decos m bean
+addOuter con (Decos {decoCons}) = Decos do decoCons Seq.|> con
 
 fromConstructors :: 
     -- | The constructors end in 'Endo' because we are building decorators.
