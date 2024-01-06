@@ -22,6 +22,7 @@ module Cauldron
     adjust,
     delete,
     cook,
+    cookTree,
     Bean (..),
     makeBean,
     setConstructor,
@@ -81,6 +82,7 @@ import Type.Reflection qualified
 import Control.Monad.Fix
 import Data.Functor.Compose
 import Control.Applicative
+import Data.Tree
 
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
@@ -230,7 +232,7 @@ type Plan = [PlanItem]
 
 data PlanItem
   = BareBean TypeRep
-  | BeanDecorator TypeRep Integer
+  | BeanDecorator TypeRep Int
   | BuiltBean TypeRep
   deriving stock (Show, Eq, Ord)
 
@@ -256,6 +258,13 @@ cook Cauldron {recipes} = do
         beans <- followPlan recipes accumSet plan
         pure do BoiledBeans {beans}
     )
+
+cookTree :: forall m .
+  (MonadFix m) =>
+  Tree (Cauldron m) ->
+  Either BadBeans (DependencyGraph, m (Tree (BoiledBeans)))
+cookTree = undefined
+
 
 checkNoDoubleDutyBeans ::
   Map TypeRep (SomeBean m) ->
@@ -313,7 +322,7 @@ buildDepGraph recipes = Graph.edges
           let bareBean = BareBean beanRep
               builtBean = BuiltBean beanRep
               decos = do
-                (decoIndex, decoCon) <- zip [1 :: Integer ..] (Data.Foldable.toList decoCons)
+                (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
                 [(BeanDecorator beanRep decoIndex, decoCon)]
               beanDeps = constructorEdges bareBean constructor
               decoDeps = concatMap (uncurry constructorEdges) decos
@@ -366,8 +375,7 @@ followPlanStep recipes final super = \case
   BuiltBean _ -> pure super
   BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
     SomeBean (Bean {decos = Decos {decoCons}}) -> do
-      let indexStartingAt0 = fromIntegral (pred index)
-      let decoCon = fromJust do Seq.lookup indexStartingAt0 decoCons
+      let decoCon = fromJust do Seq.lookup index decoCons
       (super', bean) <- followConstructor decoCon final super
       let dyn = toDyn bean
       pure do Map.insert (dynTypeRep dyn) dyn super'
@@ -451,8 +459,8 @@ exportToDot filepath DependencyGraph {graph} = do
   let prettyRep =
         let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
          in \case
-              BareBean rep -> p rep <> Data.Text.pack "#0"
-              BeanDecorator rep index -> p rep <> Data.Text.pack ("#" ++ show index)
+              BareBean rep -> p rep <> Data.Text.pack "#bare"
+              BeanDecorator rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
               BuiltBean rep -> p rep
       dot =
         Dot.export
