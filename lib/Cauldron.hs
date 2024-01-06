@@ -84,7 +84,7 @@ import Control.Monad.Fix
 import Data.Functor.Compose
 import Control.Applicative
 import Data.Tree
-import Data.Functor (($>))
+import Data.Functor (($>), (<&>))
 
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
@@ -246,26 +246,24 @@ cook :: forall m.
   (MonadFix m) =>
   Cauldron m ->
   Either BadBeans (DependencyGraph, m BoiledBeans)
-cook Cauldron {recipes} = do
-  accumSet <- first DoubleDutyBeans do checkNoDoubleDutyBeans recipes
-  () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumSet) recipes
-  let graph = buildDepGraph recipes
-  plan <- case Graph.topSort graph of
-    Left recipeCycle ->
-      Left do DependencyCycle recipeCycle
-    Right (reverse -> plan) -> Right plan
-  Right
-    ( DependencyGraph {graph},
-      do
-        beans <- followPlan recipes accumSet plan
-        pure do BoiledBeans {beans}
-    )
+cook cauldron = do
+  let result = cookTree (Node cauldron [])
+  result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
 
 cookTree :: forall m .
   (MonadFix m) =>
   Tree (Cauldron m) ->
-  Either BadBeans (DependencyGraph, m (Tree (BoiledBeans)))
-cookTree = undefined
+  Either BadBeans (Tree DependencyGraph, m (Tree (BoiledBeans)))
+cookTree (fmap (.recipes) -> treecipes) = do
+  accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans' treecipes
+  () <- first MissingDependencies do checkMissingDeps' (Map.keysSet accumMap) treecipes
+  treeplan <- first DependencyCycle do buildPlans treecipes
+  Right
+    ( treeplan <&> \(graph,_) -> DependencyGraph {graph},
+      do
+        treebeans <- followPlan accumMap (snd <$> treeplan)
+        pure do BoiledBeans <$> treebeans 
+    )
 
 checkNoDoubleDutyBeans ::
   Map TypeRep (SomeBean m) ->
@@ -296,8 +294,6 @@ decorate = unfoldTree
               let newKey = key ++ [i]
               [(newKey, newAcc , z)]
          in ((newAcc, current), newSeeds)
-
--- Next step: generalize checkMissingDeps
 
 cauldronTreeRegs :: Tree (Map TypeRep (SomeBean m)) -> (Map TypeRep Dynamic, Set TypeRep)
 cauldronTreeRegs = foldMap cauldronRegs 
@@ -354,8 +350,19 @@ checkMissingDeps ::
 checkMissingDeps accumSet recipes = do
   checkMissingDeps' accumSet (Node recipes [])
 
-buildDepGraph :: Map TypeRep (SomeBean m) -> AdjacencyMap PlanItem
-buildDepGraph recipes = Graph.edges 
+buildPlans :: Tree (Map TypeRep (SomeBean m)) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Map TypeRep (SomeBean m))))
+buildPlans = traverse \recipes -> do
+  let graph = buildDepGraphCauldron recipes
+  case Graph.topSort graph of
+    Left recipeCycle ->
+      Left recipeCycle
+    Right (reverse -> plan) -> Right (graph, (plan, recipes))
+
+-- buildDepGraph :: Tree (Map TypeRep (SomeBean m)) -> Tree (AdjacencyMap PlanItem)
+-- buildDepGraph = fmap buildDepGraphCauldron
+
+buildDepGraphCauldron :: Map TypeRep (SomeBean m) -> AdjacencyMap PlanItem
+buildDepGraphCauldron recipes = Graph.edges 
   do
     (flip Map.foldMapWithKey)
       recipes
@@ -398,11 +405,22 @@ constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
     )
 
 followPlan :: MonadFix m =>
+  Map TypeRep Dynamic ->
+  (Tree (Plan, Map TypeRep (SomeBean m))) ->
+  m (Tree (Map TypeRep Dynamic))
+followPlan initial treecipes =
+  unfoldTreeM 
+  (\(initial', Node (plan, cauldron) rest) -> do
+      newInitial' <- followPlanCauldron cauldron initial' plan
+      pure (newInitial', (,) newInitial' <$> rest))
+  (initial, treecipes)
+
+followPlanCauldron :: MonadFix m =>
   Map TypeRep (SomeBean m) ->
   Map TypeRep Dynamic ->
   Plan ->
   m (Map TypeRep Dynamic)
-followPlan recipes initial plan = 
+followPlanCauldron recipes initial plan = 
   mfix do \final -> Data.Foldable.foldlM
             do followPlanStep recipes final
             initial
@@ -415,6 +433,7 @@ followPlanStep :: Monad m =>
  PlanItem -> 
  m (Map TypeRep Dynamic)
 followPlanStep recipes final super = \case
+
   BareBean rep -> case fromJust do Map.lookup rep recipes of
     SomeBean (Bean {constructor}) -> do
       (super', bean) <- followConstructor constructor final super
