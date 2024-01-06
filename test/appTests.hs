@@ -117,7 +117,7 @@ coolWiring = do
           & insert @D do makeBean do pack easy do makeD
           & insert @E do makeBean do pack easy do makeE
           & insert @F do makeBean do pack (pure . \(reg, bean) -> regs1 reg bean) do makeF
-          & insert @G do
+          & insert @G
             Bean
               { constructor =  pack easy do makeG,
                 decos =
@@ -126,7 +126,7 @@ coolWiring = do
                     ]
               }
           & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
-          & insert @Z do
+          & insert @Z
             Bean
               { constructor =  pack easy do makeZ,
                 decos =
