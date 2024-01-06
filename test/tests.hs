@@ -86,6 +86,17 @@ makeSelfInvokingWeird ~Weird { weirdOp = selfWeirdOp } = do
       selfWeirdOp
     }
 
+weirdDeco :: Weird M -> Weird M
+weirdDeco Weird { weirdOp, anotherWeirdOp } =
+  Weird {
+    weirdOp = do
+      tell ["deco for weirdOp"]
+      weirdOp,
+    anotherWeirdOp = do
+      tell ["deco for anotherWeirdOp"]
+      anotherWeirdOp
+  }
+
 cauldron :: Cauldron M
 cauldron =
   emptyCauldron
@@ -116,7 +127,9 @@ cauldronNonEmpty =
   [
     emptyCauldron
     & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Weird M) do makeBean do pack (fmap regs0) makeSelfInvokingWeird
+    & insert @(Weird M) do 
+        makeBean do pack (fmap regs0) makeSelfInvokingWeird
+         & overDecos (addLast do packPure0 do weirdDeco)
     & insert @(Initializer, Repository M, Weird M) do makeBean do packPure regs0 do \a b c -> (a,b,c)
   ]
 
@@ -166,7 +179,10 @@ tests =
             "repo init invoking logger",
             "store",
             "findById",
+            -- the deco is applied!
+            "deco for anotherWeirdOp",
             "another weirdOp 2",
+            "deco for weirdOp",
             -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
             "weirdOp 2"
           ]
