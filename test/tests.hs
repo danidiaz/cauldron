@@ -120,20 +120,22 @@ cauldronWithCycle =
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty = 
   (mempty
-    & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
+    & do
+        let packer = fmap (\(reg, bean) -> regs1 reg bean)
+        insert @(Logger M) do makeBean do pack packer do makeLogger
     & insert @(Weird M) do makeBean do pack (fmap regs0) makeWeird
     )
   Data.List.NonEmpty.:|
   [
     mempty
     & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Weird M) do 
-        makeBean do pack (fmap regs0) makeSelfInvokingWeird
-         & overDecos (\decos -> 
-              decos
-              & addOuter do packPure0 do weirdDeco "inner"
-              & addOuter do packPure0 do weirdDeco "outer"
-              )
+    & insert @(Weird M) Bean {
+          constructor = pack (fmap regs0) makeSelfInvokingWeird,
+          decos = fromConstructors [
+              packPure0 do weirdDeco "inner",
+              packPure0 do weirdDeco "outer"
+          ]
+        }
     & insert @(Initializer, Repository M, Weird M) do makeBean do packPure regs0 do \a b c -> (a,b,c)
   ]
 
