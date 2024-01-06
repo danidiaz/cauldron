@@ -99,7 +99,7 @@ weirdDeco txt Weird { weirdOp, anotherWeirdOp } =
 
 cauldron :: Cauldron M
 cauldron =
-  emptyCauldron
+  mempty
     & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
     & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
     & insert @(Initializer, Repository M) do makeBean do packPure regs0 do \a b -> (a,b)
@@ -119,13 +119,13 @@ cauldronWithCycle =
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty = 
-  (emptyCauldron
+  (mempty
     & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
     & insert @(Weird M) do makeBean do pack (fmap regs0) makeWeird
     )
   Data.List.NonEmpty.:|
   [
-    emptyCauldron
+    mempty
     & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
     & insert @(Weird M) do 
         makeBean do pack (fmap regs0) makeSelfInvokingWeird

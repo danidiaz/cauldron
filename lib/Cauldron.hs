@@ -18,7 +18,6 @@
 -- | A library for performing dependency injection.
 module Cauldron
   ( Cauldron,
-    emptyCauldron,
     insert,
     adjust,
     delete,
@@ -50,6 +49,8 @@ module Cauldron
     BadBeans (..),
     BoiledBeans,
     taste,
+    -- | Re-exports
+    mempty
   )
 where
 
