@@ -1,5 +1,10 @@
 # Revision history for cauldron
 
+## 0.3.0.0 
+
+* Add 'cookNonEmpty' and 'cookTree' for cooking hierarchies of 'Cauldron's.
+* Rename `addLast` to `addOuter` and `addFirst` to `addInner`.
+
 ## 0.2.0.0 
 
 * Decorators are no longer `Endo`s. They just take the decorated entity as a 
