@@ -154,7 +154,9 @@ data Constructor m bean where
 
 data ConstructorReps where
   ConstructorReps ::
-    { argReps :: Set TypeRep,
+    { 
+      beanRep :: TypeRep,
+      argReps :: Set TypeRep,
       regReps :: Map TypeRep Dynamic
     } ->
     ConstructorReps
@@ -209,7 +211,9 @@ delete Cauldron {recipes} =
 constructorReps :: (Typeable bean) => Constructor m bean -> ConstructorReps
 constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean)))} =
   ConstructorReps
-    { argReps = 
+    { 
+      beanRep,
+      argReps = 
         Set.delete beanRep do 
           Set.fromList do
             collapse_NP do
@@ -418,19 +422,22 @@ followPlanStep :: Monad m =>
  PlanItem -> 
  m (Map TypeRep Dynamic)
 followPlanStep recipes final super = \case
-
   BareBean rep -> case fromJust do Map.lookup rep recipes of
     SomeBean (Bean {constructor}) -> do
-      (super', bean) <- followConstructor constructor final super
-      let dyn = toDyn bean
-      pure do Map.insert (dynTypeRep dyn) dyn super'
+      let ConstructorReps {beanRep} = constructorReps constructor
+      -- We delete the beanRep before running the constructor, 
+      -- because if we have a self-dependency, we don't want to use the bean
+      -- from a previous context if it exists, we want the bean from final.
+      (super', bean) <- followConstructor constructor final (Map.delete beanRep super)
+      pure do Map.insert beanRep (toDyn bean) super'
   BuiltBean _ -> pure super
   BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
     SomeBean (Bean {decos = Decos {decoCons}}) -> do
       let decoCon = fromJust do Seq.lookup index decoCons
+      let ConstructorReps {beanRep} = constructorReps decoCon
+      -- Unlike before, we don't delete the beanRep before running the constructor.
       (super', bean) <- followConstructor decoCon final super
-      let dyn = toDyn bean
-      pure do Map.insert (dynTypeRep dyn) dyn super'
+      pure do Map.insert  beanRep (toDyn bean) super'
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
