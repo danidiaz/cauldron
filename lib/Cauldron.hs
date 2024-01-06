@@ -84,6 +84,7 @@ import Control.Monad.Fix
 import Data.Functor.Compose
 import Control.Applicative
 import Data.Tree
+import Data.Functor (($>))
 
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
@@ -269,12 +270,34 @@ cookTree = undefined
 checkNoDoubleDutyBeans ::
   Map TypeRep (SomeBean m) ->
   Either (Set TypeRep) (Map TypeRep Dynamic)
-checkNoDoubleDutyBeans recipes = do
-  let accumSet = foldMap recipeRegs recipes
-  let common = Set.intersection (Map.keysSet accumSet) (Map.keysSet recipes)
+checkNoDoubleDutyBeans recipes = checkNoDoubleDutyBeans' (Node recipes [])
+
+checkNoDoubleDutyBeans' ::
+  Tree (Map TypeRep (SomeBean m)) ->
+  Either (Set TypeRep) (Map TypeRep Dynamic)
+checkNoDoubleDutyBeans' treecipes = do
+  let (accumMap, beanSet) = cauldronTreeRegs treecipes
+  let common = Set.intersection (Map.keysSet accumMap) beanSet
   if not (Set.null common)
     then Left common
-    else Right accumSet
+    else Right accumMap
+
+type TreeKey = [Int]
+
+decorate :: 
+  (TreeKey, Map TypeRep TreeKey, Tree (Map TypeRep (SomeBean m))) -> 
+  Tree (Map TypeRep TreeKey, Map TypeRep (SomeBean m))
+decorate = unfoldTree 
+  do \(key, acc, Node current rest) -> 
+        let -- current level has priority
+            newAcc = (current $> key) `Map.union` acc
+            newSeeds = do
+              (i, z) <- zip [0..] rest 
+              let newKey = key ++ [i]
+              [(newKey, newAcc , z)]
+         in ((newAcc, current), newSeeds)
+
+-- Next step: generalize checkMissingDeps
 
 cauldronTreeRegs :: Tree (Map TypeRep (SomeBean m)) -> (Map TypeRep Dynamic, Set TypeRep)
 cauldronTreeRegs = foldMap cauldronRegs 
@@ -289,6 +312,40 @@ recipeRegs (SomeBean Bean {constructor, decos = Decos {decoCons}}) = do
     let extractRegReps = (.regReps) . constructorReps
     extractRegReps constructor 
       <> foldMap extractRegReps decoCons
+
+checkMissingDeps' ::
+  -- | accums 
+  Set TypeRep ->
+  Tree (Map TypeRep (SomeBean m)) ->
+  Either (Map TypeRep (Set TypeRep)) ()
+checkMissingDeps' accums treecipes = do
+  let decoratedTreecipes = decorate ([], Map.empty, treecipes)
+      missing = (\(available,requested) -> checkMissingDepsCauldron accums (Map.keysSet available) requested) <$> decoratedTreecipes
+  sequence_ missing
+
+checkMissingDepsCauldron ::
+  -- | accums 
+  Set TypeRep ->
+  -- | available at this level
+  Set TypeRep ->
+  Map TypeRep (SomeBean m) ->
+  Either (Map TypeRep (Set TypeRep)) ()
+checkMissingDepsCauldron accums available recipes = do
+  let demandedMap = Set.filter (`Set.notMember` available) . demanded <$> recipes
+  if Data.Foldable.any (not . Set.null) demandedMap
+    then Left demandedMap
+    else Right ()
+  where
+    demanded :: SomeBean m -> Set TypeRep
+    demanded (SomeBean Bean {constructor, decos = Decos {decoCons}}) =
+      ( Set.fromList do
+          let ConstructorReps {argReps = beanArgReps} = constructorReps constructor
+          Set.toList beanArgReps ++ do
+            decoCon <- Data.Foldable.toList decoCons
+            let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
+            Set.toList decoArgReps
+      )
+        `Set.difference` accums
 
 checkMissingDeps ::
   Set TypeRep ->
