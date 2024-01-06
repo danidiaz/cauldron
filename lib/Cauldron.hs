@@ -52,7 +52,7 @@ module Cauldron
   )
 where
 
-import Algebra.Graph.AdjacencyMap (AdjacencyMap, vertexSet)
+import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
@@ -255,8 +255,8 @@ cookTree :: forall m .
   Tree (Cauldron m) ->
   Either BadBeans (Tree DependencyGraph, m (Tree (BoiledBeans)))
 cookTree (fmap (.recipes) -> treecipes) = do
-  accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans' treecipes
-  () <- first MissingDependencies do checkMissingDeps' (Map.keysSet accumMap) treecipes
+  accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans treecipes
+  () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) treecipes
   treeplan <- first DependencyCycle do buildPlans treecipes
   Right
     ( treeplan <&> \(graph,_) -> DependencyGraph {graph},
@@ -266,14 +266,9 @@ cookTree (fmap (.recipes) -> treecipes) = do
     )
 
 checkNoDoubleDutyBeans ::
-  Map TypeRep (SomeBean m) ->
-  Either (Set TypeRep) (Map TypeRep Dynamic)
-checkNoDoubleDutyBeans recipes = checkNoDoubleDutyBeans' (Node recipes [])
-
-checkNoDoubleDutyBeans' ::
   Tree (Map TypeRep (SomeBean m)) ->
   Either (Set TypeRep) (Map TypeRep Dynamic)
-checkNoDoubleDutyBeans' treecipes = do
+checkNoDoubleDutyBeans treecipes = do
   let (accumMap, beanSet) = cauldronTreeRegs treecipes
   let common = Set.intersection (Map.keysSet accumMap) beanSet
   if not (Set.null common)
@@ -309,12 +304,12 @@ recipeRegs (SomeBean Bean {constructor, decos = Decos {decoCons}}) = do
     extractRegReps constructor 
       <> foldMap extractRegReps decoCons
 
-checkMissingDeps' ::
+checkMissingDeps ::
   -- | accums 
   Set TypeRep ->
   Tree (Map TypeRep (SomeBean m)) ->
   Either (Map TypeRep (Set TypeRep)) ()
-checkMissingDeps' accums treecipes = do
+checkMissingDeps accums treecipes = do
   let decoratedTreecipes = decorate ([], Map.empty, treecipes)
       missing = (\(available,requested) -> checkMissingDepsCauldron accums (Map.keysSet available) requested) <$> decoratedTreecipes
   sequence_ missing
@@ -343,13 +338,6 @@ checkMissingDepsCauldron accums available recipes = do
       )
         `Set.difference` accums
 
-checkMissingDeps ::
-  Set TypeRep ->
-  Map TypeRep (SomeBean m) ->
-  Either (Map TypeRep (Set TypeRep)) ()
-checkMissingDeps accumSet recipes = do
-  checkMissingDeps' accumSet (Node recipes [])
-
 buildPlans :: Tree (Map TypeRep (SomeBean m)) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Map TypeRep (SomeBean m))))
 buildPlans = traverse \recipes -> do
   let graph = buildDepGraphCauldron recipes
@@ -357,9 +345,6 @@ buildPlans = traverse \recipes -> do
     Left recipeCycle ->
       Left recipeCycle
     Right (reverse -> plan) -> Right (graph, (plan, recipes))
-
--- buildDepGraph :: Tree (Map TypeRep (SomeBean m)) -> Tree (AdjacencyMap PlanItem)
--- buildDepGraph = fmap buildDepGraphCauldron
 
 buildDepGraphCauldron :: Map TypeRep (SomeBean m) -> AdjacencyMap PlanItem
 buildDepGraphCauldron recipes = Graph.edges 
