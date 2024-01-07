@@ -10,7 +10,7 @@
 module Main where
 
 import Cauldron
-import Data.Monoid
+import Data.Maybe (fromJust)
 import Data.Function ((&))
 
 {-
@@ -110,16 +110,11 @@ makeC = C
 makeD :: D
 makeD = D
 
--- | A bean with an effectful constructor.
---
--- We might want this in order to allocate some internal IORef,
--- or perhaps to read some configuration file.
-makeE :: IO (A -> E)
-makeE = pure \_ -> E
+makeE :: A -> E
+makeE = \_ -> E
 
--- | A bean with an effectful constructor and a monoidal registration.
-makeF :: IO (B -> C -> (Inspector, F))
-makeF = pure \_ _ -> (Inspector (pure ["F stuff"]), F)
+makeF :: B -> C -> (Inspector, F)
+makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 
 -- | A bean with a self-dependency!
 --
@@ -136,8 +131,8 @@ makeG _ _ _ = G
 --
 -- Because they are normal constructors, they can be effectful, and they
 -- might have dependencies of their own.
-makeGDeco1 :: A -> Endo G
-makeGDeco1 _ = mempty
+makeGDeco1 :: A -> G ->  G
+makeGDeco1 _ g = g
 
 -- | A bean with two monoidal registrations.
 makeH :: A -> D -> G -> (Initializer, Inspector, H)
@@ -153,19 +148,15 @@ makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
 makeZ :: Inspector -> D -> H -> Z
 makeZ _ _ _ = Z
 
-makeZDeco1 :: B -> E -> Endo Z
-makeZDeco1 _ _ = mempty
+makeZDeco1 :: B -> E -> Z-> Z
+makeZDeco1 _ _ z = z
 
--- | A decorator with an effectful constructor and a monoidal registration.
-makeZDeco2 :: IO (F -> (Initializer, Endo Z))
-makeZDeco2 = pure \_ -> (Initializer (putStrLn "Z deco init"), mempty)
+-- | A decorator with a monoidal registration.
+makeZDeco2 :: (F -> Z -> (Initializer, Z))
+makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
 boringWiring :: IO (Initializer, Inspector, Z)
 boringWiring = do
-  -- We need to run the effectful constructors first.
-  makeE' <- makeE
-  makeF' <- makeF
-  makeZDeco2' <- makeZDeco2
   let -- We have to remember to collect the monoidal registrations.
       initializer = init1 <> init2
       -- We have to remember to collect the monoidal registrations.
@@ -175,16 +166,18 @@ boringWiring = do
       (inspector1, b) = makeB
       c = makeC
       d = makeD
-      e = makeE' a
-      (inspector2, f) = makeF' b c
-      gDeco1 = makeGDeco1 a
+      e = makeE a
+      (inspector2, f) = makeF b c
+      g0 = makeG e f g
+      g1 = makeGDeco1 a g0
+      g = g1
       -- Here we apply a single decorator.
-      g = appEndo gDeco1 do makeG e f g
       (init1, inspector3, h) = makeH a d g
-      zDeco1 = makeZDeco1 b e
-      (init2, zDeco2) = makeZDeco2' f
       -- Compose the decorators before applying them.
-      z = appEndo (zDeco2 <> zDeco1) do makeZ inspector d h
+      z0 = makeZ inspector d h
+      z1 = makeZDeco1 b e z0
+      (init2, z2) = makeZDeco2 f z1
+      z = z2
   pure (initializer, inspector, z)
 
 -- | Here we don't have to worry about positional parameters. We throw all the
@@ -192,47 +185,36 @@ boringWiring = do
 -- graph we may want to draw.
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Either BadBeans (DependencyGraph, IO (Maybe (Initializer, Inspector, Z)))
-coolWiring =
+coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring = do
   let cauldron :: Cauldron IO =
-        empty
-          & insert @A do bare do pack_ do pure makeA
-          & insert @B do bare do pack (\(reg, bean) -> regs1 reg bean) do pure makeB
-          & insert @C do bare do pack_ do pure makeC
-          & insert @D do bare do pack_ do pure makeD
-          & insert @E do bare do pack_ do makeE
-          & insert @F do bare do pack (\(reg, bean) -> regs1 reg bean) do makeF
+        emptyCauldron
+          & insert @A do makeBean do packPure0 makeA
+          & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeB
+          & insert @C do makeBean do packPure0 do makeC
+          & insert @D do makeBean do packPure0 do makeD
+          & insert @E do makeBean do packPure0 do makeE
+          & insert @F do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeF
           & insert @G do
             Bean
-              { constructor = pack_ do pure makeG,
+              { constructor = packPure0 do makeG,
                 decos =
                   fromConstructors
-                    [ pack_ do pure makeGDeco1
+                    [ packPure0 do makeGDeco1
                     ]
               }
-          & insert @H do bare do pack (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do pure makeH
+          & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z do
             Bean
-              { constructor = pack_ do pure makeZ,
+              { constructor = packPure0 do makeZ,
                 decos =
                   fromConstructors
-                    [ pack_ do pure makeZDeco1,
-                      pack (\(reg, bean) -> regs1 reg bean) do makeZDeco2
+                    [ packPure0 do makeZDeco1,
+                      packPure (\(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-   in case cook cauldron of
-        Left e -> Left e
-        Right (depGraph, action) ->
-          Right
-            ( depGraph,
-              do
-                beans <- action
-                pure do
-                  initializer <- taste @Initializer beans
-                  inspector <- taste @Inspector beans
-                  z <- taste @Z beans
-                  pure (initializer, inspector, z)
-            )
+          & insert @(Initializer, Inspector, Z) do makeBean do packPure0 do \a b c -> (a,b,c)
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook cauldron
 
 main :: IO ()
 main = do
@@ -247,11 +229,8 @@ main = do
       print badBeans
     Right (depGraph, action) -> do
       exportToDot "beans.dot" depGraph
-      result <- action
-      case result of
-        Nothing -> print "oops"
-        Just (Initializer {runInitializer}, Inspector {inspect}, z) -> do
-          inspection <- inspect
-          print inspection
-          print z
-          runInitializer
+      (Initializer {runInitializer}, Inspector {inspect}, z) <- action
+      inspection <- inspect
+      print inspection
+      print z
+      runInitializer

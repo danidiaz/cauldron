@@ -9,6 +9,7 @@ module Main (main) where
 
 import Cauldron
 import Data.Function ((&))
+import Data.Maybe (fromJust)
 import Data.Monoid
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -83,17 +84,17 @@ makeC = C
 makeD :: D
 makeD = D
 
-makeE :: IO (A -> E)
-makeE = pure \_ -> E
+makeE :: A -> E
+makeE = \_ -> E
 
-makeF :: IO (B -> C -> (Inspector, F))
-makeF = pure \_ _ -> (Inspector (pure ["F stuff"]), F)
+makeF :: B -> C -> (Inspector, F)
+makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 
 makeG :: E -> F -> G -> G
 makeG _ _ _ = G
 
-makeGDeco1 :: A -> Endo G
-makeGDeco1 _ = mempty
+makeGDeco1 :: A -> G -> G
+makeGDeco1 _ g = g 
 
 makeH :: A -> D -> G -> (Initializer, Inspector, H)
 makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
@@ -101,53 +102,42 @@ makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
 makeZ :: Inspector -> D -> H -> Z
 makeZ _ _ _ = Z
 
-makeZDeco1 :: B -> E -> Endo Z
-makeZDeco1 _ _ = mempty
+makeZDeco1 :: B -> E -> Z -> Z
+makeZDeco1 _ _ z = z
 
-makeZDeco2 :: IO (F -> (Initializer, Endo Z))
-makeZDeco2 = pure \_ -> (Initializer (putStrLn "Z deco init"), mempty)
+makeZDeco2 :: F -> Z -> (Initializer, Z)
+makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-coolWiring :: Either BadBeans (DependencyGraph, IO (Maybe (Initializer, Inspector, Z)))
-coolWiring =
+coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring = do
   let cauldron :: Cauldron IO =
-        empty
-          & insert @A do bare do pack_ do pure makeA
-          & insert @B do bare do pack (\(reg, bean) -> regs1 reg bean) do pure makeB
-          & insert @C do bare do pack_ do pure makeC
-          & insert @D do bare do pack_ do pure makeD
-          & insert @E do bare do pack_ do makeE
-          & insert @F do bare do pack (\(reg, bean) -> regs1 reg bean) do makeF
+        emptyCauldron
+          & insert @A do makeBean do packPure0 makeA
+          & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeB
+          & insert @C do makeBean do packPure0 do makeC
+          & insert @D do makeBean do packPure0 do makeD
+          & insert @E do makeBean do packPure0 do makeE
+          & insert @F do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeF
           & insert @G do
             Bean
-              { constructor = pack_ do pure makeG,
+              { constructor = packPure0 do makeG,
                 decos =
                   fromConstructors
-                    [ pack_ do pure makeGDeco1
+                    [ packPure0 do makeGDeco1
                     ]
               }
-          & insert @H do bare do pack (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do pure makeH
+          & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z do
             Bean
-              { constructor = pack_ do pure makeZ,
+              { constructor = packPure0 do makeZ,
                 decos =
                   fromConstructors
-                    [ pack_ do pure makeZDeco1,
-                      pack (\(reg, bean) -> regs1 reg bean) do makeZDeco2
+                    [ packPure0 do makeZDeco1,
+                      packPure (\(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-   in case cook cauldron of
-        Left e -> Left e
-        Right (depGraph, action) ->
-          Right
-            ( depGraph,
-              do
-                beans <- action
-                pure do
-                  initializer <- taste @Initializer beans
-                  inspector <- taste @Inspector beans
-                  z <- taste @Z beans
-                  pure (initializer, inspector, z)
-            )
+          & insert @(Initializer, Inspector, Z) do makeBean do packPure0 do \a b c -> (a,b,c)
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook cauldron
 
 tests :: TestTree
 tests =
