@@ -102,7 +102,7 @@ cauldron =
   mempty
     & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
     & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Initializer, Repository M) do makeBean do packPure regs0 do \a b -> (a,b)
+    & insert @(Initializer, Repository M) do makeBean do pack simple do \a b -> (a,b)
 
 cauldronMissingDep :: Cauldron M
 cauldronMissingDep = delete @(Logger M) cauldron
@@ -110,7 +110,7 @@ cauldronMissingDep = delete @(Logger M) cauldron
 cauldronDoubleDutyBean :: Cauldron M
 cauldronDoubleDutyBean =
   cauldron
-    & insert @Initializer do makeBean do packPure regs0 do do (Initializer (pure ()))
+    & insert @Initializer do makeBean do pack (pure . regs0) do do (Initializer (pure ()))
 
 cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
@@ -136,7 +136,7 @@ cauldronNonEmpty =
                pack simple do weirdDeco "outer"
           ]
         }
-    & insert @(Initializer, Repository M, Weird M) do makeBean do packPure regs0 do \a b c -> (a,b,c)
+    & insert @(Initializer, Repository M, Weird M) do makeBean do pack simple do \a b c -> (a,b,c)
   ]
 
 tests :: TestTree

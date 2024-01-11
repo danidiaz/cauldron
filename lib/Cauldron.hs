@@ -35,9 +35,9 @@ module Cauldron
     fromConstructors,
     Constructor,
     pack,
-    packPure,
     Packer,
     simple,
+    effect,
     Regs,
     regs0,
     regs1,
@@ -581,6 +581,10 @@ type Packer m regs bean r = r -> m (Regs regs bean)
 
 simple :: Applicative m => Packer m '[] bean bean 
 simple bean = pure do regs0 bean
+
+effect :: Applicative m => Packer m '[] bean (m bean)
+effect action = fmap regs0 action
+
 
 -- | To be used only for constructors which return monoidal secondary beans
 -- along with the primary bean.

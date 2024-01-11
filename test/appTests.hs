@@ -125,14 +125,14 @@ coolWiring = do
                     [  pack simple do makeGDeco1
                     ]
               }
-          & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
+          & insert @H do makeBean do pack (pure . \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z
             Bean
               { constructor =  pack simple do makeZ,
                 decos =
                   fromConstructors
                     [  pack simple do makeZDeco1,
-                      packPure (\(reg, bean) -> regs1 reg bean) do makeZDeco2
+                      pack (pure . \(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
           & insert @(Initializer, Inspector, Z) do makeBean do pack simple do \a b c -> (a,b,c)
