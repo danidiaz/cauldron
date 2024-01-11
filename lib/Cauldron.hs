@@ -37,7 +37,7 @@ module Cauldron
     pack,
     packPure,
     Packer,
-    easy,
+    simple,
     Regs,
     regs0,
     regs1,
@@ -50,6 +50,10 @@ module Cauldron
     BadBeans (..),
     BoiledBeans,
     taste,
+    -- | The With monad for handling resources.
+    With,
+    with,
+    runWith,
     -- | Re-exports
     mempty
   )
@@ -93,6 +97,7 @@ import Control.Exception (throwIO, catch)
 import Control.Exception.Base (BlockedIndefinitelyOnMVar (..),  FixIOException(..))
 import Control.Concurrent.MVar (newEmptyMVar, readMVar, putMVar)
 import GHC.IO.Unsafe (unsafeDupableInterleaveIO)
+import Control.Monad.Trans.Class
 import Control.Monad.Fix
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
@@ -574,8 +579,8 @@ regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
 type Packer m regs bean r = r -> m (Regs regs bean)
 
-easy :: Applicative m => Packer m '[] bean bean 
-easy bean = pure do regs0 bean
+simple :: Applicative m => Packer m '[] bean bean 
+simple bean = pure do regs0 bean
 
 -- | To be used only for constructors which return monoidal secondary beans
 -- along with the primary bean.
@@ -623,12 +628,62 @@ unsafeTreeToNonEmpty = \case
   Node a [b] -> Data.List.NonEmpty.cons a (unsafeTreeToNonEmpty b)
   _ -> error "tree not list-shaped"
 
-dodgyFixIO :: MonadIO m => (a -> m a) -> m a
-dodgyFixIO k = do
-    m <- liftIO $ newEmptyMVar
-    ans <- liftIO $ unsafeDupableInterleaveIO
-             (readMVar m `catch` \BlockedIndefinitelyOnMVar ->
-                                    throwIO FixIOException)
-    result <- k ans
-    liftIO $ putMVar m result
-    return result
+-- dodgyFixIO :: MonadIO m => (a -> m a) -> m a
+-- dodgyFixIO k = do
+--     m <- liftIO $ newEmptyMVar
+--     ans <- liftIO $ unsafeDupableInterleaveIO
+--              (readMVar m `catch` \BlockedIndefinitelyOnMVar ->
+--                                     throwIO FixIOException)
+--     result <- k ans
+--     liftIO $ putMVar m result
+--     return result
+
+
+newtype With (m :: Type -> Type) a = With (forall b. (a -> m b) -> m b)
+
+-- | Build a 'With' from a @withFoo@-style resource-handling function that 
+-- accepts a continuation, like 'System.IO.withFile'.
+-- 
+-- Passing functions that do weird things like running their continuation
+-- _twice_ might cause weird / erroneous behavior. But why would you want to do
+-- that?
+with :: (forall b. (a -> m b) -> m b) -> With m a
+with = With
+
+-- | This instance might be a little dodgy (cont-like monads don't really have
+-- 'MonadFix' instances). Follow the recommendations given for 'with'.
+instance (MonadFix m) => MonadFix (With m) where
+    -- I don't pretendt to fully understand this.
+    -- https://stackoverflow.com/a/25839026/1364288
+    mfix f = With (\k -> mfixing (\a -> (do runWith (f a) k) <&> do (,a)))
+      where 
+        mfixing :: MonadFix z => (t -> z (b, t)) -> z b
+        mfixing z = fst <$> mfix do \ ~(_,a) -> z a
+    {-# INLINE mfix #-}
+
+runWith :: With m a -> forall b. (a -> m b) -> m b
+runWith (With r) = r 
+
+instance Functor (With m) where
+  fmap f (With m) = With (\k -> m (\x -> k (f x)))
+  {-# INLINE fmap #-}
+
+instance Applicative (With m) where
+  pure x = With (\k -> k x)
+  {-# INLINE pure #-}
+  With f <*> With g = With (\bfr -> f (\ab -> g (\x -> bfr (ab x))))
+  {-# INLINE (<*>) #-}
+
+instance Monad (With m) where
+  return = pure
+  {-# INLINE return #-}
+  m >>= k = With (\c -> runWith m (\a -> runWith (k a) c))
+  {-# INLINE (>>=) #-}
+
+instance MonadIO m => MonadIO (With m) where
+  liftIO = lift . liftIO
+  {-# INLINE liftIO #-}
+
+instance MonadTrans With where
+  lift m = With (m >>=)
+  {-# INLINE lift #-}

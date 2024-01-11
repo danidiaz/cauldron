@@ -30,6 +30,7 @@ library
         multicurryable ^>= 0.1.1.0,
         bytestring,
         text,
+        transformers,
     hs-source-dirs:   lib
 
 executable cauldron-example-wiring

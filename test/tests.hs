@@ -132,8 +132,8 @@ cauldronNonEmpty =
     & insert @(Weird M) Bean {
           constructor = pack (fmap regs0) makeSelfInvokingWeird,
           decos = fromConstructors [
-               pack easy do weirdDeco "inner",
-               pack easy do weirdDeco "outer"
+               pack simple do weirdDeco "inner",
+               pack simple do weirdDeco "outer"
           ]
         }
     & insert @(Initializer, Repository M, Weird M) do makeBean do packPure regs0 do \a b c -> (a,b,c)
