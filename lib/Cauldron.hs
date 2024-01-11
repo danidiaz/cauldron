@@ -83,12 +83,16 @@ import Data.Typeable
 import GHC.Exts (IsList (..))
 import Multicurryable
 import Type.Reflection qualified
-import Control.Monad.Fix
+-- import Control.Monad.Fix
 import Data.Functor.Compose
 import Control.Applicative
 import Data.Tree
 import Data.Functor (($>), (<&>))
-
+import Control.Monad.IO.Class
+import Control.Exception (throwIO, catch)
+import Control.Exception.Base (BlockedIndefinitelyOnMVar (..),  FixIOException(..))
+import Control.Concurrent.MVar (newEmptyMVar, readMVar, putMVar)
+import GHC.IO.Unsafe (unsafeDupableInterleaveIO)
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype (Semigroup, Monoid)
@@ -163,10 +167,6 @@ data ConstructorReps where
       regReps :: Map TypeRep Dynamic
     } ->
     ConstructorReps
-
--- | The empty 'Cauldron'.
-emptyCauldron :: Cauldron m
-emptyCauldron = mempty
 
 -- | Put a recipe for a 'Bean' into the 'Cauldron'.
 insert ::
@@ -249,8 +249,12 @@ newtype BoiledBeans where
   BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
 -- | Build the beans using the constructors stored in the 'Cauldron'.
+--
+-- Continuation-based monads like ContT or Codensity can be used here, but
+-- _only_ to wrap @withFoo@-like helpers. Weird hijinks like running the
+-- continuation _twice_ will dealock or throw an exeption.
 cook :: forall m.
-  (MonadFix m) =>
+  MonadIO m =>
   Cauldron m ->
   Either BadBeans (DependencyGraph, m BoiledBeans)
 cook cauldron = do
@@ -258,7 +262,7 @@ cook cauldron = do
   result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
 
 cookNonEmpty :: forall m.
-  (MonadFix m) =>
+  MonadIO m =>
   NonEmpty (Cauldron m) ->
   Either BadBeans (NonEmpty DependencyGraph, m (NonEmpty BoiledBeans))
 cookNonEmpty nonemptyCauldronList = do
@@ -266,7 +270,7 @@ cookNonEmpty nonemptyCauldronList = do
   result <&> \(ng, m) -> (unsafeTreeToNonEmpty ng, unsafeTreeToNonEmpty <$> m)
 
 cookTree :: forall m .
-  (MonadFix m) =>
+  (MonadIO m) =>
   Tree (Cauldron m) ->
   Either BadBeans (Tree DependencyGraph, m (Tree (BoiledBeans)))
 cookTree (fmap (.recipes) -> treecipes) = do
@@ -404,7 +408,7 @@ constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
         [(repItem, item)]
     )
 
-followPlan :: MonadFix m =>
+followPlan :: MonadIO m =>
   Map TypeRep Dynamic ->
   (Tree (Plan, Map TypeRep (SomeBean m))) ->
   m (Tree (Map TypeRep Dynamic))
@@ -415,16 +419,16 @@ followPlan initial treecipes =
       pure (newInitial', (,) newInitial' <$> rest))
   (initial, treecipes)
 
-followPlanCauldron :: MonadFix m =>
+followPlanCauldron :: MonadIO m =>
   Map TypeRep (SomeBean m) ->
   Map TypeRep Dynamic ->
   Plan ->
   m (Map TypeRep Dynamic)
 followPlanCauldron recipes initial plan = 
-  mfix do \final -> Data.Foldable.foldlM
-            do followPlanStep recipes final
-            initial
-            plan
+  dodgyFixIO do \final -> Data.Foldable.foldlM
+                  do followPlanStep recipes final
+                  initial
+                  plan
 
 followPlanStep :: Monad m =>
  Map TypeRep (SomeBean m) ->
@@ -617,3 +621,13 @@ unsafeTreeToNonEmpty = \case
   Node a [] -> a Data.List.NonEmpty.:| []
   Node a [b] -> Data.List.NonEmpty.cons a (unsafeTreeToNonEmpty b)
   _ -> error "tree not list-shaped"
+
+dodgyFixIO :: MonadIO m => (a -> m a) -> m a
+dodgyFixIO k = do
+    m <- liftIO $ newEmptyMVar
+    ans <- liftIO $ unsafeDupableInterleaveIO
+             (readMVar m `catch` \BlockedIndefinitelyOnMVar ->
+                                    throwIO FixIOException)
+    result <- k ans
+    liftIO $ putMVar m result
+    return result
