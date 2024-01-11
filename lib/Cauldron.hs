@@ -93,6 +93,7 @@ import Control.Exception (throwIO, catch)
 import Control.Exception.Base (BlockedIndefinitelyOnMVar (..),  FixIOException(..))
 import Control.Concurrent.MVar (newEmptyMVar, readMVar, putMVar)
 import GHC.IO.Unsafe (unsafeDupableInterleaveIO)
+import Control.Monad.Fix
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype (Semigroup, Monoid)
@@ -254,7 +255,7 @@ newtype BoiledBeans where
 -- _only_ to wrap @withFoo@-like helpers. Weird hijinks like running the
 -- continuation _twice_ will dealock or throw an exeption.
 cook :: forall m.
-  MonadIO m =>
+  MonadFix m =>
   Cauldron m ->
   Either BadBeans (DependencyGraph, m BoiledBeans)
 cook cauldron = do
@@ -262,7 +263,7 @@ cook cauldron = do
   result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
 
 cookNonEmpty :: forall m.
-  MonadIO m =>
+  MonadFix m =>
   NonEmpty (Cauldron m) ->
   Either BadBeans (NonEmpty DependencyGraph, m (NonEmpty BoiledBeans))
 cookNonEmpty nonemptyCauldronList = do
@@ -270,7 +271,7 @@ cookNonEmpty nonemptyCauldronList = do
   result <&> \(ng, m) -> (unsafeTreeToNonEmpty ng, unsafeTreeToNonEmpty <$> m)
 
 cookTree :: forall m .
-  (MonadIO m) =>
+  (MonadFix m) =>
   Tree (Cauldron m) ->
   Either BadBeans (Tree DependencyGraph, m (Tree (BoiledBeans)))
 cookTree (fmap (.recipes) -> treecipes) = do
@@ -408,7 +409,7 @@ constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
         [(repItem, item)]
     )
 
-followPlan :: MonadIO m =>
+followPlan :: MonadFix m =>
   Map TypeRep Dynamic ->
   (Tree (Plan, Map TypeRep (SomeBean m))) ->
   m (Tree (Map TypeRep Dynamic))
@@ -419,13 +420,13 @@ followPlan initial treecipes =
       pure (newInitial', (,) newInitial' <$> rest))
   (initial, treecipes)
 
-followPlanCauldron :: MonadIO m =>
+followPlanCauldron :: MonadFix m =>
   Map TypeRep (SomeBean m) ->
   Map TypeRep Dynamic ->
   Plan ->
   m (Map TypeRep Dynamic)
 followPlanCauldron recipes initial plan = 
-  dodgyFixIO do \final -> Data.Foldable.foldlM
+  mfix do \final -> Data.Foldable.foldlM
                   do followPlanStep recipes final
                   initial
                   plan
