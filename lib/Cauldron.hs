@@ -35,9 +35,10 @@ module Cauldron
     fromConstructors,
     Constructor,
     pack,
-    Packer,
+    Packer (..),
     simple,
     effect,
+    purePacker,
     Regs,
     regs0,
     regs1,
@@ -93,12 +94,9 @@ import Control.Applicative
 import Data.Tree
 import Data.Functor (($>), (<&>))
 import Control.Monad.IO.Class
-import Control.Exception (throwIO, catch)
-import Control.Exception.Base (BlockedIndefinitelyOnMVar (..),  FixIOException(..))
-import Control.Concurrent.MVar (newEmptyMVar, readMVar, putMVar)
-import GHC.IO.Unsafe (unsafeDupableInterleaveIO)
 import Control.Monad.Trans.Class
 import Control.Monad.Fix
+import Data.Functor.Contravariant
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype (Semigroup, Monoid)
@@ -564,7 +562,6 @@ argsN = Args . multiuncurry
 data Regs (regs :: [Type]) bean = Regs (NP I regs) bean
   deriving (Functor)
 
-
 regs0 :: bean -> Regs '[] bean
 regs0 bean = Regs Nil bean
 
@@ -577,14 +574,25 @@ regs2 reg1 reg2 bean = Regs (I reg1 :* I reg2 :* Nil) bean
 regs3 :: reg1 -> reg2 -> reg3 -> bean -> Regs '[reg1, reg2, reg3] bean
 regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
-type Packer m regs bean r = r -> m (Regs regs bean)
+newtype Packer m regs bean r = Packer (r -> m (Regs regs bean))
+
+runPacker :: Packer m regs bean r -> r -> m (Regs regs bean)
+runPacker (Packer f) = f 
+
+instance Contravariant (Packer m regs bean) where
+  contramap f (Packer p) = Packer (p . f)
 
 simple :: Applicative m => Packer m '[] bean bean 
-simple bean = pure do regs0 bean
+simple = Packer \bean -> pure do regs0 bean
 
 effect :: Applicative m => Packer m '[] bean (m bean)
-effect action = fmap regs0 action
+effect = Packer \action -> do fmap regs0 action
 
+purePacker :: 
+  (Applicative m , All (Typeable `And` Monoid) regs) => 
+  (r -> Regs regs bean) ->
+  Packer m regs bean r
+purePacker f = Packer do pure . f 
 
 -- | To be used only for constructors which return monoidal secondary beans
 -- along with the primary bean.
@@ -597,29 +605,12 @@ pack ::
   -- | Fit the outputs of the constructor into the auxiliary 'Regs' type.
   --
   -- See 'regs1' and similar functions.
-  (r -> m (Regs regs bean)) ->
+  Packer m regs bean r ->
   -- | Action returning a function ending in @r@, some datatype containing
   -- @regs@ and @bean@ values.
   curried ->
   Constructor m bean
-pack f curried = Constructor do f <$> do argsN curried 
-
-packPure ::
-  forall (args :: [Type]) r curried regs bean m.
-  ( MulticurryableF args r curried (IsFunction curried),
-    All Typeable args,
-    All (Typeable `And` Monoid) regs,
-    Applicative m
-  ) =>
-  -- | Fit the outputs of the constructor into the auxiliary 'Regs' type.
-  --
-  -- See 'regs1' and similar functions.
-  (r -> Regs regs bean) ->
-  -- | Action returning a function ending in @r@, some datatype containing
-  -- @regs@ and @bean@ values.
-  curried ->
-  Constructor m bean
-packPure f curried = Constructor do pure . f <$> do argsN curried
+pack packer curried = Constructor do runPacker packer <$> do argsN curried 
 
 nonEmptyToTree :: NonEmpty a -> Tree a
 nonEmptyToTree = \case

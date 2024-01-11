@@ -100,8 +100,8 @@ weirdDeco txt Weird { weirdOp, anotherWeirdOp } =
 cauldron :: Cauldron M
 cauldron =
   mempty
-    & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
-    & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+    & insert @(Logger M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
+    & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
     & insert @(Initializer, Repository M) do makeBean do pack simple do \a b -> (a,b)
 
 cauldronMissingDep :: Cauldron M
@@ -110,27 +110,27 @@ cauldronMissingDep = delete @(Logger M) cauldron
 cauldronDoubleDutyBean :: Cauldron M
 cauldronDoubleDutyBean =
   cauldron
-    & insert @Initializer do makeBean do pack (pure . regs0) do do (Initializer (pure ()))
+    & insert @Initializer do makeBean do pack simple do do (Initializer (pure ()))
 
 cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
-    & insert @(Logger M) do makeBean do pack (fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
+    & insert @(Logger M) do makeBean do pack (Packer do fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty = 
   (mempty
     & do
-        let packer = fmap (\(reg, bean) -> regs1 reg bean)
+        let packer = Packer do fmap (\(reg, bean) -> regs1 reg bean)
         insert @(Logger M) do makeBean do pack packer do makeLogger
-    & insert @(Weird M) do makeBean do pack (fmap regs0) makeWeird
+    & insert @(Weird M) do makeBean do pack effect makeWeird
     )
   Data.List.NonEmpty.:|
   [
     mempty
-    & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+    & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
     & insert @(Weird M) Bean {
-          constructor = pack (fmap regs0) makeSelfInvokingWeird,
+          constructor = pack effect makeSelfInvokingWeird,
           decos = fromConstructors [
                pack simple do weirdDeco "inner",
                pack simple do weirdDeco "outer"
