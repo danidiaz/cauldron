@@ -35,6 +35,10 @@ module Cauldron
     fromConstructors,
     Constructor,
     pack,
+    pack0,
+    pack1,
+    pack2,
+    pack3,
     Packer (..),
     simple,
     effect,
@@ -611,6 +615,38 @@ pack ::
   curried ->
   Constructor m bean
 pack packer curried = Constructor do runPacker packer <$> do argsN curried 
+
+pack0 ::
+   All (Typeable `And` Monoid) regs =>
+   Packer m regs bean r ->
+   r -> 
+   Constructor m bean
+pack0 packer r = Constructor do Args @'[] \Nil -> runPacker packer r
+
+pack1 ::
+   forall arg1 r m regs bean.
+   (Typeable arg1, All (Typeable `And` Monoid) regs) =>
+   Packer m regs bean r ->
+   (arg1 -> r) -> 
+   Constructor m bean
+pack1 packer f = Constructor do Args @'[arg1] \(I arg1 :* Nil) -> runPacker packer (f arg1)
+
+pack2 ::
+   forall arg1 arg2 r m regs bean.
+   (Typeable arg1, Typeable arg2, All (Typeable `And` Monoid) regs) =>
+   Packer m regs bean r ->
+   (arg1 -> arg2 -> r) -> 
+   Constructor m bean
+pack2 packer f = Constructor do Args @[arg1, arg2] \(I arg1 :* I arg2 :* Nil) -> runPacker packer (f arg1 arg2)
+
+pack3 ::
+   forall arg1 arg2 arg3 r m regs bean.
+   (Typeable arg1, Typeable arg2, Typeable arg3, All (Typeable `And` Monoid) regs) =>
+   Packer m regs bean r ->
+   (arg1 -> arg2 -> arg3 -> r) -> 
+   Constructor m bean
+pack3 packer f = Constructor do Args @[arg1, arg2, arg3] \(I arg1 :* I arg2 :* I arg3 :* Nil) -> runPacker packer (f arg1 arg2 arg3)
+
 
 nonEmptyToTree :: NonEmpty a -> Tree a
 nonEmptyToTree = \case
