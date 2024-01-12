@@ -61,9 +61,9 @@ module Cauldron
     BoiledBeans,
     taste,
     -- | The Bracket monad for handling resources.
-    Bracket,
-    bracketWith,
-    runBracket,
+    Managed,
+    managed,
+    with,
     -- | Re-exports
     mempty
   )
@@ -239,6 +239,30 @@ delete ::
 delete Cauldron {recipes} =
   Cauldron {recipes = Map.delete (typeRep (Proxy @bean)) recipes}
 
+data Fire m = Fire {
+    tweakConstructorReps :: ConstructorReps -> ConstructorReps,
+    followPlanCauldron_ :: 
+      Map TypeRep (SomeBean m) ->
+      Map TypeRep Dynamic ->
+      Plan ->
+      m (Map TypeRep Dynamic)
+  }
+
+allowSelfDependencies :: MonadFix m => Fire m
+allowSelfDependencies = Fire {
+  tweakConstructorReps = \ConstructorReps { argReps, regReps, beanRep } -> 
+    ConstructorReps { 
+      argReps = Set.delete beanRep argReps,
+      regReps,
+      beanRep
+    },
+  followPlanCauldron_ = \recipes initial plan -> 
+    mfix do \final -> Data.Foldable.foldlM
+                    do followPlanStep recipes final
+                    initial
+                    plan
+}
+
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 -- | This function DOESN'T return the bean rep itself in the argreps.
@@ -285,24 +309,25 @@ newtype BoiledBeans where
 -- _only_ to wrap @withFoo@-like helpers. Weird hijinks like running the
 -- continuation _twice_ will dealock or throw an exeption.
 cook :: forall m.
-  MonadFix m =>
+  Monad m =>
+  Fire m ->
   Cauldron m ->
   Either BadBeans (DependencyGraph, m BoiledBeans)
-cook cauldron = do
-  let result = cookTree (Node cauldron [])
+cook fire cauldron = do
+  let result = cookTree (Node (fire, cauldron) [])
   result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
 
 cookNonEmpty :: forall m.
-  MonadFix m =>
-  NonEmpty (Cauldron m) ->
+  Monad m =>
+  NonEmpty (Fire m, Cauldron m) ->
   Either BadBeans (NonEmpty DependencyGraph, m (NonEmpty BoiledBeans))
 cookNonEmpty nonemptyCauldronList = do
   let result = cookTree (nonEmptyToTree nonemptyCauldronList)
   result <&> \(ng, m) -> (unsafeTreeToNonEmpty ng, unsafeTreeToNonEmpty <$> m)
 
 cookTree :: forall m .
-  (MonadFix m) =>
-  Tree (Cauldron m) ->
+  (Monad m) =>
+  Tree (Fire m, Cauldron m) ->
   Either BadBeans (Tree DependencyGraph, m (Tree (BoiledBeans)))
 cookTree (fmap (.recipes) -> treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans treecipes
@@ -701,51 +726,55 @@ unsafeTreeToNonEmpty = \case
 --     return result
 
 
-newtype Bracket (m :: Type -> Type) a = Bracket (forall b. (a -> m b) -> m b)
+-- | This is a copy of the @Managed@ type from the
+-- [managed](https://hackage.haskell.org/package/managed) package, with a dodgy
+-- 'Control.Monad.Fix.MonadFix' instance tacked on.
+newtype Managed a = Managed (forall b. (a -> IO b) -> IO b)
 
--- | Build a 'Bracket' from a @withFoo@-style resource-handling function that 
--- accepts a continuation, like 'System.IO.withFile'.
+-- | Build a 'Managed' value from a @withFoo@-style resource-handling function that 
+-- accepts a continuation, like for example 'System.IO.withFile'.
 -- 
 -- Passing functions that do weird things like running their continuation
 -- _twice_ might cause weird / erroneous behavior. But why would you want to do
 -- that?
-bracketWith :: (forall b. (a -> m b) -> m b) -> Bracket m a
-bracketWith = Bracket
+managed :: (forall r. (a -> IO r) -> IO r) -> Managed a
+managed = Managed
 
--- | This instance might be a little dodgy (cont-like monads don't really have
--- 'MonadFix' instances). Follow the recommendations given for 'with'.
-instance (MonadFix m) => MonadFix (Bracket m) where
+-- | This instance is a little dodgy (continuation-like monads don't have
+-- proper 'MonadFix' instances) but it is nevertheless useful to us because it allows bean
+-- self-dependencies. Follow the recommendations for the 'managed' function.
+--
+-- [\"if you embrace the unsafety, it could be a fun way to tie knots.\"](https://stackoverflow.com/questions/25827227/why-cant-there-be-an-instance-of-monadfix-for-the-continuation-monad#comment113010373_63906214)
+instance MonadFix Managed where
     -- I don't pretendt to fully understand this.
     -- https://stackoverflow.com/a/25839026/1364288
-    mfix f = Bracket (\k -> mfixing (\a -> (do runBracket (f a) k) <&> do (,a)))
+    mfix f = Managed (\k -> mfixing (\a -> (do with (f a) k) <&> do (,a)))
       where 
         mfixing :: MonadFix z => (t -> z (b, t)) -> z b
         mfixing z = fst <$> mfix do \ ~(_,a) -> z a
     {-# INLINE mfix #-}
 
-runBracket :: Bracket m a -> forall b. (a -> m b) -> m b
-runBracket (Bracket r) = r 
+with :: Managed a -> (a -> IO b) -> IO b
+with (Managed r) = r 
 
-instance Functor (Bracket m) where
-  fmap f (Bracket m) = Bracket (\k -> m (\x -> k (f x)))
+instance Functor Managed where
+  fmap f (Managed m) = Managed (\k -> m (\x -> k (f x)))
   {-# INLINE fmap #-}
 
-instance Applicative (Bracket m) where
-  pure x = Bracket (\k -> k x)
+instance Applicative Managed where
+  pure x = Managed (\k -> k x)
   {-# INLINE pure #-}
-  Bracket f <*> Bracket g = Bracket (\bfr -> f (\ab -> g (\x -> bfr (ab x))))
+  Managed f <*> Managed g = Managed (\bfr -> f (\ab -> g (\x -> bfr (ab x))))
   {-# INLINE (<*>) #-}
 
-instance Monad (Bracket m) where
+instance Monad Managed where
   return = pure
   {-# INLINE return #-}
-  m >>= k = Bracket (\c -> runBracket m (\a -> runBracket (k a) c))
+  m >>= k = Managed (\c -> with m (\a -> with (k a) c))
   {-# INLINE (>>=) #-}
 
-instance MonadIO m => MonadIO (Bracket m) where
-  liftIO = lift . liftIO
+instance MonadIO Managed where
+  liftIO m = Managed \return_ -> do
+    a <- m
+    return_ a 
   {-# INLINE liftIO #-}
-
-instance MonadTrans Bracket where
-  lift m = Bracket (m >>=)
-  {-# INLINE lift #-}
