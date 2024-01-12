@@ -329,7 +329,7 @@ cookTree :: forall m .
   (Monad m) =>
   Tree (Fire m, Cauldron m) ->
   Either BadBeans (Tree DependencyGraph, m (Tree (BoiledBeans)))
-cookTree (fmap (.recipes) -> treecipes) = do
+cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans treecipes
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) treecipes
   treeplan <- first DependencyCycle do buildPlans treecipes
@@ -341,7 +341,7 @@ cookTree (fmap (.recipes) -> treecipes) = do
     )
 
 checkNoDoubleDutyBeans ::
-  Tree (Map TypeRep (SomeBean m)) ->
+  Tree (Fire m, Cauldron m) ->
   Either (Set TypeRep) (Map TypeRep Dynamic)
 checkNoDoubleDutyBeans treecipes = do
   let (accumMap, beanSet) = cauldronTreeRegs treecipes
@@ -365,24 +365,26 @@ decorate = unfoldTree
               [(newKey, newAcc , z)]
          in ((newAcc, current), newSeeds)
 
-cauldronTreeRegs :: Tree (Map TypeRep (SomeBean m)) -> (Map TypeRep Dynamic, Set TypeRep)
-cauldronTreeRegs = foldMap cauldronRegs 
+cauldronTreeRegs :: Tree (Fire m, Cauldron m) -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronTreeRegs = foldMap (uncurry cauldronRegs)
 
-cauldronRegs :: Map TypeRep (SomeBean m) -> (Map TypeRep Dynamic, Set TypeRep)
-cauldronRegs = 
-  Map.foldMapWithKey \rep recipe -> (recipeRegs recipe, Set.singleton rep)
+cauldronRegs :: Fire m -> Cauldron m -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronRegs fire  Cauldron { recipes }= 
+  Map.foldMapWithKey 
+  do \rep recipe -> (recipeRegs fire recipe, Set.singleton rep)
+  recipes
 
 -- | Returns the accumulators, not the main bean
-recipeRegs :: SomeBean m -> Map TypeRep Dynamic
-recipeRegs (SomeBean Bean {constructor, decos = Decos {decoCons}}) = do
-    let extractRegReps = (.regReps) . constructorReps
+recipeRegs :: Fire m -> SomeBean m -> Map TypeRep Dynamic
+recipeRegs Fire { tweakConstructorReps } (SomeBean Bean {constructor, decos = Decos {decoCons}}) = do
+    let extractRegReps = (.regReps) . tweakConstructorReps . constructorReps
     extractRegReps constructor 
       <> foldMap extractRegReps decoCons
 
 checkMissingDeps ::
   -- | accums 
   Set TypeRep ->
-  Tree (Map TypeRep (SomeBean m)) ->
+  Tree Cauldron ->
   Either (Map TypeRep (Set TypeRep)) ()
 checkMissingDeps accums treecipes = do
   let decoratedTreecipes = decorate ([], Map.empty, treecipes)
