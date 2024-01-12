@@ -54,9 +54,9 @@ makeRepository Logger {logMessage} = do
             logMessage "findById"
             m <- liftIO do readIORef mapRef
             pure do Map.lookup key m,
-          store = \key value -> do
+          store = \key v -> do
             logMessage "store"
-            liftIO do modifyIORef mapRef do Map.insert key value
+            liftIO do modifyIORef mapRef do Map.insert key v
         }
       )
 

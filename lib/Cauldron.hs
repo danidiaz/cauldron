@@ -18,6 +18,7 @@
 -- | A library for performing dependency injection.
 module Cauldron
   ( Cauldron,
+    hoistCauldron,
     insert,
     adjust,
     delete,
@@ -25,15 +26,18 @@ module Cauldron
     cookNonEmpty,
     cookTree,
     Bean (..),
+    hoistBean,
     makeBean,
     setConstructor,
     setDecos,
     overDecos,
     Decos,
+    hoistDecos,
     addInner,
     addOuter,
     fromConstructors,
     Constructor,
+    hoistConstructor,
     pack,
     pack0,
     pack1,
@@ -56,7 +60,7 @@ module Cauldron
     BadBeans (..),
     BoiledBeans,
     taste,
-    -- | The With monad for handling resources.
+    -- | The Bracket monad for handling resources.
     Bracket,
     bracketWith,
     runBracket,
@@ -106,8 +110,14 @@ newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype (Semigroup, Monoid)
 
+hoistCauldron :: (forall x . m x -> n x) -> Cauldron m -> Cauldron n
+hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeBean f <$> recipes }
+
 data SomeBean m where
   SomeBean :: (Typeable bean) => Bean m bean -> SomeBean m
+
+hoistSomeBean :: (forall x . m x -> n x) -> SomeBean m -> SomeBean n
+hoistSomeBean f (SomeBean bean) = SomeBean do hoistBean f bean
 
 -- | Instructions for building a value of type @bean@, possibly requiring
 -- actions in the monad @m@
@@ -120,6 +130,12 @@ data Bean m bean where
       decos :: Decos m bean
     } ->
     Bean m bean
+
+hoistBean :: (forall x . m x -> n x) -> Bean m bean -> Bean n bean
+hoistBean f (Bean {constructor,decos}) = Bean {
+    constructor = hoistConstructor f constructor,
+    decos = hoistDecos f decos 
+  }
 
 -- | A 'Bean' without decorators, having only the main constructor.
 makeBean :: Constructor m a -> Bean m a
@@ -134,6 +150,9 @@ instance IsList (Decos m bean) where
   type Item (Decos m bean) = Constructor m bean
   fromList decos = Decos do GHC.Exts.fromList decos
   toList (Decos {decoCons}) = GHC.Exts.toList decoCons
+
+hoistDecos :: (forall x . m x -> n x) -> Decos m bean -> Decos n bean
+hoistDecos f (Decos {decoCons}) = Decos {decoCons = hoistConstructor f <$> decoCons }
 
 setConstructor :: Constructor m bean -> Bean m bean -> Bean m bean
 setConstructor constructor (Bean {decos}) = Bean {constructor, decos}
@@ -176,6 +195,9 @@ data ConstructorReps where
       regReps :: Map TypeRep Dynamic
     } ->
     ConstructorReps
+
+hoistConstructor :: (forall x . m x -> n x) -> Constructor m bean -> Constructor n bean
+hoistConstructor f (Constructor {constructor_}) = Constructor do fmap f constructor_
 
 -- | Put a recipe for a 'Bean' into the 'Cauldron'.
 insert ::
