@@ -111,31 +111,31 @@ coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring = do
   let cauldron :: Cauldron IO =
         mempty
-          & insert @A do makeBean do pack simple do makeA
-          & insert @B do makeBean do pack (Packer do pure . \(reg, bean) -> regs1 reg bean) do makeB
-          & insert @C do makeBean do pack simple do makeC
-          & insert @D do makeBean do pack simple do makeD
-          & insert @E do makeBean do pack simple do makeE
-          & insert @F do makeBean do pack (purePacker \(reg, bean) -> regs1 reg bean) do makeF
+          & insert @A do makeBean do pack value makeA
+          & insert @B do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
+          & insert @C do makeBean do pack value makeC
+          & insert @D do makeBean do pack value makeD
+          & insert @E do makeBean do pack value makeE
+          & insert @F do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
           & insert @G
             Bean
-              { constructor =  pack simple do makeG,
+              { constructor =  pack value do makeG,
                 decos =
                   fromConstructors
-                    [  pack simple do makeGDeco1
+                    [  pack value do makeGDeco1
                     ]
               }
-          & insert @H do makeBean do pack (purePacker \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
+          & insert @H do makeBean do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z
             Bean
-              { constructor =  pack simple do makeZ,
+              { constructor =  pack value do makeZ,
                 decos =
                   fromConstructors
-                    [ pack simple do makeZDeco1,
-                      pack (purePacker \(reg, bean) -> regs1 reg bean) do makeZDeco2
+                    [ pack value do makeZDeco1,
+                      pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-          & insert @(Initializer, Inspector, Z) do makeBean do pack simple do \a b c -> (a,b,c)
+          & insert @(Initializer, Inspector, Z) do makeBean do pack value do \a b c -> (a,b,c)
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook cauldron
 
 tests :: TestTree

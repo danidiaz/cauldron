@@ -40,9 +40,10 @@ module Cauldron
     pack2,
     pack3,
     Packer (..),
-    simple,
+    value,
+    valueWith,
     effect,
-    purePacker,
+    effectWith,
     Regs,
     regs0,
     regs1,
@@ -56,9 +57,9 @@ module Cauldron
     BoiledBeans,
     taste,
     -- | The With monad for handling resources.
-    With,
-    with,
-    runWith,
+    Bracket,
+    bracketWith,
+    runBracket,
     -- | Re-exports
     mempty
   )
@@ -586,17 +587,25 @@ runPacker (Packer f) = f
 instance Contravariant (Packer m regs bean) where
   contramap f (Packer p) = Packer (p . f)
 
-simple :: Applicative m => Packer m '[] bean bean 
-simple = Packer \bean -> pure do regs0 bean
+value :: Applicative m => Packer m '[] bean bean 
+value = Packer \bean -> pure do regs0 bean
 
 effect :: Applicative m => Packer m '[] bean (m bean)
 effect = Packer \action -> do fmap regs0 action
 
-purePacker :: 
+valueWith :: 
   (Applicative m , All (Typeable `And` Monoid) regs) => 
   (r -> Regs regs bean) ->
   Packer m regs bean r
-purePacker f = Packer do pure . f 
+valueWith f = Packer do pure . f 
+
+effectWith :: 
+  (Applicative m , All (Typeable `And` Monoid) regs) => 
+  (r -> Regs regs bean) ->
+  Packer m regs bean (m r)
+effectWith f = Packer do fmap f
+
+
 
 -- | To be used only for constructors which return monoidal secondary beans
 -- along with the primary bean.
@@ -670,51 +679,51 @@ unsafeTreeToNonEmpty = \case
 --     return result
 
 
-newtype With (m :: Type -> Type) a = With (forall b. (a -> m b) -> m b)
+newtype Bracket (m :: Type -> Type) a = Bracket (forall b. (a -> m b) -> m b)
 
--- | Build a 'With' from a @withFoo@-style resource-handling function that 
+-- | Build a 'Bracket' from a @withFoo@-style resource-handling function that 
 -- accepts a continuation, like 'System.IO.withFile'.
 -- 
 -- Passing functions that do weird things like running their continuation
 -- _twice_ might cause weird / erroneous behavior. But why would you want to do
 -- that?
-with :: (forall b. (a -> m b) -> m b) -> With m a
-with = With
+bracketWith :: (forall b. (a -> m b) -> m b) -> Bracket m a
+bracketWith = Bracket
 
 -- | This instance might be a little dodgy (cont-like monads don't really have
 -- 'MonadFix' instances). Follow the recommendations given for 'with'.
-instance (MonadFix m) => MonadFix (With m) where
+instance (MonadFix m) => MonadFix (Bracket m) where
     -- I don't pretendt to fully understand this.
     -- https://stackoverflow.com/a/25839026/1364288
-    mfix f = With (\k -> mfixing (\a -> (do runWith (f a) k) <&> do (,a)))
+    mfix f = Bracket (\k -> mfixing (\a -> (do runBracket (f a) k) <&> do (,a)))
       where 
         mfixing :: MonadFix z => (t -> z (b, t)) -> z b
         mfixing z = fst <$> mfix do \ ~(_,a) -> z a
     {-# INLINE mfix #-}
 
-runWith :: With m a -> forall b. (a -> m b) -> m b
-runWith (With r) = r 
+runBracket :: Bracket m a -> forall b. (a -> m b) -> m b
+runBracket (Bracket r) = r 
 
-instance Functor (With m) where
-  fmap f (With m) = With (\k -> m (\x -> k (f x)))
+instance Functor (Bracket m) where
+  fmap f (Bracket m) = Bracket (\k -> m (\x -> k (f x)))
   {-# INLINE fmap #-}
 
-instance Applicative (With m) where
-  pure x = With (\k -> k x)
+instance Applicative (Bracket m) where
+  pure x = Bracket (\k -> k x)
   {-# INLINE pure #-}
-  With f <*> With g = With (\bfr -> f (\ab -> g (\x -> bfr (ab x))))
+  Bracket f <*> Bracket g = Bracket (\bfr -> f (\ab -> g (\x -> bfr (ab x))))
   {-# INLINE (<*>) #-}
 
-instance Monad (With m) where
+instance Monad (Bracket m) where
   return = pure
   {-# INLINE return #-}
-  m >>= k = With (\c -> runWith m (\a -> runWith (k a) c))
+  m >>= k = Bracket (\c -> runBracket m (\a -> runBracket (k a) c))
   {-# INLINE (>>=) #-}
 
-instance MonadIO m => MonadIO (With m) where
+instance MonadIO m => MonadIO (Bracket m) where
   liftIO = lift . liftIO
   {-# INLINE liftIO #-}
 
-instance MonadTrans With where
-  lift m = With (m >>=)
+instance MonadTrans Bracket where
+  lift m = Bracket (m >>=)
   {-# INLINE lift #-}

@@ -102,7 +102,7 @@ cauldron =
   mempty
     & insert @(Logger M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
     & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Initializer, Repository M) do makeBean do pack simple do \a b -> (a,b)
+    & insert @(Initializer, Repository M) do makeBean do pack value do \a b -> (a,b)
 
 cauldronMissingDep :: Cauldron M
 cauldronMissingDep = delete @(Logger M) cauldron
@@ -110,7 +110,7 @@ cauldronMissingDep = delete @(Logger M) cauldron
 cauldronDoubleDutyBean :: Cauldron M
 cauldronDoubleDutyBean =
   cauldron
-    & insert @Initializer do makeBean do pack simple do do (Initializer (pure ()))
+    & insert @Initializer do makeBean do pack value do do (Initializer (pure ()))
 
 cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
@@ -132,11 +132,11 @@ cauldronNonEmpty =
     & insert @(Weird M) Bean {
           constructor = pack effect makeSelfInvokingWeird,
           decos = fromConstructors [
-               pack simple do weirdDeco "inner",
-               pack simple do weirdDeco "outer"
+               pack value do weirdDeco "inner",
+               pack value do weirdDeco "outer"
           ]
         }
-    & insert @(Initializer, Repository M, Weird M) do makeBean do pack simple do \a b c -> (a,b,c)
+    & insert @(Initializer, Repository M, Weird M) do makeBean do pack value do \a b c -> (a,b,c)
   ]
 
 tests :: TestTree
@@ -144,7 +144,7 @@ tests =
   testGroup
     "All"
     [ 
-      testCase "simple" do
+      testCase "value" do
         (_, traces) <- case cook cauldron of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
@@ -163,7 +163,7 @@ tests =
             "findById"
           ]
           traces,
-      testCase "simple sequential" do
+      testCase "value sequential" do
         (_, traces) <- case cookNonEmpty cauldronNonEmpty of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
