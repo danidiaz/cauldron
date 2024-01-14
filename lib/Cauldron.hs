@@ -27,6 +27,7 @@ module Cauldron
     cookTree,
     Fire,
     allowSelfDeps,
+    forbidDepCycles,
     Bean (..),
     hoistBean,
     makeBean,
@@ -244,7 +245,7 @@ delete Cauldron {recipes} =
 data Fire m = Fire {
     tweakConstructorReps :: ConstructorReps -> ConstructorReps,
     tweakConstructorRepsDeco :: ConstructorReps -> ConstructorReps,
-    followPlanCauldron_ :: 
+    followPlanCauldron :: 
       Cauldron m -> 
       Map TypeRep Dynamic ->
       Plan ->
@@ -259,11 +260,22 @@ allowSelfDeps :: MonadFix m => Fire m
 allowSelfDeps = Fire {
   tweakConstructorReps = removeBeanFromArgs,
   tweakConstructorRepsDeco = removeBeanFromArgs,
-  followPlanCauldron_ = \cauldron initial plan -> 
+  followPlanCauldron = \cauldron initial plan -> 
     mfix do \final -> Data.Foldable.foldlM
                     do followPlanStep cauldron final
                     initial
                     plan
+}
+
+forbidDepCycles :: Monad m => Fire m
+forbidDepCycles = Fire {
+  tweakConstructorReps = id,
+  tweakConstructorRepsDeco = removeBeanFromArgs,
+  followPlanCauldron = \cauldron initial plan -> 
+    Data.Foldable.foldlM
+      do followPlanStep cauldron Map.empty
+      initial
+      plan
 }
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
@@ -479,8 +491,8 @@ followPlan :: Monad m =>
   m (Tree (Map TypeRep Dynamic))
 followPlan initial treecipes =
   unfoldTreeM 
-  (\(initial', Node (plan, Fire {followPlanCauldron_}, cauldron) rest) -> do
-      newInitial' <- followPlanCauldron_ cauldron initial' plan
+  (\(initial', Node (plan, Fire {followPlanCauldron}, cauldron) rest) -> do
+      newInitial' <- followPlanCauldron cauldron initial' plan
       pure (newInitial', (,) newInitial' <$> rest))
   (initial, treecipes)
 
