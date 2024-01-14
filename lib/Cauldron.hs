@@ -241,24 +241,25 @@ delete Cauldron {recipes} =
 
 data Fire m = Fire {
     tweakConstructorReps :: ConstructorReps -> ConstructorReps,
+    tweakConstructorRepsDeco :: ConstructorReps -> ConstructorReps,
     followPlanCauldron_ :: 
-      Map TypeRep (SomeBean m) ->
+      Cauldron m -> 
       Map TypeRep Dynamic ->
       Plan ->
       m (Map TypeRep Dynamic)
   }
 
+removeBeanFromArgs :: ConstructorReps -> ConstructorReps
+removeBeanFromArgs ConstructorReps { argReps, regReps, beanRep } = 
+  ConstructorReps {  argReps = Set.delete beanRep argReps, regReps, beanRep }
+
 allowSelfDependencies :: MonadFix m => Fire m
 allowSelfDependencies = Fire {
-  tweakConstructorReps = \ConstructorReps { argReps, regReps, beanRep } -> 
-    ConstructorReps { 
-      argReps = Set.delete beanRep argReps,
-      regReps,
-      beanRep
-    },
-  followPlanCauldron_ = \recipes initial plan -> 
+  tweakConstructorReps = removeBeanFromArgs,
+  tweakConstructorRepsDeco = removeBeanFromArgs,
+  followPlanCauldron_ = \cauldron initial plan -> 
     mfix do \final -> Data.Foldable.foldlM
-                    do followPlanStep recipes final
+                    do followPlanStep cauldron final
                     initial
                     plan
 }
@@ -484,19 +485,19 @@ followPlanCauldron :: MonadFix m =>
   Map TypeRep Dynamic ->
   Plan ->
   m (Map TypeRep Dynamic)
-followPlanCauldron Cauldron {recipes} initial plan = 
+followPlanCauldron cauldron initial plan = 
   mfix do \final -> Data.Foldable.foldlM
-                  do followPlanStep recipes final
+                  do followPlanStep cauldron final
                   initial
                   plan
 
 followPlanStep :: Monad m =>
- Map TypeRep (SomeBean m) ->
+ Cauldron m ->
  Map TypeRep Dynamic -> 
  Map TypeRep Dynamic -> 
  PlanItem -> 
  m (Map TypeRep Dynamic)
-followPlanStep recipes final super = \case
+followPlanStep Cauldron {recipes} final super = \case
   BareBean rep -> case fromJust do Map.lookup rep recipes of
     SomeBean (Bean {constructor}) -> do
       let ConstructorReps {beanRep} = constructorReps constructor
