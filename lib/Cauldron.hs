@@ -17,30 +17,29 @@
 
 -- | A library for performing dependency injection.
 module Cauldron
-  ( Cauldron,
+  ( 
+    -- * Filling the cauldron
+    Cauldron,
     emptyCauldron,
-    hoistCauldron,
     insert,
     adjust,
     delete,
-    cook,
-    cookNonEmpty,
-    cookTree,
-    Fire,
-    allowSelfDeps,
-    forbidDepCycles,
+    hoistCauldron,
+    -- * Beans
     Bean (..),
-    hoistBean,
     makeBean,
     setConstructor,
     setDecos,
     overDecos,
+    hoistBean,
+    -- ** Decorators
     Decos,
     emptyDecos,
     hoistDecos,
     addInner,
     addOuter,
     fromConstructors,
+    -- ** Constructors
     Constructor,
     hoistConstructor,
     pack,
@@ -58,19 +57,26 @@ module Cauldron
     regs1,
     regs2,
     regs3,
-    DependencyGraph (..),
-    PlanItem (..),
-    exportToDot,
-    -- insert',
+    -- * Cooking the beans
+    cook,
+    cookNonEmpty,
+    cookTree,
+    -- ** How loopy can we get?
+    Fire,
+    forbidDepCycles,
+    allowSelfDeps,
+    -- ** Tasting the results
     BadBeans (..),
     BoiledBeans,
     taste,
-    -- | The Managed monad for handling resources.
+    -- ** Drawing deps
+    DependencyGraph (..),
+    PlanItem (..),
+    exportToDot,
+    -- * The Managed monad for handling resources
     Managed,
     managed,
-    with,
-    -- | Re-exports
-    mempty
+    with
   )
 where
 
@@ -185,7 +191,6 @@ addOuter :: Constructor m bean -> Decos m bean -> Decos m bean
 addOuter con (Decos {decoCons}) = Decos do decoCons Seq.|> con
 
 fromConstructors :: 
-    -- | The constructors end in 'Endo' because we are building decorators.
     [Constructor m bean] -> 
     Decos m bean
 fromConstructors cons = Decos do Seq.fromList cons
@@ -331,10 +336,6 @@ newtype BoiledBeans where
   BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
 -- | Build the beans using the constructors stored in the 'Cauldron'.
---
--- Continuation-based monads like ContT or Codensity can be used here, but
--- _only_ to wrap @withFoo@-like helpers. Weird hijinks like running the
--- continuation _twice_ will dealock or throw an exeption.
 cook :: forall m.
   Monad m =>
   Fire m ->
@@ -721,18 +722,19 @@ unsafeTreeToNonEmpty = \case
 -- 'Control.Monad.Fix.MonadFix' instance tacked on.
 newtype Managed a = Managed (forall b. (a -> IO b) -> IO b)
 
--- | Build a 'Managed' value from a @withFoo@-style resource-handling function that 
--- accepts a continuation, like for example 'System.IO.withFile'.
+-- | Build a 'Managed' value from a @withFoo@-style resource-handling function
+-- that accepts a continuation, like 'System.IO.withFile'.
 -- 
 -- Passing functions that do weird things like running their continuation
--- _twice_ might cause weird / erroneous behavior. But why would you want to do
--- that?
+-- /twice/ will tear apart the fabric of reality. Why would you want to do that?
+-- Pass only @withFoo@-style functions.
 managed :: (forall r. (a -> IO r) -> IO r) -> Managed a
 managed = Managed
 
--- | This instance is a little dodgy (continuation-like monads don't have
--- proper 'MonadFix' instances) but it is nevertheless useful to us because it allows bean
--- self-dependencies. Follow the recommendations for the 'managed' function.
+-- | This instance is a little dodgy (continuation-like monads don't have proper
+-- 'MonadFix' instances) but it is nevertheless useful because it lets us use
+-- 'Managed' with 'allowSelfDeps'. Follow the recommendations for the 'managed'
+-- function.
 --
 -- [\"if you embrace the unsafety, it could be a fun way to tie knots.\"](https://stackoverflow.com/questions/25827227/why-cant-there-be-an-instance-of-monadfix-for-the-continuation-monad#comment113010373_63906214)
 instance MonadFix Managed where
