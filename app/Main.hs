@@ -185,8 +185,8 @@ boringWiring = do
 -- graph we may want to draw.
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
-coolWiring = do
+coolWiring :: Fire IO -> Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring fire = do
   let cauldron :: Cauldron IO =
         mempty
           & insert @A do makeBean do pack value makeA
@@ -214,7 +214,7 @@ coolWiring = do
                     ]
               }
           & insert @(Initializer, Inspector, Z) do makeBean do pack value \a b c -> (a,b,c)
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook forbidDepCycles cauldron
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
 main :: IO ()
 main = do
@@ -224,7 +224,7 @@ main = do
     print inspection
     print z
     runInitializer
-  case coolWiring of
+  case coolWiring allowSelfDeps of
     Left badBeans -> do
       print badBeans
     Right (depGraph, action) -> do
