@@ -287,7 +287,7 @@ constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean
     { 
       beanRep,
       argReps = 
-        Set.delete beanRep do 
+        do 
           Set.fromList do
             collapse_NP do
               cpure_NP @_ @args
