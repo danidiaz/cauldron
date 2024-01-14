@@ -111,6 +111,10 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Control.Monad.Fix
 import Data.Functor.Contravariant
+import Control.Concurrent.MVar
+import GHC.IO.Unsafe
+import Control.Exception.Base
+
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype (Semigroup, Monoid)
@@ -732,13 +736,17 @@ managed = Managed
 --
 -- [\"if you embrace the unsafety, it could be a fun way to tie knots.\"](https://stackoverflow.com/questions/25827227/why-cant-there-be-an-instance-of-monadfix-for-the-continuation-monad#comment113010373_63906214)
 instance MonadFix Managed where
-    -- I don't pretendt to fully understand this.
-    -- https://stackoverflow.com/a/25839026/1364288
-    mfix f = Managed (\k -> mfixing (\a -> (do with (f a) k) <&> do (,a)))
-      where 
-        mfixing :: MonadFix z => (t -> z (b, t)) -> z b
-        mfixing z = fst <$> mfix do \ ~(_,a) -> z a
-    {-# INLINE mfix #-}
+    -- https://stackoverflow.com/a/63906214
+    -- See also the implementation for fixIO https://hackage.haskell.org/package/base-4.19.0.0/docs/src/System.IO.html#fixIO
+    mfix f = Managed \k -> do
+        m <- newEmptyMVar
+        x <- unsafeDupableInterleaveIO (readMVar m `catch` \BlockedIndefinitelyOnMVar ->
+                                    throwIO FixIOException)
+        unManage (f x) \x' -> do
+          putMVar m x'
+          k x'
+        where
+        unManage (Managed a) = a
 
 with :: Managed a -> (a -> IO b) -> IO b
 with (Managed r) = r 

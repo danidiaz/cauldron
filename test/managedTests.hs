@@ -38,11 +38,13 @@ data Weird m = Weird
     anotherWeirdOp :: m ()
   }
 
-makeSelfInvokingWeird :: IORef [Text] -> Weird IO -> forall r. (Weird IO -> IO r) -> IO r
-makeSelfInvokingWeird ref ~Weird { weirdOp = selfWeirdOp } = do
+makeSelfInvokingWeird :: IORef [Text] -> Logger IO -> Weird IO -> forall r. (Weird IO -> IO r) -> IO r
+makeSelfInvokingWeird ref Logger {logMessage} ~Weird { weirdOp = selfWeirdOp } = do
   makeWithWrapperWithMessage ref "allocating weird" "deallocating weird" (
     Weird  {
-     weirdOp = modifyIORef ref (++["weirdOp 2"]),
+     weirdOp = do
+        modifyIORef ref (++["weirdOp 2"])
+        logMessage "logging",
      anotherWeirdOp  = do
       modifyIORef ref (++["another weirdOp 2"])
       selfWeirdOp
@@ -63,7 +65,7 @@ managedCauldron :: IORef [Text] -> Cauldron Managed
 managedCauldron ref = 
     emptyCauldron
     & insert @(Logger IO) do makeBean do pack effect do managed (makeLogger ref)
-    & insert @(Weird IO) do makeBean do pack effect do \self -> managed (makeSelfInvokingWeird ref self)
+    & insert @(Weird IO) do makeBean do pack effect do \logger self -> managed (makeSelfInvokingWeird ref logger self)
     & insert @(Logger IO, Weird IO) do makeBean do pack value do (,)
 
 tests :: TestTree
@@ -78,16 +80,12 @@ tests =
           Right (_, beansAction) -> with beansAction \boiledBeans -> do
             let (Logger {logMessage}, (Weird {anotherWeirdOp}) :: Weird IO) = fromJust . taste $ boiledBeans
             logMessage "foo"
-            -- anotherWeirdOp 
+            anotherWeirdOp 
             pure ()
         traces <- readIORef ref
         assertEqual
           "traces"
-          [
-            "allocating logger",
-            "foo",
-            "deallocating logger"
-          ]
+          ["allocating logger","allocating weird","foo","another weirdOp 2","weirdOp 2","logging","deallocating weird","deallocating logger"]
           traces
     ]
 
