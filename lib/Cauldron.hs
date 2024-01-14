@@ -114,7 +114,6 @@ import Control.Applicative
 import Data.Tree
 import Data.Functor (($>), (<&>))
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Class
 import Control.Monad.Fix
 import Data.Functor.Contravariant
 import Control.Concurrent.MVar
@@ -123,7 +122,11 @@ import Control.Exception.Base
 
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
-  deriving newtype (Semigroup, Monoid)
+  deriving newtype Monoid
+
+-- | Union of two 'Cauldron's, preferring values from the /left/ cauldron when
+-- both contain the same bean. 
+deriving newtype instance Semigroup (Cauldron m)
 
 emptyCauldron :: Cauldron m
 emptyCauldron = mempty
@@ -582,7 +585,7 @@ data BadBeans
     -- | Beans that work both as primary beans and as monoidal
     -- registrations are disallowed.
   | DoubleDutyBeans (Set TypeRep)
-    -- | Dependency cycles are disallowed except for self-dependencies.
+    -- | Dependency cycles are disallowed for some 'Fire's.
   | DependencyCycle (NonEmpty PlanItem)
   deriving stock (Show)
 
