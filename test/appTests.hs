@@ -90,7 +90,7 @@ makeF :: B -> C -> (Inspector, F)
 makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 
 makeG :: E -> F -> G -> G
-makeG _ _ _ = G
+makeG _ _ (_ :: G) = G
 
 makeGDeco1 :: A -> G -> G
 makeGDeco1 _ g = g 
@@ -107,8 +107,8 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: F -> Z -> (Initializer, Z)
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
-coolWiring = do
+coolWiring :: Fire IO -> Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring fire = do
   let cauldron :: Cauldron IO =
         mempty
           & insert @A do makeBean do pack value makeA
@@ -136,16 +136,22 @@ coolWiring = do
                     ]
               }
           & insert @(Initializer, Inspector, Z) do makeBean do pack value do \a b c -> (a,b,c)
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook allowSelfDeps cauldron
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
 tests :: TestTree
 tests =
   testGroup
     "All"
     [ testCase "example" do
-        case coolWiring of
+        case coolWiring allowSelfDeps of
           Left badBeans -> assertFailure do show badBeans
           Right _ -> pure ()
+        pure (),
+      testCase "dep cycles forbidden" do
+        case coolWiring forbidDepCycles of
+          Left (DependencyCycle _) -> pure ()
+          Left _ -> assertFailure do "wrong kind of error detected"
+          Right _ -> assertFailure do "self dependency not detected"
         pure ()
     ]
 

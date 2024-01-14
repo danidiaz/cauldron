@@ -122,7 +122,7 @@ makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 --
 -- Dependency cycles of more than one bean are forbidden, however.
 makeG :: E -> F -> G -> G
-makeG _ _ _ = G
+makeG _ _ !_ = G
 
 -- | A decorator.
 --
@@ -214,7 +214,7 @@ coolWiring = do
                     ]
               }
           & insert @(Initializer, Inspector, Z) do makeBean do pack value \a b c -> (a,b,c)
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook allowSelfDeps cauldron
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook forbidDepCycles cauldron
 
 main :: IO ()
 main = do
