@@ -7,19 +7,12 @@
 module Main (main) where
 
 import Cauldron
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Writer
 import Data.Function ((&))
 import Data.IORef
-import Data.Map (Map)
 import Data.Maybe (fromJust)
-import Data.Map qualified as Map
-import Data.Monoid
 import Data.Text (Text)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Data.List.NonEmpty (NonEmpty)
-import Data.List.NonEmpty qualified
 
 newtype Logger m = Logger
   { logMessage :: Text -> m ()
