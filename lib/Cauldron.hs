@@ -441,18 +441,20 @@ buildDepGraphCauldron Cauldron {recipes} = Graph.edges
               decos = do
                 (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
                 [(BeanDecorator beanRep decoIndex, decoCon)]
-              beanDeps = constructorEdges bareBean constructor
-              decoDeps = concatMap (uncurry constructorEdges) decos
+              beanDeps = do
+                constructorEdges bareBean (constructorReps constructor)
+              decoDeps = do
+                (decoBean, decoCon) <- decos
+                constructorEdges decoBean (constructorReps decoCon)
               full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
               innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
           beanDeps ++ decoDeps ++ innerDeps
 
-constructorEdges ::forall bean m.
-  (Typeable bean) => 
+constructorEdges ::
   PlanItem ->
-  Constructor m bean ->
+  ConstructorReps ->
   [(PlanItem, PlanItem)]
-constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
+constructorEdges item (ConstructorReps {argReps, regReps}) =
   -- consumers depend on their args
   (do
       argRep <- Set.toList argReps
