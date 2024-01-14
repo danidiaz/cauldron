@@ -18,6 +18,7 @@
 -- | A library for performing dependency injection.
 module Cauldron
   ( Cauldron,
+    emptyCauldron,
     hoistCauldron,
     insert,
     adjust,
@@ -35,6 +36,7 @@ module Cauldron
     setDecos,
     overDecos,
     Decos,
+    emptyDecos,
     hoistDecos,
     addInner,
     addOuter,
@@ -113,6 +115,9 @@ newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype (Semigroup, Monoid)
 
+emptyCauldron :: Cauldron m
+emptyCauldron = mempty
+
 hoistCauldron :: (forall x . m x -> n x) -> Cauldron m -> Cauldron n
 hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeBean f <$> recipes }
 
@@ -153,6 +158,9 @@ instance IsList (Decos m bean) where
   type Item (Decos m bean) = Constructor m bean
   fromList decos = Decos do GHC.Exts.fromList decos
   toList (Decos {decoCons}) = GHC.Exts.toList decoCons
+
+emptyDecos :: Decos m bean
+emptyDecos = mempty
 
 hoistDecos :: (forall x . m x -> n x) -> Decos m bean -> Decos n bean
 hoistDecos f (Decos {decoCons}) = Decos {decoCons = hoistConstructor f <$> decoCons }
@@ -508,6 +516,7 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
         -- We delete the beanRep before running the constructor, 
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
+        -- There is a test for this.
         (super', bean) <- followConstructor constructor final (Map.delete beanRep super)
         pure do Map.insert beanRep (toDyn bean) super'
     BuiltBean _ -> pure super

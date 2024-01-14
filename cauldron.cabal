@@ -67,3 +67,17 @@ test-suite app-tests
       cauldron,
       tasty           ^>= 1.5,
       tasty-hunit     ^>= 0.10,
+
+test-suite tests-managed
+    import:           common
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          managedTests.hs
+    build-depends:    
+      cauldron,
+      bytestring,
+      text,
+      tasty           ^>= 1.5,
+      tasty-hunit     ^>= 0.10,
+      transformers,
+      containers,
