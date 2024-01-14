@@ -51,6 +51,7 @@ module Cauldron
     value,
     effect,
     -- *** Dealing with registrations
+    -- $registrations
     valueWith,
     effectWith,
     Regs,
@@ -377,8 +378,15 @@ constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean
 type Plan = [PlanItem]
 
 data PlanItem
-  = BareBean TypeRep
+  = -- | The undecorated bean.
+    BareBean TypeRep
+    -- | Will depend on the 'BareBean' or in the
+    -- previous 'BeanDecorator'.
   | BeanDecorator TypeRep Int
+    -- | Final, complete version of the bean. Will depend on the 'BareBean' or
+    -- in the last 'BeanDecorator'.
+    --
+    -- Depended upon by other beans.
   | BuiltBean TypeRep
   deriving stock (Show, Eq, Ord)
 
@@ -652,8 +660,17 @@ data BadBeans
   | DependencyCycle (NonEmpty PlanItem)
   deriving stock (Show)
 
+-- | An edge means that the source depends on the target.
+-- 
+-- The dependencies of each bean are given separatedly from its decorators.
+-- 
+-- If that level of detail is excessive, the graph can be simplified using
+-- functions from the
+-- [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-AdjacencyMap.html)
+-- library.
 newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap PlanItem}
 
+-- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
 exportToDot :: FilePath -> DependencyGraph -> IO ()
 exportToDot filepath DependencyGraph {graph} = do
   let prettyRep =
@@ -678,6 +695,22 @@ argsN ::
   curried ->
   Args args r
 argsN = Args . multiuncurry
+
+-- $registrations
+--
+-- 'Constructor's produce a single primary bean, but sometimes they might also
+-- \"register\" a number of secondary beans. 
+--
+-- These secondary beans
+-- must have 'Monoid' instances and, unlike the primary bean, can be produced by 
+-- more that one 'Constructor'. Their values are aggregated across all the 'Constructor's
+-- that produce them. The final aggregated value can be depended upon by other 'Constructor's
+-- as if it were a normal bean.
+--
+-- The 'Regs' type is used to represent the main bean along with the secondary
+-- beans that it registers. Because constructor functions do not use the 'Regs' type,
+-- a 'Packer' must be used to coax the \"tip\" of the constructor function into the 
+-- required shape expected by 'Constructor'.
 
 -- | Auxiliary type which contains a primary bean along with zero or more
 -- secondary \"registration\" beans. The \"registration\" beans must have

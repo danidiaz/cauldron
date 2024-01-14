@@ -8,7 +8,7 @@
 >
 > In the caldron boil and bake;
 
-**cauldron** is a library for dependency injection. It's an alternative to manually wiring the constructors for the components of your application. 
+**cauldron** is a library for dependency injection. It's an alternative to manually wiring the constructors for the components ("beans") of your application. 
 
 It expects the component constructors to conform to a certain shape.
 
@@ -20,7 +20,7 @@ It expects the component constructors to conform to a certain shape.
 
 To be honest, you probably shouldn't use this library. I have noticed that using
 **cauldron** is actually *more* verbose that manually doing the wiring yourself.
-Perhaps it would start to pay for complex components with many dependencies, but
+Perhaps it would start to pay for complex beans with many dependencies, but
 I'm not sure.
 
 Another possible objection to this library is that wiring errors are detected at
@@ -28,73 +28,107 @@ runtime. I don't find that to be a problem though: the wiring happens at the
 very beginning of the application, and it's easy to write an unit test for it.
 
 On the plus side, this library lets you render the graph of dependencies between
-components, something which is difficult to do with naive manual wiring.
+beans, something which is difficult to do with naive manual wiring.
 
 Another advantage is that you can easily modify an existing web of dependencies,
-be by inserting a new component, overriding another, or adding a decorator.
+be it by inserting a new bean, overriding another, or adding a decorator.
 
 # The expected shape of constructors
 
-**cauldron** expects component constructors with a shape like:
+**cauldron** expects "bean" constructors to have a shape like:
 
 ```
-makeServer :: IO (Logger -> Repository -> Server)
+makeServer :: Logger -> Repository -> Server
 ```
 
 Where `Logger`, `Repository` and `Server` are records-of-functions. `Server` is
 the component produced by this constructor, and it has `Logger` and `Repository`
 as dependencies.
 
-Note that there's an `IO` action that returns a function. That action could be
-used to allocate some `IORef` for the internal `Server` state, or perhaps for
-reading some initial configuration from a file. Note also that the the action
-can't make use of the `Logger` and `Repository` dependencies.
-
-In practice, the outer action doesn't need to be `IO`, it can be any other
-`Applicative`.
-
-Having more than one constructor for the same component type is disallowed. The
-wiring is type-directed, so there can't be any ambiguity about what value
-constructor to use.
-
-## Monoidal registrations
-
-More complex constructors can register more than one component by returning a tuple:
+Sometimes constructors are effectful because they must perform some
+initialization (for expample allocating some `IORef` for the internal `Server`
+state). In that case the shape of the constructor becomes something like:
 
 ```
-makeServer :: IO (Logger -> Repository -> (Initializer, Inspector, Server))
+makeServer :: Logger -> Repository -> IO Server
+```
+
+**cauldron** also supports constructors of this shape. 
+
+Having more than one constructor for the same bean type is disallowed. The
+wiring is *type-directed*, so there can't be any ambiguity about which value
+constructor to use.
+
+## Registering secondary beans
+
+More complex constructors can return beans besides the "primary" bean, for example:
+
+```
+makeServer :: Logger -> Repository -> (Initializer, Inspector, Server)
+```
+
+or 
+
+```
+makeServer :: Logger -> Repository -> IO (Initializer, Inspector, Server)
 ```
 
 These secondary outputs of a constructor, like `Initializer` and `Inspector`,
-must have `Monoid` instances. Unlike with the "primary" result component, they
-can be produced by more than one constructor. Their values will be aggregated
-across all constructors that produce them.
+*must* have `Monoid` instances. Unlike with the "primary" bean, they
+*can* be produced by more than one constructor. Their values will be aggregated
+across all the constructors that produce them.
 
-Constructors can depend on these monoidal registrations, by having them as
-arguments:
+Constructors can depend on the *aggregated* value of these monoidal registrations,
+by having them as dependencies:
 
 ```
-makeDebuggingServer :: IO (Inspector -> DebuggingServer)
+makeDebuggingServer :: Inspector -> IO DebuggingServer
 ```
 
 ## Decorators
 
-Decorators are special constructors that modify other components. They are
-distinguised by returning [`Endo`](https://hackage.haskell.org/package/base-4.19.0.0/docs/Data-Monoid.html#t:Endo)s:
+Decorators are special constructors that modify beans. They are like regular
+constructors, only that they have the bean they decorate as an argument:
 
 ```
-makeServerDecorator :: IO (Endo Server)
+makeServerDecorator :: Server -> Server
 ```
 
-Like normal constructors, decorators can have dependencies, and produce secondary outputs:
+Like normal constructors, decorators can have dependencies, effects, and
+register secondary beans:
 
 ```
-makeServerDecorator :: IO (Logger -> (Initializer,Endo Server))
+makeServerDecorator :: Logger -> Server -> IO (Initializer,Server)
 ```
+
+Optionally, the main constructor of a bean may also (optionally) depend on
+itself. If it does, it will receive the final, fully decorated version of
+itself. This is useful to have decorated self-invocations.
+
 # Example code
 
 See [this example application](/app/Main.hs) with dummy components.
 
+# Similarities with the [Java Spring framework IoC container](https://docs.spring.io/spring-framework/reference/core/beans.html)
+
+Some features of this library have loose analogues in how Java Spring handles
+dependency injection (although of course Spring has many more features).
+
+First, a big *difference*: there's no analogue here of annotations, or classpath
+scanning. Beans and decorators must be explicitly registered.
+
+- [@PostConstruct](https://docs.spring.io/spring-framework/reference/core/beans/annotation-config/postconstruct-and-predestroy-annotations.html#page-title) roughly corresponds to effectful constructors.
+
+ Although I expect effectful constructors to be used comparatively more in this
+ library than in Spring, because here they're required to initialize mutable
+ references used by the beans.
+
+- [decorated self-invocations](https://docs.spring.io/spring-framework/reference/core/aop/proxying.html#aop-understanding-aop-proxies) correspond to constructors that
+  depend on the same bean that they produce.
+
+- [context hiearchies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to "cooking"
+  a list or a tree of "cauldrons".
+
 # See also
 
-- [registry](https://hackage.haskell.org/package/registry) is a more mature and useable library for dependency injection.
+- [registry](https://hackage.haskell.org/package/registry) is a more mature and useable library for dependency injection in Haskell.
