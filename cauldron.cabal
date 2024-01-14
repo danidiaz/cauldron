@@ -3,7 +3,8 @@ name:               cauldron
 version:            0.3.0.0
 -- synopsis:
 -- description:
-license:            NONE
+license:            BSD-3-Clause
+license-file:       LICENSE
 author:             diaz_carrete@yahoo.com
 maintainer:         Daniel Díaz
 -- copyright:
