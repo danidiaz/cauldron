@@ -10,7 +10,6 @@ module Main (main) where
 import Cauldron
 import Data.Function ((&))
 import Data.Maybe (fromJust)
-import Data.Monoid
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -91,7 +90,7 @@ makeF :: B -> C -> (Inspector, F)
 makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 
 makeG :: E -> F -> G -> G
-makeG _ _ _ = G
+makeG _ _ (_ :: G) = G
 
 makeGDeco1 :: A -> G -> G
 makeGDeco1 _ g = g 
@@ -108,45 +107,51 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: F -> Z -> (Initializer, Z)
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
-coolWiring = do
+coolWiring :: Fire IO -> Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring fire = do
   let cauldron :: Cauldron IO =
-        emptyCauldron
-          & insert @A do makeBean do packPure0 makeA
-          & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeB
-          & insert @C do makeBean do packPure0 do makeC
-          & insert @D do makeBean do packPure0 do makeD
-          & insert @E do makeBean do packPure0 do makeE
-          & insert @F do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeF
-          & insert @G do
+        mempty
+          & insert @A do makeBean do pack value makeA
+          & insert @B do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
+          & insert @C do makeBean do pack value makeC
+          & insert @D do makeBean do pack value makeD
+          & insert @E do makeBean do pack value makeE
+          & insert @F do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
+          & insert @G
             Bean
-              { constructor = packPure0 do makeG,
+              { constructor =  pack value do makeG,
                 decos =
                   fromConstructors
-                    [ packPure0 do makeGDeco1
+                    [  pack value do makeGDeco1
                     ]
               }
-          & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
-          & insert @Z do
+          & insert @H do makeBean do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
+          & insert @Z
             Bean
-              { constructor = packPure0 do makeZ,
+              { constructor =  pack value do makeZ,
                 decos =
                   fromConstructors
-                    [ packPure0 do makeZDeco1,
-                      packPure (\(reg, bean) -> regs1 reg bean) do makeZDeco2
+                    [ pack value do makeZDeco1,
+                      pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-          & insert @(Initializer, Inspector, Z) do makeBean do packPure0 do \a b c -> (a,b,c)
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook cauldron
+          & insert @(Initializer, Inspector, Z) do makeBean do pack value do \a b c -> (a,b,c)
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
 tests :: TestTree
 tests =
   testGroup
     "All"
     [ testCase "example" do
-        case coolWiring of
+        case coolWiring allowSelfDeps of
           Left badBeans -> assertFailure do show badBeans
           Right _ -> pure ()
+        pure (),
+      testCase "dep cycles forbidden" do
+        case coolWiring forbidDepCycles of
+          Left (DependencyCycle _) -> pure ()
+          Left _ -> assertFailure do "wrong kind of error detected"
+          Right _ -> assertFailure do "self dependency not detected"
         pure ()
     ]
 

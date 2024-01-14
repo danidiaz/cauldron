@@ -54,9 +54,9 @@ makeRepository Logger {logMessage} = do
             logMessage "findById"
             m <- liftIO do readIORef mapRef
             pure do Map.lookup key m,
-          store = \key value -> do
+          store = \key v -> do
             logMessage "store"
-            liftIO do modifyIORef mapRef do Map.insert key value
+            liftIO do modifyIORef mapRef do Map.insert key v
         }
       )
 
@@ -99,10 +99,10 @@ weirdDeco txt Weird { weirdOp, anotherWeirdOp } =
 
 cauldron :: Cauldron M
 cauldron =
-  emptyCauldron
-    & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
-    & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Initializer, Repository M) do makeBean do packPure regs0 do \a b -> (a,b)
+  mempty
+    & insert @(Logger M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
+    & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+    & insert @(Initializer, Repository M) do makeBean do pack value do \a b -> (a,b)
 
 cauldronMissingDep :: Cauldron M
 cauldronMissingDep = delete @(Logger M) cauldron
@@ -110,31 +110,33 @@ cauldronMissingDep = delete @(Logger M) cauldron
 cauldronDoubleDutyBean :: Cauldron M
 cauldronDoubleDutyBean =
   cauldron
-    & insert @Initializer do makeBean do packPure regs0 do do (Initializer (pure ()))
+    & insert @Initializer do makeBean do pack value do do (Initializer (pure ()))
 
 cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
-    & insert @(Logger M) do makeBean do pack (fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
+    & insert @(Logger M) do makeBean do pack (Packer do fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty = 
-  (emptyCauldron
-    & insert @(Logger M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
-    & insert @(Weird M) do makeBean do pack (fmap regs0) makeWeird
+  (mempty
+    & do
+        let packer = Packer do fmap (\(reg, bean) -> regs1 reg bean)
+        insert @(Logger M) do makeBean do pack packer do makeLogger
+    & insert @(Weird M) do makeBean do pack effect makeWeird
     )
   Data.List.NonEmpty.:|
   [
-    emptyCauldron
-    & insert @(Repository M) do makeBean do pack (fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Weird M) do 
-        makeBean do pack (fmap regs0) makeSelfInvokingWeird
-         & overDecos (\decos -> 
-              decos
-              & addOuter do packPure0 do weirdDeco "inner"
-              & addOuter do packPure0 do weirdDeco "outer"
-              )
-    & insert @(Initializer, Repository M, Weird M) do makeBean do packPure regs0 do \a b c -> (a,b,c)
+    mempty
+    & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+    & insert @(Weird M) Bean {
+          constructor = pack effect makeSelfInvokingWeird,
+          decos = fromConstructors [
+               pack value do weirdDeco "inner",
+               pack value do weirdDeco "outer"
+          ]
+        }
+    & insert @(Initializer, Repository M, Weird M) do makeBean do pack value do \a b c -> (a,b,c)
   ]
 
 tests :: TestTree
@@ -142,8 +144,8 @@ tests =
   testGroup
     "All"
     [ 
-      testCase "simple" do
-        (_, traces) <- case cook cauldron of
+      testCase "value" do
+        (_, traces) <- case cook' cauldron of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
             boiledBeans <- beansAction 
@@ -161,8 +163,8 @@ tests =
             "findById"
           ]
           traces,
-      testCase "simple sequential" do
-        (_, traces) <- case cookNonEmpty cauldronNonEmpty of
+      testCase "value sequential" do
+        (_, traces) <- case cookNonEmpty' cauldronNonEmpty of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
             _ Data.List.NonEmpty.:| [boiledBeans] <- beansAction
@@ -194,21 +196,24 @@ tests =
           ]
           traces,
       testCase "cauldron missing dep" do
-        case cook cauldronMissingDep of
+        case cook' cauldronMissingDep of
           Left (MissingDependencies _) -> pure ()
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do
-        case cook cauldronDoubleDutyBean of
+        case cook' cauldronDoubleDutyBean of
           Left (DoubleDutyBeans _) -> pure ()
           _ -> assertFailure "double duty beans not detected"
         pure (),
       testCase "cauldron with cycle" do
-        case cook cauldronWithCycle of
+        case cook' cauldronWithCycle of
           Left (DependencyCycle _) -> pure ()
           _ -> assertFailure "dependency cycle not detected"
         pure ()
     ]
+  where
+    cook' = cook allowSelfDeps
+    cookNonEmpty' = cookNonEmpty . fmap (allowSelfDeps,)
 
 main :: IO ()
 main = defaultMain tests

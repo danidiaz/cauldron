@@ -122,7 +122,7 @@ makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 --
 -- Dependency cycles of more than one bean are forbidden, however.
 makeG :: E -> F -> G -> G
-makeG _ _ _ = G
+makeG _ _ !_ = G
 
 -- | A decorator.
 --
@@ -188,33 +188,33 @@ boringWiring = do
 coolWiring :: Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring = do
   let cauldron :: Cauldron IO =
-        emptyCauldron
-          & insert @A do makeBean do packPure0 makeA
-          & insert @B do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeB
-          & insert @C do makeBean do packPure0 do makeC
-          & insert @D do makeBean do packPure0 do makeD
-          & insert @E do makeBean do packPure0 do makeE
-          & insert @F do makeBean do packPure (\(reg, bean) -> regs1 reg bean) do makeF
+        mempty
+          & insert @A do makeBean do pack value makeA
+          & insert @B do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
+          & insert @C do makeBean do pack value makeC
+          & insert @D do makeBean do pack value makeD
+          & insert @E do makeBean do pack value makeE
+          & insert @F do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
           & insert @G do
             Bean
-              { constructor = packPure0 do makeG,
+              { constructor = pack value makeG,
                 decos =
                   fromConstructors
-                    [ packPure0 do makeGDeco1
+                    [ pack value makeGDeco1
                     ]
               }
-          & insert @H do makeBean do packPure (\(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
+          & insert @H do makeBean do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z do
             Bean
-              { constructor = packPure0 do makeZ,
+              { constructor = pack value makeZ,
                 decos =
                   fromConstructors
-                    [ packPure0 do makeZDeco1,
-                      packPure (\(reg, bean) -> regs1 reg bean) do makeZDeco2
+                    [ pack value makeZDeco1,
+                      pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-          & insert @(Initializer, Inspector, Z) do makeBean do packPure0 do \a b c -> (a,b,c)
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook cauldron
+          & insert @(Initializer, Inspector, Z) do makeBean do pack value \a b c -> (a,b,c)
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook forbidDepCycles cauldron
 
 main :: IO ()
 main = do

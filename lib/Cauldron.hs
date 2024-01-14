@@ -18,26 +18,39 @@
 -- | A library for performing dependency injection.
 module Cauldron
   ( Cauldron,
-    emptyCauldron,
+    hoistCauldron,
     insert,
     adjust,
     delete,
     cook,
     cookNonEmpty,
     cookTree,
+    Fire,
+    allowSelfDeps,
+    forbidDepCycles,
     Bean (..),
+    hoistBean,
     makeBean,
     setConstructor,
     setDecos,
     overDecos,
     Decos,
+    hoistDecos,
     addInner,
     addOuter,
     fromConstructors,
     Constructor,
+    hoistConstructor,
     pack,
-    packPure,
-    packPure0,
+    pack0,
+    pack1,
+    pack2,
+    pack3,
+    Packer (..),
+    value,
+    valueWith,
+    effect,
+    effectWith,
     Regs,
     regs0,
     regs1,
@@ -50,6 +63,12 @@ module Cauldron
     BadBeans (..),
     BoiledBeans,
     taste,
+    -- | The Bracket monad for handling resources.
+    Managed,
+    managed,
+    with,
+    -- | Re-exports
+    mempty
   )
 where
 
@@ -81,18 +100,27 @@ import Data.Typeable
 import GHC.Exts (IsList (..))
 import Multicurryable
 import Type.Reflection qualified
-import Control.Monad.Fix
+-- import Control.Monad.Fix
 import Data.Functor.Compose
 import Control.Applicative
 import Data.Tree
 import Data.Functor (($>), (<&>))
-
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import Control.Monad.Fix
+import Data.Functor.Contravariant
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype (Semigroup, Monoid)
 
+hoistCauldron :: (forall x . m x -> n x) -> Cauldron m -> Cauldron n
+hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeBean f <$> recipes }
+
 data SomeBean m where
   SomeBean :: (Typeable bean) => Bean m bean -> SomeBean m
+
+hoistSomeBean :: (forall x . m x -> n x) -> SomeBean m -> SomeBean n
+hoistSomeBean f (SomeBean bean) = SomeBean do hoistBean f bean
 
 -- | Instructions for building a value of type @bean@, possibly requiring
 -- actions in the monad @m@
@@ -105,6 +133,12 @@ data Bean m bean where
       decos :: Decos m bean
     } ->
     Bean m bean
+
+hoistBean :: (forall x . m x -> n x) -> Bean m bean -> Bean n bean
+hoistBean f (Bean {constructor,decos}) = Bean {
+    constructor = hoistConstructor f constructor,
+    decos = hoistDecos f decos 
+  }
 
 -- | A 'Bean' without decorators, having only the main constructor.
 makeBean :: Constructor m a -> Bean m a
@@ -119,6 +153,9 @@ instance IsList (Decos m bean) where
   type Item (Decos m bean) = Constructor m bean
   fromList decos = Decos do GHC.Exts.fromList decos
   toList (Decos {decoCons}) = GHC.Exts.toList decoCons
+
+hoistDecos :: (forall x . m x -> n x) -> Decos m bean -> Decos n bean
+hoistDecos f (Decos {decoCons}) = Decos {decoCons = hoistConstructor f <$> decoCons }
 
 setConstructor :: Constructor m bean -> Bean m bean -> Bean m bean
 setConstructor constructor (Bean {decos}) = Bean {constructor, decos}
@@ -162,9 +199,8 @@ data ConstructorReps where
     } ->
     ConstructorReps
 
--- | The empty 'Cauldron'.
-emptyCauldron :: Cauldron m
-emptyCauldron = mempty
+hoistConstructor :: (forall x . m x -> n x) -> Constructor m bean -> Constructor n bean
+hoistConstructor f (Constructor {constructor_}) = Constructor do fmap f constructor_
 
 -- | Put a recipe for a 'Bean' into the 'Cauldron'.
 insert ::
@@ -206,6 +242,42 @@ delete ::
 delete Cauldron {recipes} =
   Cauldron {recipes = Map.delete (typeRep (Proxy @bean)) recipes}
 
+data Fire m = Fire {
+    tweakConstructorReps :: ConstructorReps -> ConstructorReps,
+    tweakConstructorRepsDeco :: ConstructorReps -> ConstructorReps,
+    followPlanCauldron :: 
+      Cauldron m -> 
+      Map TypeRep Dynamic ->
+      Plan ->
+      m (Map TypeRep Dynamic)
+  }
+
+removeBeanFromArgs :: ConstructorReps -> ConstructorReps
+removeBeanFromArgs ConstructorReps { argReps, regReps, beanRep } = 
+  ConstructorReps {  argReps = Set.delete beanRep argReps, regReps, beanRep }
+
+allowSelfDeps :: MonadFix m => Fire m
+allowSelfDeps = Fire {
+  tweakConstructorReps = removeBeanFromArgs,
+  tweakConstructorRepsDeco = removeBeanFromArgs,
+  followPlanCauldron = \cauldron initial plan -> 
+    mfix do \final -> Data.Foldable.foldlM
+                    do followPlanStep cauldron final
+                    initial
+                    plan
+}
+
+forbidDepCycles :: Monad m => Fire m
+forbidDepCycles = Fire {
+  tweakConstructorReps = id,
+  tweakConstructorRepsDeco = removeBeanFromArgs,
+  followPlanCauldron = \cauldron initial plan -> 
+    Data.Foldable.foldlM
+      do followPlanStep cauldron Map.empty
+      initial
+      plan
+}
+
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 -- | This function DOESN'T return the bean rep itself in the argreps.
@@ -215,7 +287,7 @@ constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean
     { 
       beanRep,
       argReps = 
-        Set.delete beanRep do 
+        do 
           Set.fromList do
             collapse_NP do
               cpure_NP @_ @args
@@ -247,29 +319,34 @@ newtype BoiledBeans where
   BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
 -- | Build the beans using the constructors stored in the 'Cauldron'.
+--
+-- Continuation-based monads like ContT or Codensity can be used here, but
+-- _only_ to wrap @withFoo@-like helpers. Weird hijinks like running the
+-- continuation _twice_ will dealock or throw an exeption.
 cook :: forall m.
-  (MonadFix m) =>
+  Monad m =>
+  Fire m ->
   Cauldron m ->
   Either BadBeans (DependencyGraph, m BoiledBeans)
-cook cauldron = do
-  let result = cookTree (Node cauldron [])
+cook fire cauldron = do
+  let result = cookTree (Node (fire, cauldron) [])
   result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
 
 cookNonEmpty :: forall m.
-  (MonadFix m) =>
-  NonEmpty (Cauldron m) ->
+  Monad m =>
+  NonEmpty (Fire m, Cauldron m) ->
   Either BadBeans (NonEmpty DependencyGraph, m (NonEmpty BoiledBeans))
 cookNonEmpty nonemptyCauldronList = do
   let result = cookTree (nonEmptyToTree nonemptyCauldronList)
   result <&> \(ng, m) -> (unsafeTreeToNonEmpty ng, unsafeTreeToNonEmpty <$> m)
 
 cookTree :: forall m .
-  (MonadFix m) =>
-  Tree (Cauldron m) ->
+  (Monad m) =>
+  Tree (Fire m, Cauldron m) ->
   Either BadBeans (Tree DependencyGraph, m (Tree (BoiledBeans)))
-cookTree (fmap (.recipes) -> treecipes) = do
-  accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans treecipes
-  () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) treecipes
+cookTree (treecipes) = do
+  accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
+  () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans treecipes
   Right
     ( treeplan <&> \(graph,_) -> DependencyGraph {graph},
@@ -279,7 +356,7 @@ cookTree (fmap (.recipes) -> treecipes) = do
     )
 
 checkNoDoubleDutyBeans ::
-  Tree (Map TypeRep (SomeBean m)) ->
+  Tree (Cauldron m) ->
   Either (Set TypeRep) (Map TypeRep Dynamic)
 checkNoDoubleDutyBeans treecipes = do
   let (accumMap, beanSet) = cauldronTreeRegs treecipes
@@ -291,28 +368,30 @@ checkNoDoubleDutyBeans treecipes = do
 type TreeKey = [Int]
 
 decorate :: 
-  (TreeKey, Map TypeRep TreeKey, Tree (Map TypeRep (SomeBean m))) -> 
-  Tree (Map TypeRep TreeKey, Map TypeRep (SomeBean m))
+  (TreeKey, Map TypeRep TreeKey, Tree (Cauldron m)) -> 
+  Tree (Map TypeRep TreeKey, Cauldron m)
 decorate = unfoldTree 
-  do \(key, acc, Node current rest) -> 
+  do \(key, acc, Node (current@Cauldron {recipes}) rest) -> 
         let -- current level has priority
-            newAcc = (current $> key) `Map.union` acc
+            newAcc = (recipes $> key) `Map.union` acc
             newSeeds = do
               (i, z) <- zip [0..] rest 
               let newKey = key ++ [i]
               [(newKey, newAcc , z)]
          in ((newAcc, current), newSeeds)
 
-cauldronTreeRegs :: Tree (Map TypeRep (SomeBean m)) -> (Map TypeRep Dynamic, Set TypeRep)
-cauldronTreeRegs = foldMap cauldronRegs 
+cauldronTreeRegs :: Tree (Cauldron m) -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronTreeRegs = foldMap cauldronRegs
 
-cauldronRegs :: Map TypeRep (SomeBean m) -> (Map TypeRep Dynamic, Set TypeRep)
-cauldronRegs = 
-  Map.foldMapWithKey \rep recipe -> (recipeRegs recipe, Set.singleton rep)
+cauldronRegs :: Cauldron m -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronRegs Cauldron { recipes }= 
+  Map.foldMapWithKey 
+  do \rep recipe -> (recipeRegs recipe, Set.singleton rep)
+  recipes
 
 -- | Returns the accumulators, not the main bean
 recipeRegs :: SomeBean m -> Map TypeRep Dynamic
-recipeRegs (SomeBean Bean {constructor, decos = Decos {decoCons}}) = do
+recipeRegs (SomeBean (Bean {constructor, decos = Decos {decoCons}})) = do
     let extractRegReps = (.regReps) . constructorReps
     extractRegReps constructor 
       <> foldMap extractRegReps decoCons
@@ -320,7 +399,7 @@ recipeRegs (SomeBean Bean {constructor, decos = Decos {decoCons}}) = do
 checkMissingDeps ::
   -- | accums 
   Set TypeRep ->
-  Tree (Map TypeRep (SomeBean m)) ->
+  Tree (Cauldron m) ->
   Either (Map TypeRep (Set TypeRep)) ()
 checkMissingDeps accums treecipes = do
   let decoratedTreecipes = decorate ([], Map.empty, treecipes)
@@ -332,9 +411,9 @@ checkMissingDepsCauldron ::
   Set TypeRep ->
   -- | available at this level
   Set TypeRep ->
-  Map TypeRep (SomeBean m) ->
+  Cauldron m ->
   Either (Map TypeRep (Set TypeRep)) ()
-checkMissingDepsCauldron accums available recipes = do
+checkMissingDepsCauldron accums available Cauldron {recipes} = do
   let demandedMap = Set.filter (`Set.notMember` available) . demanded <$> recipes
   if Data.Foldable.any (not . Set.null) demandedMap
     then Left demandedMap
@@ -351,16 +430,18 @@ checkMissingDepsCauldron accums available recipes = do
       )
         `Set.difference` accums
 
-buildPlans :: Tree (Map TypeRep (SomeBean m)) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Map TypeRep (SomeBean m))))
-buildPlans = traverse \recipes -> do
-  let graph = buildDepGraphCauldron recipes
+buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Fire m, Cauldron m)))
+buildPlans = traverse \(fire, cauldron) -> do
+  let graph = buildDepGraphCauldron fire cauldron
   case Graph.topSort graph of
     Left recipeCycle ->
       Left recipeCycle
-    Right (reverse -> plan) -> Right (graph, (plan, recipes))
+    Right (reverse -> plan) -> Right (graph, (plan, fire, cauldron))
 
-buildDepGraphCauldron :: Map TypeRep (SomeBean m) -> AdjacencyMap PlanItem
-buildDepGraphCauldron recipes = Graph.edges 
+buildDepGraphCauldron :: Fire m -> Cauldron m -> AdjacencyMap PlanItem
+buildDepGraphCauldron 
+  Fire {tweakConstructorReps, tweakConstructorRepsDeco}  
+  Cauldron {recipes} = Graph.edges 
   do
     (flip Map.foldMapWithKey)
       recipes
@@ -377,18 +458,20 @@ buildDepGraphCauldron recipes = Graph.edges
               decos = do
                 (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
                 [(BeanDecorator beanRep decoIndex, decoCon)]
-              beanDeps = constructorEdges bareBean constructor
-              decoDeps = concatMap (uncurry constructorEdges) decos
+              beanDeps = do
+                constructorEdges bareBean (tweakConstructorReps do constructorReps constructor)
+              decoDeps = do
+                (decoBean, decoCon) <- decos
+                constructorEdges decoBean (tweakConstructorRepsDeco do constructorReps decoCon)
               full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
               innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
           beanDeps ++ decoDeps ++ innerDeps
 
-constructorEdges ::forall bean m.
-  (Typeable bean) => 
+constructorEdges ::
   PlanItem ->
-  Constructor m bean ->
+  ConstructorReps ->
   [(PlanItem, PlanItem)]
-constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
+constructorEdges item (ConstructorReps {argReps, regReps}) =
   -- consumers depend on their args
   (do
       argRep <- Set.toList argReps
@@ -402,35 +485,35 @@ constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
         [(repItem, item)]
     )
 
-followPlan :: MonadFix m =>
+followPlan :: Monad m =>
   Map TypeRep Dynamic ->
-  (Tree (Plan, Map TypeRep (SomeBean m))) ->
+  (Tree (Plan, Fire m, Cauldron m)) ->
   m (Tree (Map TypeRep Dynamic))
 followPlan initial treecipes =
   unfoldTreeM 
-  (\(initial', Node (plan, cauldron) rest) -> do
+  (\(initial', Node (plan, Fire {followPlanCauldron}, cauldron) rest) -> do
       newInitial' <- followPlanCauldron cauldron initial' plan
       pure (newInitial', (,) newInitial' <$> rest))
   (initial, treecipes)
 
-followPlanCauldron :: MonadFix m =>
-  Map TypeRep (SomeBean m) ->
-  Map TypeRep Dynamic ->
-  Plan ->
-  m (Map TypeRep Dynamic)
-followPlanCauldron recipes initial plan = 
-  mfix do \final -> Data.Foldable.foldlM
-            do followPlanStep recipes final
-            initial
-            plan
+-- followPlanCauldron :: MonadFix m =>
+--   Cauldron m ->
+--   Map TypeRep Dynamic ->
+--   Plan ->
+--   m (Map TypeRep Dynamic)
+-- followPlanCauldron cauldron initial plan = 
+--   mfix do \final -> Data.Foldable.foldlM
+--                   do followPlanStep cauldron final
+--                   initial
+--                   plan
 
 followPlanStep :: Monad m =>
- Map TypeRep (SomeBean m) ->
+ Cauldron m ->
  Map TypeRep Dynamic -> 
  Map TypeRep Dynamic -> 
  PlanItem -> 
  m (Map TypeRep Dynamic)
-followPlanStep recipes final super = \case
+followPlanStep Cauldron {recipes} final super = \case
   BareBean rep -> case fromJust do Map.lookup rep recipes of
     SomeBean (Bean {constructor}) -> do
       let ConstructorReps {beanRep} = constructorReps constructor
@@ -552,7 +635,6 @@ argsN = Args . multiuncurry
 data Regs (regs :: [Type]) bean = Regs (NP I regs) bean
   deriving (Functor)
 
-
 regs0 :: bean -> Regs '[] bean
 regs0 bean = Regs Nil bean
 
@@ -565,6 +647,34 @@ regs2 reg1 reg2 bean = Regs (I reg1 :* I reg2 :* Nil) bean
 regs3 :: reg1 -> reg2 -> reg3 -> bean -> Regs '[reg1, reg2, reg3] bean
 regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
+newtype Packer m regs bean r = Packer (r -> m (Regs regs bean))
+
+runPacker :: Packer m regs bean r -> r -> m (Regs regs bean)
+runPacker (Packer f) = f 
+
+instance Contravariant (Packer m regs bean) where
+  contramap f (Packer p) = Packer (p . f)
+
+value :: Applicative m => Packer m '[] bean bean 
+value = Packer \bean -> pure do regs0 bean
+
+effect :: Applicative m => Packer m '[] bean (m bean)
+effect = Packer \action -> do fmap regs0 action
+
+valueWith :: 
+  (Applicative m , All (Typeable `And` Monoid) regs) => 
+  (r -> Regs regs bean) ->
+  Packer m regs bean r
+valueWith f = Packer do pure . f 
+
+effectWith :: 
+  (Applicative m , All (Typeable `And` Monoid) regs) => 
+  (r -> Regs regs bean) ->
+  Packer m regs bean (m r)
+effectWith f = Packer do fmap f
+
+
+
 -- | To be used only for constructors which return monoidal secondary beans
 -- along with the primary bean.
 pack ::
@@ -576,41 +686,44 @@ pack ::
   -- | Fit the outputs of the constructor into the auxiliary 'Regs' type.
   --
   -- See 'regs1' and similar functions.
-  (r -> m (Regs regs bean)) ->
+  Packer m regs bean r ->
   -- | Action returning a function ending in @r@, some datatype containing
   -- @regs@ and @bean@ values.
   curried ->
   Constructor m bean
-pack f curried = Constructor do f <$> do argsN curried 
+pack packer curried = Constructor do runPacker packer <$> do argsN curried 
 
-packPure ::
-  forall (args :: [Type]) r curried regs bean m.
-  ( MulticurryableF args r curried (IsFunction curried),
-    All Typeable args,
-    All (Typeable `And` Monoid) regs,
-    Applicative m
-  ) =>
-  -- | Fit the outputs of the constructor into the auxiliary 'Regs' type.
-  --
-  -- See 'regs1' and similar functions.
-  (r -> Regs regs bean) ->
-  -- | Action returning a function ending in @r@, some datatype containing
-  -- @regs@ and @bean@ values.
-  curried ->
-  Constructor m bean
-packPure f curried = Constructor do pure . f <$> do argsN curried
+pack0 ::
+   All (Typeable `And` Monoid) regs =>
+   Packer m regs bean r ->
+   r -> 
+   Constructor m bean
+pack0 packer r = Constructor do Args @'[] \Nil -> runPacker packer r
 
-packPure0 ::
-  forall (args :: [Type]) bean curried m.
-  ( MulticurryableF args bean curried (IsFunction curried),
-    All Typeable args,
-    Applicative m
-  ) =>
-  -- | Action returning a function ending in @r@, some datatype containing
-  -- @regs@ and @bean@ values.
-  curried ->
-  Constructor m bean
-packPure0 = packPure regs0
+pack1 ::
+   forall arg1 r m regs bean.
+   (Typeable arg1, All (Typeable `And` Monoid) regs) =>
+   Packer m regs bean r ->
+   (arg1 -> r) -> 
+   Constructor m bean
+pack1 packer f = Constructor do Args @'[arg1] \(I arg1 :* Nil) -> runPacker packer (f arg1)
+
+pack2 ::
+   forall arg1 arg2 r m regs bean.
+   (Typeable arg1, Typeable arg2, All (Typeable `And` Monoid) regs) =>
+   Packer m regs bean r ->
+   (arg1 -> arg2 -> r) -> 
+   Constructor m bean
+pack2 packer f = Constructor do Args @[arg1, arg2] \(I arg1 :* I arg2 :* Nil) -> runPacker packer (f arg1 arg2)
+
+pack3 ::
+   forall arg1 arg2 arg3 r m regs bean.
+   (Typeable arg1, Typeable arg2, Typeable arg3, All (Typeable `And` Monoid) regs) =>
+   Packer m regs bean r ->
+   (arg1 -> arg2 -> arg3 -> r) -> 
+   Constructor m bean
+pack3 packer f = Constructor do Args @[arg1, arg2, arg3] \(I arg1 :* I arg2 :* I arg3 :* Nil) -> runPacker packer (f arg1 arg2 arg3)
+
 
 nonEmptyToTree :: NonEmpty a -> Tree a
 nonEmptyToTree = \case
@@ -622,3 +735,67 @@ unsafeTreeToNonEmpty = \case
   Node a [] -> a Data.List.NonEmpty.:| []
   Node a [b] -> Data.List.NonEmpty.cons a (unsafeTreeToNonEmpty b)
   _ -> error "tree not list-shaped"
+
+-- dodgyFixIO :: MonadIO m => (a -> m a) -> m a
+-- dodgyFixIO k = do
+--     m <- liftIO $ newEmptyMVar
+--     ans <- liftIO $ unsafeDupableInterleaveIO
+--              (readMVar m `catch` \BlockedIndefinitelyOnMVar ->
+--                                     throwIO FixIOException)
+--     result <- k ans
+--     liftIO $ putMVar m result
+--     return result
+
+
+-- | This is a copy of the @Managed@ type from the
+-- [managed](https://hackage.haskell.org/package/managed) package, with a dodgy
+-- 'Control.Monad.Fix.MonadFix' instance tacked on.
+newtype Managed a = Managed (forall b. (a -> IO b) -> IO b)
+
+-- | Build a 'Managed' value from a @withFoo@-style resource-handling function that 
+-- accepts a continuation, like for example 'System.IO.withFile'.
+-- 
+-- Passing functions that do weird things like running their continuation
+-- _twice_ might cause weird / erroneous behavior. But why would you want to do
+-- that?
+managed :: (forall r. (a -> IO r) -> IO r) -> Managed a
+managed = Managed
+
+-- | This instance is a little dodgy (continuation-like monads don't have
+-- proper 'MonadFix' instances) but it is nevertheless useful to us because it allows bean
+-- self-dependencies. Follow the recommendations for the 'managed' function.
+--
+-- [\"if you embrace the unsafety, it could be a fun way to tie knots.\"](https://stackoverflow.com/questions/25827227/why-cant-there-be-an-instance-of-monadfix-for-the-continuation-monad#comment113010373_63906214)
+instance MonadFix Managed where
+    -- I don't pretendt to fully understand this.
+    -- https://stackoverflow.com/a/25839026/1364288
+    mfix f = Managed (\k -> mfixing (\a -> (do with (f a) k) <&> do (,a)))
+      where 
+        mfixing :: MonadFix z => (t -> z (b, t)) -> z b
+        mfixing z = fst <$> mfix do \ ~(_,a) -> z a
+    {-# INLINE mfix #-}
+
+with :: Managed a -> (a -> IO b) -> IO b
+with (Managed r) = r 
+
+instance Functor Managed where
+  fmap f (Managed m) = Managed (\k -> m (\x -> k (f x)))
+  {-# INLINE fmap #-}
+
+instance Applicative Managed where
+  pure x = Managed (\k -> k x)
+  {-# INLINE pure #-}
+  Managed f <*> Managed g = Managed (\bfr -> f (\ab -> g (\x -> bfr (ab x))))
+  {-# INLINE (<*>) #-}
+
+instance Monad Managed where
+  return = pure
+  {-# INLINE return #-}
+  m >>= k = Managed (\c -> with m (\a -> with (k a) c))
+  {-# INLINE (>>=) #-}
+
+instance MonadIO Managed where
+  liftIO m = Managed \return_ -> do
+    a <- m
+    return_ a 
+  {-# INLINE liftIO #-}
