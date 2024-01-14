@@ -333,7 +333,7 @@ cookTree :: forall m .
 cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
-  treeplan <- first DependencyCycle do buildPlans (snd <$> treecipes)
+  treeplan <- first DependencyCycle do buildPlans treecipes
   Right
     ( treeplan <&> \(graph,_) -> DependencyGraph {graph},
       do
@@ -416,16 +416,18 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
       )
         `Set.difference` accums
 
-buildPlans :: Tree (Cauldron m) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Cauldron m)))
-buildPlans = traverse \recipes -> do
-  let graph = buildDepGraphCauldron recipes
+buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Cauldron m)))
+buildPlans = traverse \(fire, cauldron) -> do
+  let graph = buildDepGraphCauldron fire cauldron
   case Graph.topSort graph of
     Left recipeCycle ->
       Left recipeCycle
-    Right (reverse -> plan) -> Right (graph, (plan, recipes))
+    Right (reverse -> plan) -> Right (graph, (plan, cauldron))
 
-buildDepGraphCauldron :: Cauldron m -> AdjacencyMap PlanItem
-buildDepGraphCauldron Cauldron {recipes} = Graph.edges 
+buildDepGraphCauldron :: Fire m -> Cauldron m -> AdjacencyMap PlanItem
+buildDepGraphCauldron 
+  Fire {tweakConstructorReps, tweakConstructorRepsDeco}  
+  Cauldron {recipes} = Graph.edges 
   do
     (flip Map.foldMapWithKey)
       recipes
@@ -443,10 +445,10 @@ buildDepGraphCauldron Cauldron {recipes} = Graph.edges
                 (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
                 [(BeanDecorator beanRep decoIndex, decoCon)]
               beanDeps = do
-                constructorEdges bareBean (constructorReps constructor)
+                constructorEdges bareBean (tweakConstructorReps do constructorReps constructor)
               decoDeps = do
                 (decoBean, decoCon) <- decos
-                constructorEdges decoBean (constructorReps decoCon)
+                constructorEdges decoBean (tweakConstructorRepsDeco do constructorReps decoCon)
               full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
               innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
           beanDeps ++ decoDeps ++ innerDeps
