@@ -26,7 +26,7 @@ module Cauldron
     cookNonEmpty,
     cookTree,
     Fire,
-    allowSelfDependencies,
+    allowSelfDeps,
     Bean (..),
     hoistBean,
     makeBean,
@@ -255,8 +255,8 @@ removeBeanFromArgs :: ConstructorReps -> ConstructorReps
 removeBeanFromArgs ConstructorReps { argReps, regReps, beanRep } = 
   ConstructorReps {  argReps = Set.delete beanRep argReps, regReps, beanRep }
 
-allowSelfDependencies :: MonadFix m => Fire m
-allowSelfDependencies = Fire {
+allowSelfDeps :: MonadFix m => Fire m
+allowSelfDeps = Fire {
   tweakConstructorReps = removeBeanFromArgs,
   tweakConstructorRepsDeco = removeBeanFromArgs,
   followPlanCauldron_ = \cauldron initial plan -> 

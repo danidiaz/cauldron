@@ -212,8 +212,8 @@ tests =
         pure ()
     ]
   where
-    cook' = cook allowSelfDependencies
-    cookNonEmpty' = cookNonEmpty . fmap (allowSelfDependencies,)
+    cook' = cook allowSelfDeps
+    cookNonEmpty' = cookNonEmpty . fmap (allowSelfDeps,)
 
 main :: IO ()
 main = defaultMain tests
