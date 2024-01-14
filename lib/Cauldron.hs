@@ -247,9 +247,9 @@ data Fire m = Fire {
     tweakConstructorRepsDeco :: ConstructorReps -> ConstructorReps,
     followPlanCauldron :: 
       Cauldron m -> 
-      Map TypeRep Dynamic ->
+      BoiledBeans ->
       Plan ->
-      m (Map TypeRep Dynamic)
+      m BoiledBeans
   }
 
 removeBeanFromArgs :: ConstructorReps -> ConstructorReps
@@ -273,7 +273,7 @@ forbidDepCycles = Fire {
   tweakConstructorRepsDeco = removeBeanFromArgs,
   followPlanCauldron = \cauldron initial plan -> 
     Data.Foldable.foldlM
-      do followPlanStep cauldron Map.empty
+      do followPlanStep cauldron BoiledBeans { beans = Map.empty }
       initial
       plan
 }
@@ -343,16 +343,14 @@ cookNonEmpty nonemptyCauldronList = do
 cookTree :: forall m .
   (Monad m) =>
   Tree (Fire m, Cauldron m) ->
-  Either BadBeans (Tree DependencyGraph, m (Tree (BoiledBeans)))
+  Either BadBeans (Tree DependencyGraph, m (Tree BoiledBeans))
 cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans treecipes
   Right
     ( treeplan <&> \(graph,_) -> DependencyGraph {graph},
-      do
-        treebeans <- followPlan accumMap (snd <$> treeplan)
-        pure do BoiledBeans <$> treebeans 
+      followPlan (BoiledBeans accumMap) (snd <$> treeplan)
     )
 
 checkNoDoubleDutyBeans ::
@@ -486,9 +484,9 @@ constructorEdges item (ConstructorReps {argReps, regReps}) =
     )
 
 followPlan :: Monad m =>
-  Map TypeRep Dynamic ->
+  BoiledBeans ->
   (Tree (Plan, Fire m, Cauldron m)) ->
-  m (Tree (Map TypeRep Dynamic))
+  m (Tree BoiledBeans)
 followPlan initial treecipes =
   unfoldTreeM 
   (\(initial', Node (plan, Fire {followPlanCauldron}, cauldron) rest) -> do
@@ -498,27 +496,28 @@ followPlan initial treecipes =
 
 followPlanStep :: Monad m =>
  Cauldron m ->
- Map TypeRep Dynamic -> 
- Map TypeRep Dynamic -> 
+ BoiledBeans -> 
+ BoiledBeans -> 
  PlanItem -> 
- m (Map TypeRep Dynamic)
-followPlanStep Cauldron {recipes} final super = \case
-  BareBean rep -> case fromJust do Map.lookup rep recipes of
-    SomeBean (Bean {constructor}) -> do
-      let ConstructorReps {beanRep} = constructorReps constructor
-      -- We delete the beanRep before running the constructor, 
-      -- because if we have a self-dependency, we don't want to use the bean
-      -- from a previous context (if it exists) we want the bean from final.
-      (super', bean) <- followConstructor constructor final (Map.delete beanRep super)
-      pure do Map.insert beanRep (toDyn bean) super'
-  BuiltBean _ -> pure super
-  BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
-    SomeBean (Bean {decos = Decos {decoCons}}) -> do
-      let decoCon = fromJust do Seq.lookup index decoCons
-      let ConstructorReps {beanRep} = constructorReps decoCon
-      -- Unlike before, we don't delete the beanRep before running the constructor.
-      (super', bean) <- followConstructor decoCon final super
-      pure do Map.insert  beanRep (toDyn bean) super'
+ m BoiledBeans 
+followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item = 
+  BoiledBeans <$> case item of
+    BareBean rep -> case fromJust do Map.lookup rep recipes of
+      SomeBean (Bean {constructor}) -> do
+        let ConstructorReps {beanRep} = constructorReps constructor
+        -- We delete the beanRep before running the constructor, 
+        -- because if we have a self-dependency, we don't want to use the bean
+        -- from a previous context (if it exists) we want the bean from final.
+        (super', bean) <- followConstructor constructor final (Map.delete beanRep super)
+        pure do Map.insert beanRep (toDyn bean) super'
+    BuiltBean _ -> pure super
+    BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
+      SomeBean (Bean {decos = Decos {decoCons}}) -> do
+        let decoCon = fromJust do Seq.lookup index decoCons
+        let ConstructorReps {beanRep} = constructorReps decoCon
+        -- Unlike before, we don't delete the beanRep before running the constructor.
+        (super', bean) <- followConstructor decoCon final super
+        pure do Map.insert beanRep (toDyn bean) super'
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
@@ -554,25 +553,6 @@ makeRegInserter (I a) =
             dyn = toDyn (reg <> a)
         Map.insert (dynTypeRep dyn) dyn dynMap
    in Endo {appEndo}
-
-
--- restrict :: forall bean m . Typeable bean => Cauldron m -> Cauldron m
--- restrict Cauldron {recipes} = do
---   let graph = buildDepGraph recipes
---       restrictedGraph = restrict' graph (BuiltBean (typeRep (Proxy @bean))) 
---       vertices = do
---         Set.map 
---           \case BareBean r -> r
---                 BeanDecorator r _ -> r
---                 BuiltBean r -> r
---           do vertexSet restrictedGraph
---   Cauldron { recipes = recipes `Map.restrictKeys` vertices }
--- 
--- restrict' :: Ord a => AdjacencyMap a -> a -> AdjacencyMap a
--- restrict' g v = do
---   let relevantSet = Set.fromList do Graph.reachable g v
---   let relevant = (`Set.member` relevantSet)
---   Graph.induce relevant g 
 
 taste :: forall a. (Typeable a) => BoiledBeans -> Maybe a
 taste BoiledBeans {beans} = taste' beans
@@ -661,8 +641,6 @@ effectWith ::
   (r -> Regs regs bean) ->
   Packer m regs bean (m r)
 effectWith f = Packer do fmap f
-
-
 
 -- | To be used only for constructors which return monoidal secondary beans
 -- along with the primary bean.
