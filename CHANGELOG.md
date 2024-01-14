@@ -2,8 +2,12 @@
 
 ## 0.3.0.0 
 
-* Add 'cookNonEmpty' and 'cookTree' for cooking hierarchies of 'Cauldron's.
+* Add `cookNonEmpty` and `cookTree` for cooking hierarchies of 'Cauldron's.
 * Rename `addLast` to `addOuter` and `addFirst` to `addInner`.
+* Add a copy of the `Managed` type from ["managed"](https://hackage.haskell.org/package/managed).
+* Change the nomenclature of the `pack-` related functions.
+* Add the `Packer` type.
+* Add `Fire` type to customize the handling of dependency cycles.
 
 ## 0.2.0.0 
 

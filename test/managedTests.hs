@@ -43,6 +43,14 @@ makeSelfInvokingWeird ref Logger {logMessage} ~Weird { weirdOp = selfWeirdOp } =
       selfWeirdOp
     })
 
+makeWeirdDecorator :: Logger IO -> Weird IO -> Weird IO
+makeWeirdDecorator Logger { logMessage} Weird {weirdOp = selfWeirdOp, anotherWeirdOp} = Weird {
+    weirdOp = do
+        selfWeirdOp
+        logMessage "logging from deco",
+    anotherWeirdOp
+}
+
 makeWithWrapperWithMessage :: 
     IORef [Text] -> 
     Text -> 
@@ -58,7 +66,13 @@ managedCauldron :: IORef [Text] -> Cauldron Managed
 managedCauldron ref = 
     emptyCauldron
     & insert @(Logger IO) do makeBean do pack effect do managed (makeLogger ref)
-    & insert @(Weird IO) do makeBean do pack effect do \logger self -> managed (makeSelfInvokingWeird ref logger self)
+    & insert @(Weird IO) 
+      Bean {
+        constructor = pack effect do \logger self -> managed (makeSelfInvokingWeird ref logger self),
+        decos = fromConstructors [
+            pack value makeWeirdDecorator
+        ]
+      }
     & insert @(Logger IO, Weird IO) do makeBean do pack value do (,)
 
 tests :: TestTree
@@ -78,7 +92,7 @@ tests =
         traces <- readIORef ref
         assertEqual
           "traces"
-          ["allocating logger","allocating weird","foo","another weirdOp 2","weirdOp 2","logging","deallocating weird","deallocating logger"]
+          ["allocating logger","allocating weird","foo","another weirdOp 2","weirdOp 2","logging","logging from deco", "deallocating weird","deallocating logger"]
           traces
     ]
 
