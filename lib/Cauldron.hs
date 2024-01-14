@@ -330,8 +330,8 @@ cookTree :: forall m .
   Tree (Fire m, Cauldron m) ->
   Either BadBeans (Tree DependencyGraph, m (Tree (BoiledBeans)))
 cookTree (treecipes) = do
-  accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans treecipes
-  () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) treecipes
+  accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
+  () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans treecipes
   Right
     ( treeplan <&> \(graph,_) -> DependencyGraph {graph},
@@ -341,7 +341,7 @@ cookTree (treecipes) = do
     )
 
 checkNoDoubleDutyBeans ::
-  Tree (Fire m, Cauldron m) ->
+  Tree (Cauldron m) ->
   Either (Set TypeRep) (Map TypeRep Dynamic)
 checkNoDoubleDutyBeans treecipes = do
   let (accumMap, beanSet) = cauldronTreeRegs treecipes
@@ -353,38 +353,38 @@ checkNoDoubleDutyBeans treecipes = do
 type TreeKey = [Int]
 
 decorate :: 
-  (TreeKey, Map TypeRep TreeKey, Tree (Map TypeRep (SomeBean m))) -> 
-  Tree (Map TypeRep TreeKey, Map TypeRep (SomeBean m))
+  (TreeKey, Map TypeRep TreeKey, Tree (Cauldron m)) -> 
+  Tree (Map TypeRep TreeKey, Cauldron m)
 decorate = unfoldTree 
-  do \(key, acc, Node current rest) -> 
+  do \(key, acc, Node (current@Cauldron {recipes}) rest) -> 
         let -- current level has priority
-            newAcc = (current $> key) `Map.union` acc
+            newAcc = (recipes $> key) `Map.union` acc
             newSeeds = do
               (i, z) <- zip [0..] rest 
               let newKey = key ++ [i]
               [(newKey, newAcc , z)]
          in ((newAcc, current), newSeeds)
 
-cauldronTreeRegs :: Tree (Fire m, Cauldron m) -> (Map TypeRep Dynamic, Set TypeRep)
-cauldronTreeRegs = foldMap (uncurry cauldronRegs)
+cauldronTreeRegs :: Tree (Cauldron m) -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronTreeRegs = foldMap cauldronRegs
 
-cauldronRegs :: Fire m -> Cauldron m -> (Map TypeRep Dynamic, Set TypeRep)
-cauldronRegs fire  Cauldron { recipes }= 
+cauldronRegs :: Cauldron m -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronRegs Cauldron { recipes }= 
   Map.foldMapWithKey 
-  do \rep recipe -> (recipeRegs fire recipe, Set.singleton rep)
+  do \rep recipe -> (recipeRegs recipe, Set.singleton rep)
   recipes
 
 -- | Returns the accumulators, not the main bean
-recipeRegs :: Fire m -> SomeBean m -> Map TypeRep Dynamic
-recipeRegs Fire { tweakConstructorReps } (SomeBean Bean {constructor, decos = Decos {decoCons}}) = do
-    let extractRegReps = (.regReps) . tweakConstructorReps . constructorReps
+recipeRegs :: SomeBean m -> Map TypeRep Dynamic
+recipeRegs (SomeBean (Bean {constructor, decos = Decos {decoCons}})) = do
+    let extractRegReps = (.regReps) . constructorReps
     extractRegReps constructor 
       <> foldMap extractRegReps decoCons
 
 checkMissingDeps ::
   -- | accums 
   Set TypeRep ->
-  Tree Cauldron ->
+  Tree (Cauldron m) ->
   Either (Map TypeRep (Set TypeRep)) ()
 checkMissingDeps accums treecipes = do
   let decoratedTreecipes = decorate ([], Map.empty, treecipes)
