@@ -332,7 +332,7 @@ cookTree :: forall m .
 cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
   () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
-  treeplan <- first DependencyCycle do buildPlans treecipes
+  treeplan <- first DependencyCycle do buildPlans (snd <$> treecipes)
   Right
     ( treeplan <&> \(graph,_) -> DependencyGraph {graph},
       do
@@ -396,9 +396,9 @@ checkMissingDepsCauldron ::
   Set TypeRep ->
   -- | available at this level
   Set TypeRep ->
-  Map TypeRep (SomeBean m) ->
+  Cauldron m ->
   Either (Map TypeRep (Set TypeRep)) ()
-checkMissingDepsCauldron accums available recipes = do
+checkMissingDepsCauldron accums available Cauldron {recipes} = do
   let demandedMap = Set.filter (`Set.notMember` available) . demanded <$> recipes
   if Data.Foldable.any (not . Set.null) demandedMap
     then Left demandedMap
@@ -415,7 +415,7 @@ checkMissingDepsCauldron accums available recipes = do
       )
         `Set.difference` accums
 
-buildPlans :: Tree (Map TypeRep (SomeBean m)) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Map TypeRep (SomeBean m))))
+buildPlans :: Tree (Cauldron m) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Cauldron m)))
 buildPlans = traverse \recipes -> do
   let graph = buildDepGraphCauldron recipes
   case Graph.topSort graph of
@@ -423,8 +423,8 @@ buildPlans = traverse \recipes -> do
       Left recipeCycle
     Right (reverse -> plan) -> Right (graph, (plan, recipes))
 
-buildDepGraphCauldron :: Map TypeRep (SomeBean m) -> AdjacencyMap PlanItem
-buildDepGraphCauldron recipes = Graph.edges 
+buildDepGraphCauldron :: Cauldron m -> AdjacencyMap PlanItem
+buildDepGraphCauldron Cauldron {recipes} = Graph.edges 
   do
     (flip Map.foldMapWithKey)
       recipes
@@ -468,7 +468,7 @@ constructorEdges item (constructorReps -> ConstructorReps {argReps, regReps}) =
 
 followPlan :: MonadFix m =>
   Map TypeRep Dynamic ->
-  (Tree (Plan, Map TypeRep (SomeBean m))) ->
+  (Tree (Plan, Cauldron m)) ->
   m (Tree (Map TypeRep Dynamic))
 followPlan initial treecipes =
   unfoldTreeM 
@@ -478,11 +478,11 @@ followPlan initial treecipes =
   (initial, treecipes)
 
 followPlanCauldron :: MonadFix m =>
-  Map TypeRep (SomeBean m) ->
+  Cauldron m ->
   Map TypeRep Dynamic ->
   Plan ->
   m (Map TypeRep Dynamic)
-followPlanCauldron recipes initial plan = 
+followPlanCauldron Cauldron {recipes} initial plan = 
   mfix do \final -> Data.Foldable.foldlM
                   do followPlanStep recipes final
                   initial
