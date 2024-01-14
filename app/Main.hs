@@ -214,7 +214,7 @@ coolWiring = do
                     ]
               }
           & insert @(Initializer, Inspector, Z) do makeBean do pack value \a b c -> (a,b,c)
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook cauldron
+  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook allowSelfDependencies cauldron
 
 main :: IO ()
 main = do

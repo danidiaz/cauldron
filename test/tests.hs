@@ -145,7 +145,7 @@ tests =
     "All"
     [ 
       testCase "value" do
-        (_, traces) <- case cook cauldron of
+        (_, traces) <- case cook' cauldron of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
             boiledBeans <- beansAction 
@@ -164,7 +164,7 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        (_, traces) <- case cookNonEmpty cauldronNonEmpty of
+        (_, traces) <- case cookNonEmpty' cauldronNonEmpty of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
             _ Data.List.NonEmpty.:| [boiledBeans] <- beansAction
@@ -196,21 +196,24 @@ tests =
           ]
           traces,
       testCase "cauldron missing dep" do
-        case cook cauldronMissingDep of
+        case cook' cauldronMissingDep of
           Left (MissingDependencies _) -> pure ()
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do
-        case cook cauldronDoubleDutyBean of
+        case cook' cauldronDoubleDutyBean of
           Left (DoubleDutyBeans _) -> pure ()
           _ -> assertFailure "double duty beans not detected"
         pure (),
       testCase "cauldron with cycle" do
-        case cook cauldronWithCycle of
+        case cook' cauldronWithCycle of
           Left (DependencyCycle _) -> pure ()
           _ -> assertFailure "dependency cycle not detected"
         pure ()
     ]
+  where
+    cook' = cook allowSelfDependencies
+    cookNonEmpty' = cookNonEmpty . fmap (allowSelfDependencies,)
 
 main :: IO ()
 main = defaultMain tests

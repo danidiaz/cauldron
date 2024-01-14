@@ -25,6 +25,8 @@ module Cauldron
     cook,
     cookNonEmpty,
     cookTree,
+    Fire,
+    allowSelfDependencies,
     Bean (..),
     hoistBean,
     makeBean,
@@ -416,13 +418,13 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
       )
         `Set.difference` accums
 
-buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Cauldron m)))
+buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Fire m, Cauldron m)))
 buildPlans = traverse \(fire, cauldron) -> do
   let graph = buildDepGraphCauldron fire cauldron
   case Graph.topSort graph of
     Left recipeCycle ->
       Left recipeCycle
-    Right (reverse -> plan) -> Right (graph, (plan, cauldron))
+    Right (reverse -> plan) -> Right (graph, (plan, fire, cauldron))
 
 buildDepGraphCauldron :: Fire m -> Cauldron m -> AdjacencyMap PlanItem
 buildDepGraphCauldron 
@@ -471,27 +473,27 @@ constructorEdges item (ConstructorReps {argReps, regReps}) =
         [(repItem, item)]
     )
 
-followPlan :: MonadFix m =>
+followPlan :: Monad m =>
   Map TypeRep Dynamic ->
-  (Tree (Plan, Cauldron m)) ->
+  (Tree (Plan, Fire m, Cauldron m)) ->
   m (Tree (Map TypeRep Dynamic))
 followPlan initial treecipes =
   unfoldTreeM 
-  (\(initial', Node (plan, cauldron) rest) -> do
-      newInitial' <- followPlanCauldron cauldron initial' plan
+  (\(initial', Node (plan, Fire {followPlanCauldron_}, cauldron) rest) -> do
+      newInitial' <- followPlanCauldron_ cauldron initial' plan
       pure (newInitial', (,) newInitial' <$> rest))
   (initial, treecipes)
 
-followPlanCauldron :: MonadFix m =>
-  Cauldron m ->
-  Map TypeRep Dynamic ->
-  Plan ->
-  m (Map TypeRep Dynamic)
-followPlanCauldron cauldron initial plan = 
-  mfix do \final -> Data.Foldable.foldlM
-                  do followPlanStep cauldron final
-                  initial
-                  plan
+-- followPlanCauldron :: MonadFix m =>
+--   Cauldron m ->
+--   Map TypeRep Dynamic ->
+--   Plan ->
+--   m (Map TypeRep Dynamic)
+-- followPlanCauldron cauldron initial plan = 
+--   mfix do \final -> Data.Foldable.foldlM
+--                   do followPlanStep cauldron final
+--                   initial
+--                   plan
 
 followPlanStep :: Monad m =>
  Cauldron m ->
