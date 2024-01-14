@@ -63,7 +63,7 @@ module Cauldron
     BadBeans (..),
     BoiledBeans,
     taste,
-    -- | The Bracket monad for handling resources.
+    -- | The Managed monad for handling resources.
     Managed,
     managed,
     with,
@@ -496,17 +496,6 @@ followPlan initial treecipes =
       pure (newInitial', (,) newInitial' <$> rest))
   (initial, treecipes)
 
--- followPlanCauldron :: MonadFix m =>
---   Cauldron m ->
---   Map TypeRep Dynamic ->
---   Plan ->
---   m (Map TypeRep Dynamic)
--- followPlanCauldron cauldron initial plan = 
---   mfix do \final -> Data.Foldable.foldlM
---                   do followPlanStep cauldron final
---                   initial
---                   plan
-
 followPlanStep :: Monad m =>
  Cauldron m ->
  Map TypeRep Dynamic -> 
@@ -735,17 +724,6 @@ unsafeTreeToNonEmpty = \case
   Node a [] -> a Data.List.NonEmpty.:| []
   Node a [b] -> Data.List.NonEmpty.cons a (unsafeTreeToNonEmpty b)
   _ -> error "tree not list-shaped"
-
--- dodgyFixIO :: MonadIO m => (a -> m a) -> m a
--- dodgyFixIO k = do
---     m <- liftIO $ newEmptyMVar
---     ans <- liftIO $ unsafeDupableInterleaveIO
---              (readMVar m `catch` \BlockedIndefinitelyOnMVar ->
---                                     throwIO FixIOException)
---     result <- k ans
---     liftIO $ putMVar m result
---     return result
-
 
 -- | This is a copy of the @Managed@ type from the
 -- [managed](https://hackage.haskell.org/package/managed) package, with a dodgy
