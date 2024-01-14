@@ -35,10 +35,10 @@ module Cauldron
     -- ** Decorators
     Decos,
     emptyDecos,
-    hoistDecos,
-    addInner,
-    addOuter,
     fromConstructors,
+    addOuter,
+    addInner,
+    hoistDecos,
     -- ** Constructors
     Constructor,
     hoistConstructor,
@@ -49,8 +49,9 @@ module Cauldron
     pack3,
     Packer (..),
     value,
-    valueWith,
     effect,
+    -- *** Dealing with registrations
+    valueWith,
     effectWith,
     Regs,
     regs0,
@@ -66,9 +67,9 @@ module Cauldron
     forbidDepCycles,
     allowSelfDeps,
     -- ** Tasting the results
-    BadBeans (..),
     BoiledBeans,
     taste,
+    BadBeans (..),
     -- ** Drawing deps
     DependencyGraph (..),
     PlanItem (..),
@@ -120,6 +121,7 @@ import Control.Concurrent.MVar
 import GHC.IO.Unsafe
 import Control.Exception.Base
 
+-- | A map of 'Bean' recipes indexed by the type of the bean.
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype Monoid
@@ -131,6 +133,7 @@ deriving newtype instance Semigroup (Cauldron m)
 emptyCauldron :: Cauldron m
 emptyCauldron = mempty
 
+-- | Change the monad used by the beans in the 'Cauldron'.
 hoistCauldron :: (forall x . m x -> n x) -> Cauldron m -> Cauldron n
 hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeBean f <$> recipes }
 
@@ -140,18 +143,18 @@ data SomeBean m where
 hoistSomeBean :: (forall x . m x -> n x) -> SomeBean m -> SomeBean n
 hoistSomeBean f (SomeBean bean) = SomeBean do hoistBean f bean
 
--- | Instructions for building a value of type @bean@, possibly requiring
--- actions in the monad @m@
+-- | A bean recipe, to be inserted into a 'Cauldron'.
 data Bean m bean where
   Bean ::
     { 
       -- | How to build the bean itself.
       constructor :: Constructor m bean,
-      -- | How to build the bean decorators.
+      -- | How to build the decorators that wrap the bean. There might be no decorators.
       decos :: Decos m bean
     } ->
     Bean m bean
 
+-- | Change the monad used by the bean\'s 'Constructor' and its 'Decos'.
 hoistBean :: (forall x . m x -> n x) -> Bean m bean -> Bean n bean
 hoistBean f (Bean {constructor,decos}) = Bean {
     constructor = hoistConstructor f constructor,
@@ -162,7 +165,17 @@ hoistBean f (Bean {constructor,decos}) = Bean {
 makeBean :: Constructor m a -> Bean m a
 makeBean constructor = Bean {constructor, decos = mempty}
 
--- | A collection of 'Constructor's for the decorators of some 'Bean'.
+-- | A list of 'Constructor's for the decorators of some 'Bean'.
+--
+-- 'Constructor's for a decorator will have the @bean@ itself among their
+-- arguments. That's the way each 'Constructor' gets hold of it, in order to
+-- return the decorated version.
+-- 
+-- That @bean@ argument will be either the \"bare\" undecorated
+-- bean (for the first decorator) or the result of applying the previous
+-- decorator in the list.
+--
+-- Decorators can have other dependencies besides the @bean@.
 newtype Decos m bean where
   Decos :: {decoCons :: Seq (Constructor m bean)} -> Decos m bean
   deriving newtype (Semigroup, Monoid)
@@ -172,9 +185,11 @@ instance IsList (Decos m bean) where
   fromList decos = Decos do GHC.Exts.fromList decos
   toList (Decos {decoCons}) = GHC.Exts.toList decoCons
 
+-- | Empty list of decorators.
 emptyDecos :: Decos m bean
 emptyDecos = mempty
 
+-- | Change the monad used by the decorators.
 hoistDecos :: (forall x . m x -> n x) -> Decos m bean -> Decos n bean
 hoistDecos f (Decos {decoCons}) = Decos {decoCons = hoistConstructor f <$> decoCons }
 
@@ -187,22 +202,40 @@ setDecos decos (Bean {constructor}) = Bean {constructor, decos}
 overDecos :: (Decos m bean -> Decos m bean) -> Bean m bean -> Bean m bean
 overDecos f (Bean {constructor, decos}) = Bean {constructor, decos = f decos}
 
-addInner :: Constructor m bean -> Decos m bean -> Decos m bean
-addInner con (Decos {decoCons}) = Decos do con Seq.<| decoCons
-
+-- | Add a new decorator that modifies the bean /after/ all existing decorators.
+-- 
+-- This means the behaviours it adds to the bean\'s methods will be applied
+-- /first/ when entering the method.
 addOuter :: Constructor m bean -> Decos m bean -> Decos m bean
 addOuter con (Decos {decoCons}) = Decos do decoCons Seq.|> con
 
+-- | Add a new decorator that modifies the bean /before/ all existing
+-- decorators.
+-- 
+-- This means the behaviours it adds to the bean\'s methods will be applied
+-- /last/, just before entering the base bean's method. 
+--
+-- Usually 'addOuter' is preferrable.
+addInner :: Constructor m bean -> Decos m bean -> Decos m bean
+addInner con (Decos {decoCons}) = Decos do con Seq.<| decoCons
+
+-- | Build the decorators from a list of 'Constructor's, first innermost,
+-- last outermost.
+-- 
 fromConstructors :: 
     [Constructor m bean] -> 
     Decos m bean
 fromConstructors cons = Decos do Seq.fromList cons
 
 -- | A way of building some @bean@ value, potentially requiring some
--- dependencies, also potentially returning some secondary beans along the
--- primary @bean@ one.
+-- dependencies, potentially returning some secondary beans (\"registrations\")
+-- along the primary @bean@ result, and also potentially requiring some
+-- initialization effect in a monad @m@.
 --
--- See @pack_@ and @pack@.
+-- A typical initialization monad will be 'IO', used for example to create
+-- mutable references that the bean will use internally. Sometimes the a
+-- constructor will allocate resources with bracket-like operations, and in that
+-- case a monad like 'Managed' may be needed instead.
 data Constructor m bean where
   Constructor ::
     (All Typeable args, All (Typeable `And` Monoid) regs) =>
@@ -219,6 +252,7 @@ data ConstructorReps where
     } ->
     ConstructorReps
 
+-- | Change the monad in which the 'Constructor'\'s effects take place. 
 hoistConstructor :: (forall x . m x -> n x) -> Constructor m bean -> Constructor n bean
 hoistConstructor f (Constructor {constructor_}) = Constructor do fmap f constructor_
 
@@ -233,7 +267,7 @@ insert recipe Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
   Cauldron {recipes = Map.insert rep (SomeBean recipe) recipes}
 
--- | Tweak an already existing 'Bean'.
+-- | Tweak an already existing 'Bean' recipe.
 adjust ::
   forall bean m.
   (Typeable bean) =>
@@ -262,6 +296,9 @@ delete ::
 delete Cauldron {recipes} =
   Cauldron {recipes = Map.delete (typeRep (Proxy @bean)) recipes}
 
+-- | Strategy for dealing with dependency cycles.
+--
+-- Terrible uninformative name caused by a metaphor stretched too far.
 data Fire m = Fire {
     tweakConstructorReps :: ConstructorReps -> ConstructorReps,
     tweakConstructorRepsDeco :: ConstructorReps -> ConstructorReps,
@@ -276,6 +313,15 @@ removeBeanFromArgs :: ConstructorReps -> ConstructorReps
 removeBeanFromArgs ConstructorReps { argReps, regReps, beanRep } = 
   ConstructorReps {  argReps = Set.delete beanRep argReps, regReps, beanRep }
 
+-- | Allow /direct/ self-dependencies.
+--
+-- A bean constructor might depend on itself. This can be useful for having
+-- decorated self-invocations, because the version of the bean received as
+-- argument comes \"from the future\" and is already decorated. (__BEWARE__:
+-- Pattern-matching too eagerly on this \"bean from the future\" during
+-- construction will cause infinite loops.)
+--
+-- Note that a 'MonadFix' instance is required of the initialization monad.
 allowSelfDeps :: MonadFix m => Fire m
 allowSelfDeps = Fire {
   tweakConstructorReps = removeBeanFromArgs,
@@ -287,6 +333,7 @@ allowSelfDeps = Fire {
                     plan
 }
 
+-- | Forbid any kind of cyclic dependencies between beans.
 forbidDepCycles :: Monad m => Fire m
 forbidDepCycles = Fire {
   tweakConstructorReps = id,
@@ -335,10 +382,11 @@ data PlanItem
   | BuiltBean TypeRep
   deriving stock (Show, Eq, Ord)
 
+-- | Can't do a lot with them other than to 'taste' them.
 newtype BoiledBeans where
   BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
--- | Build the beans using the constructors stored in the 'Cauldron'.
+-- | Build the beans using the recipes stored in the 'Cauldron'.
 cook :: forall m.
   Monad m =>
   Fire m ->
@@ -348,6 +396,12 @@ cook fire cauldron = do
   let result = cookTree (Node (fire, cauldron) [])
   result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
 
+-- | Cook a list of 'Cauldron's. 
+-- 
+-- 'Cauldron's later in the list can see the beans in all previous 'Cauldron's,
+-- but not vice versa.
+--
+-- Beans in a 'Cauldron' have priority over the same beans in previous 'Cauldron's. 
 cookNonEmpty :: forall m.
   Monad m =>
   NonEmpty (Fire m, Cauldron m) ->
@@ -356,6 +410,12 @@ cookNonEmpty nonemptyCauldronList = do
   let result = cookTree (nonEmptyToTree nonemptyCauldronList)
   result <&> \(ng, m) -> (unsafeTreeToNonEmpty ng, unsafeTreeToNonEmpty <$> m)
 
+-- | Cook a hierarchy of 'Cauldron's. 
+-- 
+-- 'Cauldron's down in the branches can see the beans of their ancestor
+-- 'Cauldron's, but not vice versa.
+--
+-- Beans in a 'Cauldron' have priority over the same beans in ancestor 'Cauldron's. 
 cookTree :: forall m .
   (Monad m) =>
   Tree (Fire m, Cauldron m) ->
@@ -571,21 +631,24 @@ makeRegInserter (I a) =
         Map.insert (dynTypeRep dyn) dyn dynMap
    in Endo {appEndo}
 
-taste :: forall a. (Typeable a) => BoiledBeans -> Maybe a
+-- | Return the resulting @bean@, if present.
+taste :: forall bean. (Typeable bean) => BoiledBeans -> Maybe bean
 taste BoiledBeans {beans} = taste' beans
 
-taste' :: forall a. (Typeable a) => Map TypeRep Dynamic -> Maybe a
+taste' :: forall bean. (Typeable bean) => Map TypeRep Dynamic -> Maybe bean
 taste' beans = do
-  let rep = typeRep (Proxy @a)
+  let rep = typeRep (Proxy @bean)
   dyn <- Map.lookup rep beans
-  fromDynamic @a dyn
+  fromDynamic @bean dyn
+  
+-- | Sometimes the 'cook'ing process goes wrong.
 data BadBeans
   = 
     MissingDependencies (Map TypeRep (Set TypeRep))
-    -- | Beans that work both as primary beans and as monoidal
+    -- | Beans that work both as primary beans and as secondary bean
     -- registrations are disallowed.
   | DoubleDutyBeans (Set TypeRep)
-    -- | Dependency cycles are disallowed for some 'Fire's.
+    -- | Dependency cycles are disallowed by some 'Fire's.
   | DependencyCycle (NonEmpty PlanItem)
   deriving stock (Show)
 
@@ -617,22 +680,36 @@ argsN ::
 argsN = Args . multiuncurry
 
 -- | Auxiliary type which contains a primary bean along with zero or more
--- secondary monoidal beans.
+-- secondary \"registration\" beans. The \"registration\" beans must have
+-- 'Monoid' instances.
 data Regs (regs :: [Type]) bean = Regs (NP I regs) bean
   deriving (Functor)
 
+-- | A plain @bean@ without registrations.
 regs0 :: bean -> Regs '[] bean
 regs0 bean = Regs Nil bean
 
+-- | A @bean@ with one secondary bean registration.
 regs1 :: reg1 -> bean -> Regs '[reg1] bean
 regs1 reg1 bean = Regs (I reg1 :* Nil) bean
 
+-- | A @bean@ with two secondary bean registrations.
 regs2 :: reg1 -> reg2 -> bean -> Regs '[reg1, reg2] bean
 regs2 reg1 reg2 bean = Regs (I reg1 :* I reg2 :* Nil) bean
 
+-- | A @bean@ with three secondary bean registrations.
 regs3 :: reg1 -> reg2 -> reg3 -> bean -> Regs '[reg1, reg2, reg3] bean
 regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
+-- | Applies a transformation to the tip of a curried function, coaxing
+-- it into the shape expected by a 'Constructor'.
+--
+-- * For pure constructors without registrations, try 'value'.
+--
+-- * For effectful constructors without registrations, try 'effect'.
+--
+-- More complex cases might require 'valueWith', 'effectWith', or working with
+-- the 'Packer' constructor itself.
 newtype Packer m regs bean r = Packer (r -> m (Regs regs bean))
 
 runPacker :: Packer m regs bean r -> r -> m (Regs regs bean)
@@ -641,26 +718,32 @@ runPacker (Packer f) = f
 instance Contravariant (Packer m regs bean) where
   contramap f (Packer p) = Packer (p . f)
 
+-- | For pure constructors that return the @bean@ directly, and do not register
+-- secondary beans.
 value :: Applicative m => Packer m '[] bean bean 
 value = Packer \bean -> pure do regs0 bean
 
+-- | For effectul constructors that return an @m bean@ initialization action,
+-- and do not register secondary beans.
 effect :: Applicative m => Packer m '[] bean (m bean)
 effect = Packer \action -> do fmap regs0 action
 
 valueWith :: 
   (Applicative m , All (Typeable `And` Monoid) regs) => 
+  -- | Massage the pure value at the tip of the constructor into a 'Regs'.
   (r -> Regs regs bean) ->
   Packer m regs bean r
 valueWith f = Packer do pure . f 
 
 effectWith :: 
   (Applicative m , All (Typeable `And` Monoid) regs) => 
+  -- | Massage the value returned by the action at the tip of the constructor into a 'Regs'.
   (r -> Regs regs bean) ->
   Packer m regs bean (m r)
 effectWith f = Packer do fmap f
 
--- | To be used only for constructors which return monoidal secondary beans
--- along with the primary bean.
+-- | Take a curried function that constructs a bean, uncurry it recursively and
+-- then apply a 'Packer' to its tip, resulting in a 'Constructor'.
 pack ::
   forall (args :: [Type]) r curried regs bean m.
   ( MulticurryableF args r curried (IsFunction curried),
@@ -677,6 +760,7 @@ pack ::
   Constructor m bean
 pack packer curried = Constructor do runPacker packer <$> do argsN curried 
 
+-- | Slightly simpler version of 'pack' for @0@-argument functions.
 pack0 ::
    All (Typeable `And` Monoid) regs =>
    Packer m regs bean r ->
@@ -684,26 +768,32 @@ pack0 ::
    Constructor m bean
 pack0 packer r = Constructor do Args @'[] \Nil -> runPacker packer r
 
+-- | Slightly simpler version of 'pack' for @1@-argument functions.
 pack1 ::
    forall arg1 r m regs bean.
    (Typeable arg1, All (Typeable `And` Monoid) regs) =>
    Packer m regs bean r ->
+   -- | @1@-argument constructor
    (arg1 -> r) -> 
    Constructor m bean
 pack1 packer f = Constructor do Args @'[arg1] \(I arg1 :* Nil) -> runPacker packer (f arg1)
 
+-- | Slightly simpler version of 'pack' for @2@-argument functions.
 pack2 ::
    forall arg1 arg2 r m regs bean.
    (Typeable arg1, Typeable arg2, All (Typeable `And` Monoid) regs) =>
    Packer m regs bean r ->
+   -- | @2@-argument constructor
    (arg1 -> arg2 -> r) -> 
    Constructor m bean
 pack2 packer f = Constructor do Args @[arg1, arg2] \(I arg1 :* I arg2 :* Nil) -> runPacker packer (f arg1 arg2)
 
+-- | Slightly simpler version of 'pack' for @3@-argument functions.
 pack3 ::
    forall arg1 arg2 arg3 r m regs bean.
    (Typeable arg1, Typeable arg2, Typeable arg3, All (Typeable `And` Monoid) regs) =>
    Packer m regs bean r ->
+   -- | @3@-argument constructor
    (arg1 -> arg2 -> arg3 -> r) -> 
    Constructor m bean
 pack3 packer f = Constructor do Args @[arg1, arg2, arg3] \(I arg1 :* I arg2 :* I arg3 :* Nil) -> runPacker packer (f arg1 arg2 arg3)
