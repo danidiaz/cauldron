@@ -115,11 +115,11 @@ Some features of this library have loose analogues in how Java Spring handles
 dependency injection (although of course Spring has many more features).
 
 First, a big *difference*: there's no analogue here of annotations, or classpath
-scanning. Beans and decorators must be explicitly registered.
+scanning. Beans and decorators must be explicitly registered. 
 
 - [@PostConstruct](https://docs.spring.io/spring-framework/reference/core/beans/annotation-config/postconstruct-and-predestroy-annotations.html#page-title) roughly corresponds to effectful constructors.
 
- Although I expect effectful constructors to be used comparatively more in this
+  Although I expect effectful constructors to be used comparatively more in this
  library than in Spring, because here they're required to initialize mutable
  references used by the beans.
 
@@ -128,6 +128,12 @@ scanning. Beans and decorators must be explicitly registered.
 
 - [context hiearchies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to "cooking"
   a list or a tree of "cauldrons".
+
+- [injecting all the beans that implement a certain interface as a list](https://twitter.com/NiestrojRobert/status/1746808940435042410) roughly corresponds to a constructor that takes a monoidal "secondary bean" registration as an argument. 
+
+Some features I haven't been able to mimic yet:
+
+- [bean scopes](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html), like [request scope](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html#beans-factory-scopes-other-injection). [This Stack Overflow post](https://stackoverflow.com/a/77174979/1364288) about how they are implemented in Spring might be useful.
 
 # See also
 
