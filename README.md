@@ -126,7 +126,7 @@ scanning. Beans and decorators must be explicitly registered.
 - [decorated self-invocations](https://docs.spring.io/spring-framework/reference/core/aop/proxying.html#aop-understanding-aop-proxies) correspond to constructors that
   depend on the same bean that they produce.
 
-- [context hiearchies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to "cooking"
+- [context hierachies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to "cooking"
   a list or a tree of "cauldrons".
 
 - [injecting all the beans that implement a certain interface as a list](https://twitter.com/NiestrojRobert/status/1746808940435042410) roughly corresponds to a constructor that takes a monoidal "secondary bean" registration as an argument. 

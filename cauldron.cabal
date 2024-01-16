@@ -11,6 +11,7 @@ maintainer:         Daniel Díaz
 build-type:         Simple
 extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
+tested-with: GHC ==9.6.3 || ==9.8.1
 
 common common
     build-depends:
