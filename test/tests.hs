@@ -11,15 +11,15 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer
 import Data.Function ((&))
 import Data.IORef
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified
 import Data.Map (Map)
-import Data.Maybe (fromJust)
 import Data.Map qualified as Map
+import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.Text (Text)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Data.List.NonEmpty (NonEmpty)
-import Data.List.NonEmpty qualified
 
 type M = WriterT [Text] IO
 
@@ -46,9 +46,9 @@ data Repository m = Repository
 
 makeRepository :: Logger M -> M (Initializer, Repository M)
 makeRepository Logger {logMessage} = do
-    mapRef <- liftIO do newIORef @(Map Int Text) mempty
-    pure ( 
-      Initializer do logMessage "repo init invoking logger",
+  mapRef <- liftIO do newIORef @(Map Int Text) mempty
+  pure
+    ( Initializer do logMessage "repo init invoking logger",
       Repository
         { findById = \key -> do
             logMessage "findById"
@@ -58,51 +58,52 @@ makeRepository Logger {logMessage} = do
             logMessage "store"
             liftIO do modifyIORef mapRef do Map.insert key v
         }
-      )
+    )
 
-data Weird m = Weird 
-  {
-    weirdOp :: m (),
+data Weird m = Weird
+  { weirdOp :: m (),
     anotherWeirdOp :: m ()
   }
 
 makeWeird :: M (Weird M)
 makeWeird = do
   tell ["weird constructor"]
-  pure Weird  {
-     weirdOp = tell ["weirdOp"],
-     anotherWeirdOp  = tell ["another weirdOp"]
-    }
+  pure
+    Weird
+      { weirdOp = tell ["weirdOp"],
+        anotherWeirdOp = tell ["another weirdOp"]
+      }
 
 -- | Note that the patter-match on the self-dependency must be lazy, or else a
 -- nasty, difficult to diagnose infinite loop will happen!
 makeSelfInvokingWeird :: Weird M -> M (Weird M)
-makeSelfInvokingWeird ~Weird { weirdOp = selfWeirdOp } = do
+makeSelfInvokingWeird ~Weird {weirdOp = selfWeirdOp} = do
   tell ["self-invoking weird constructor"]
-  pure Weird  {
-     weirdOp = tell ["weirdOp 2"],
-     anotherWeirdOp  = do
-      tell ["another weirdOp 2"]
-      selfWeirdOp
-    }
+  pure
+    Weird
+      { weirdOp = tell ["weirdOp 2"],
+        anotherWeirdOp = do
+          tell ["another weirdOp 2"]
+          selfWeirdOp
+      }
 
 weirdDeco :: Text -> Weird M -> Weird M
-weirdDeco txt Weird { weirdOp, anotherWeirdOp } =
-  Weird {
-    weirdOp = do
-      tell ["deco for weirdOp " <> txt]
-      weirdOp,
-    anotherWeirdOp = do
-      tell ["deco for anotherWeirdOp " <> txt]
-      anotherWeirdOp
-  }
+weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
+  Weird
+    { weirdOp = do
+        tell ["deco for weirdOp " <> txt]
+        weirdOp,
+      anotherWeirdOp = do
+        tell ["deco for anotherWeirdOp " <> txt]
+        anotherWeirdOp
+    }
 
 cauldron :: Cauldron M
 cauldron =
   mempty
     & insert @(Logger M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
     & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Initializer, Repository M) do makeBean do pack value do \a b -> (a,b)
+    & insert @(Initializer, Repository M) do makeBean do pack value do \a b -> (a, b)
 
 cauldronMissingDep :: Cauldron M
 cauldronMissingDep = delete @(Logger M) cauldron
@@ -118,38 +119,37 @@ cauldronWithCycle =
     & insert @(Logger M) do makeBean do pack (Packer do fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
-cauldronNonEmpty = 
-  (mempty
-    & do
+cauldronNonEmpty =
+  ( mempty
+      & do
         let packer = Packer do fmap (\(reg, bean) -> regs1 reg bean)
         insert @(Logger M) do makeBean do pack packer do makeLogger
-    & insert @(Weird M) do makeBean do pack effect makeWeird
-    )
-  Data.List.NonEmpty.:|
-  [
-    mempty
-    & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Weird M) Bean {
-          constructor = pack effect makeSelfInvokingWeird,
-          decos = fromConstructors [
-               pack value do weirdDeco "inner",
-               pack value do weirdDeco "outer"
-          ]
-        }
-    & insert @(Initializer, Repository M, Weird M) do makeBean do pack value do \a b c -> (a,b,c)
-  ]
+      & insert @(Weird M) do makeBean do pack effect makeWeird
+  )
+    Data.List.NonEmpty.:| [ mempty
+                              & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+                              & insert @(Weird M)
+                                Bean
+                                  { constructor = pack effect makeSelfInvokingWeird,
+                                    decos =
+                                      fromConstructors
+                                        [ pack value do weirdDeco "inner",
+                                          pack value do weirdDeco "outer"
+                                        ]
+                                  }
+                              & insert @(Initializer, Repository M, Weird M) do makeBean do pack value do \a b c -> (a, b, c)
+                          ]
 
 tests :: TestTree
 tests =
   testGroup
     "All"
-    [ 
-      testCase "value" do
+    [ testCase "value" do
         (_, traces) <- case cook' cauldron of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
-            boiledBeans <- beansAction 
-            let (Initializer {runInitializer},Repository {findById, store}) = fromJust . taste $ boiledBeans
+            boiledBeans <- beansAction
+            let (Initializer {runInitializer}, Repository {findById, store}) = fromJust . taste $ boiledBeans
             runInitializer
             store 1 "foo"
             _ <- findById 1
@@ -168,9 +168,10 @@ tests =
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
             _ Data.List.NonEmpty.:| [boiledBeans] <- beansAction
-            let (Initializer {runInitializer},
-                 Repository {findById, store}, 
-                 Weird {anotherWeirdOp}) = fromJust . taste $ boiledBeans
+            let ( Initializer {runInitializer},
+                  Repository {findById, store},
+                  Weird {anotherWeirdOp}
+                  ) = fromJust . taste $ boiledBeans
             runInitializer
             store 1 "foo"
             _ <- findById 1

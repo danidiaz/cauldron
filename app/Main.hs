@@ -10,8 +10,8 @@
 module Main where
 
 import Cauldron
-import Data.Maybe (fromJust)
 import Data.Function ((&))
+import Data.Maybe (fromJust)
 
 {-
   HERE ARE A BUNCH OF DATATYPES.
@@ -131,7 +131,7 @@ makeG _ _ !_ = G
 --
 -- Because they are normal constructors, they can be effectful, and they
 -- might have dependencies of their own.
-makeGDeco1 :: A -> G ->  G
+makeGDeco1 :: A -> G -> G
 makeGDeco1 _ g = g
 
 -- | A bean with two monoidal registrations.
@@ -148,7 +148,7 @@ makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
 makeZ :: Inspector -> D -> H -> Z
 makeZ _ _ _ = Z
 
-makeZDeco1 :: B -> E -> Z-> Z
+makeZDeco1 :: B -> E -> Z -> Z
 makeZDeco1 _ _ z = z
 
 -- | A decorator with a monoidal registration.
@@ -213,7 +213,7 @@ coolWiring fire = do
                       pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-          & insert @(Initializer, Inspector, Z) do makeBean do pack value \a b c -> (a,b,c)
+          & insert @(Initializer, Inspector, Z) do makeBean do pack value \a b c -> (a, b, c)
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
 main :: IO ()

@@ -93,7 +93,7 @@ makeG :: E -> F -> G -> G
 makeG _ _ (_ :: G) = G
 
 makeGDeco1 :: A -> G -> G
-makeGDeco1 _ g = g 
+makeGDeco1 _ g = g
 
 makeH :: A -> D -> G -> (Initializer, Inspector, H)
 makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
@@ -119,23 +119,23 @@ coolWiring fire = do
           & insert @F do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
           & insert @G
             Bean
-              { constructor =  pack value do makeG,
+              { constructor = pack value do makeG,
                 decos =
                   fromConstructors
-                    [  pack value do makeGDeco1
+                    [ pack value do makeGDeco1
                     ]
               }
           & insert @H do makeBean do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z
             Bean
-              { constructor =  pack value do makeZ,
+              { constructor = pack value do makeZ,
                 decos =
                   fromConstructors
                     [ pack value do makeZDeco1,
                       pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-          & insert @(Initializer, Inspector, Z) do makeBean do pack value do \a b c -> (a,b,c)
+          & insert @(Initializer, Inspector, Z) do makeBean do pack value do \a b c -> (a, b, c)
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
 tests :: TestTree

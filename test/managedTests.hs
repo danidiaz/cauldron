@@ -19,83 +19,90 @@ newtype Logger m = Logger
   }
 
 makeLogger :: IORef [Text] -> forall r. (Logger IO -> IO r) -> IO r
-makeLogger ref = 
-  makeWithWrapperWithMessage ref "allocating logger" "deallocating logger" (
-    Logger \message -> 
-        modifyIORef ref (++[message])
+makeLogger ref =
+  makeWithWrapperWithMessage
+    ref
+    "allocating logger"
+    "deallocating logger"
+    ( Logger \message ->
+        modifyIORef ref (++ [message])
     )
 
-data Weird m = Weird 
-  {
-    weirdOp :: m (),
+data Weird m = Weird
+  { weirdOp :: m (),
     anotherWeirdOp :: m ()
   }
 
 makeSelfInvokingWeird :: IORef [Text] -> Logger IO -> Weird IO -> forall r. (Weird IO -> IO r) -> IO r
-makeSelfInvokingWeird ref Logger {logMessage} ~Weird { weirdOp = selfWeirdOp } = do
-  makeWithWrapperWithMessage ref "allocating weird" "deallocating weird" (
-    Weird  {
-     weirdOp = do
-        modifyIORef ref (++["weirdOp 2"])
-        logMessage "logging",
-     anotherWeirdOp  = do
-      modifyIORef ref (++["another weirdOp 2"])
-      selfWeirdOp
-    })
+makeSelfInvokingWeird ref Logger {logMessage} ~Weird {weirdOp = selfWeirdOp} = do
+  makeWithWrapperWithMessage
+    ref
+    "allocating weird"
+    "deallocating weird"
+    ( Weird
+        { weirdOp = do
+            modifyIORef ref (++ ["weirdOp 2"])
+            logMessage "logging",
+          anotherWeirdOp = do
+            modifyIORef ref (++ ["another weirdOp 2"])
+            selfWeirdOp
+        }
+    )
 
 makeWeirdDecorator :: Logger IO -> Weird IO -> Weird IO
-makeWeirdDecorator Logger { logMessage} Weird {weirdOp = selfWeirdOp, anotherWeirdOp} = Weird {
-    weirdOp = do
+makeWeirdDecorator Logger {logMessage} Weird {weirdOp = selfWeirdOp, anotherWeirdOp} =
+  Weird
+    { weirdOp = do
         selfWeirdOp
         logMessage "logging from deco",
-    anotherWeirdOp
-}
+      anotherWeirdOp
+    }
 
-makeWithWrapperWithMessage :: 
-    IORef [Text] -> 
-    Text -> 
-    Text -> 
-    a -> forall r. (a -> IO r) -> IO r
+makeWithWrapperWithMessage ::
+  IORef [Text] ->
+  Text ->
+  Text ->
+  a ->
+  forall r. (a -> IO r) -> IO r
 makeWithWrapperWithMessage ref inMsg outMsg v handler = do
-    modifyIORef ref (++[inMsg])
-    r <- handler v
-    modifyIORef ref (++[outMsg])
-    pure r
+  modifyIORef ref (++ [inMsg])
+  r <- handler v
+  modifyIORef ref (++ [outMsg])
+  pure r
 
 managedCauldron :: IORef [Text] -> Cauldron Managed
-managedCauldron ref = 
-    emptyCauldron
+managedCauldron ref =
+  emptyCauldron
     & insert @(Logger IO) do makeBean do pack effect do managed (makeLogger ref)
-    & insert @(Weird IO) 
-      Bean {
-        constructor = pack effect do \logger self -> managed (makeSelfInvokingWeird ref logger self),
-        decos = fromConstructors [
-            pack value makeWeirdDecorator
-        ]
-      }
+    & insert @(Weird IO)
+      Bean
+        { constructor = pack effect do \logger self -> managed (makeSelfInvokingWeird ref logger self),
+          decos =
+            fromConstructors
+              [ pack value makeWeirdDecorator
+              ]
+        }
     & insert @(Logger IO, Weird IO) do makeBean do pack value do (,)
 
 tests :: TestTree
 tests =
   testGroup
     "All"
-    [    
-      testCase "simple" do
+    [ testCase "simple" do
         ref <- newIORef []
         case cook allowSelfDeps (managedCauldron ref) of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> with beansAction \boiledBeans -> do
             let (Logger {logMessage}, (Weird {anotherWeirdOp}) :: Weird IO) = fromJust . taste $ boiledBeans
             logMessage "foo"
-            anotherWeirdOp 
+            anotherWeirdOp
             pure ()
         traces <- readIORef ref
         assertEqual
           "traces"
-          ["allocating logger","allocating weird","foo","another weirdOp 2","weirdOp 2","logging","logging from deco", "deallocating weird","deallocating logger"]
+          ["allocating logger", "allocating weird", "foo", "another weirdOp 2", "weirdOp 2", "logging", "logging from deco", "deallocating weird", "deallocating logger"]
           traces
     ]
 
 main :: IO ()
 main = defaultMain tests
-
