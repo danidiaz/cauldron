@@ -198,7 +198,7 @@ tests =
           traces,
       testCase "cauldron missing dep" do
         case cook' cauldronMissingDep of
-          Left (MissingDependencies _) -> pure ()
+          Left (MissingDependencies {}) -> pure ()
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do
