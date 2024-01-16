@@ -28,9 +28,9 @@ common common-tests
     build-depends:
       tasty           ^>= 1.5,
       tasty-hunit     ^>= 0.10,
-      containers >= 0.6.8 && < 0.7,
+      containers >= 0.5.0 && < 0.7,
       text >= 2.0 && < 2.2,
-      transformers >= 0.6.1 && < 0.7,
+      transformers >= 0.5 && < 0.7,
       cauldron,
     ghc-options: -Wall
     default-language: GHC2021
@@ -41,7 +41,7 @@ library
     build-depends:
         algebraic-graphs ^>= 0.7,
         multicurryable ^>= 0.1.1.0,
-        containers >= 0.6.8 && < 0.7,
+        containers >= 0.5.0 && < 0.7,
         bytestring >= 0.10.0 && < 0.13,
         sop-core >= 0.5.0 && < 0.6,
         text >= 2.0 && < 2.2,
