@@ -29,7 +29,7 @@ common common-tests
       tasty           ^>= 1.5,
       tasty-hunit     ^>= 0.10,
       containers >= 0.6.8 && < 0.7,
-      text >= 2.1 && < 2.2,
+      text >= 2.0 && < 2.2,
       transformers >= 0.6.1 && < 0.7,
       cauldron,
     ghc-options: -Wall
@@ -42,9 +42,9 @@ library
         algebraic-graphs ^>= 0.7,
         multicurryable ^>= 0.1.1.0,
         containers >= 0.6.8 && < 0.7,
-        bytestring >= 0.12.0 && < 0.13,
+        bytestring >= 0.10.0 && < 0.13,
         sop-core >= 0.5.0 && < 0.6,
-        text >= 2.1 && < 2.2,
+        text >= 2.0 && < 2.2,
     hs-source-dirs:   lib
 
 executable cauldron-example-wiring
