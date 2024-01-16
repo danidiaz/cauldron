@@ -15,7 +15,16 @@ tested-with: GHC ==9.6.3 || ==9.8.1
 
 common common
     build-depends:
-        base
+        base >= 4.19.0,
+    ghc-options: -Wall
+    default-language: GHC2021
+
+common common-tests
+    import: common
+    build-depends:
+      tasty           ^>= 1.5,
+      tasty-hunit     ^>= 0.10,
+      cauldron,
     ghc-options: -Wall
     default-language: GHC2021
 
@@ -25,7 +34,6 @@ library
     -- other-modules:
     -- other-extensions:
     build-depends:
-        base,
         containers,
         algebraic-graphs ^>= 0.7,
         sop-core,
@@ -41,45 +49,34 @@ executable cauldron-example-wiring
     -- other-modules:
     -- other-extensions:
     build-depends:
-        base,
         cauldron,
 
     hs-source-dirs:   app
 
 test-suite tests
-    import:           common
+    import:           common-tests
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          tests.hs
     build-depends:    
-      cauldron,
-      bytestring,
       text,
-      tasty           ^>= 1.5,
-      tasty-hunit     ^>= 0.10,
+      bytestring,
       transformers,
       containers,
 
 test-suite app-tests
-    import:           common
+    import:           common-tests
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          appTests.hs
-    build-depends:    
-      cauldron,
-      tasty           ^>= 1.5,
-      tasty-hunit     ^>= 0.10,
 
 test-suite tests-managed
-    import:           common
+    import:           common-tests
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          managedTests.hs
     build-depends:    
-      cauldron,
       bytestring,
       text,
-      tasty           ^>= 1.5,
-      tasty-hunit     ^>= 0.10,
       transformers,
       containers,
