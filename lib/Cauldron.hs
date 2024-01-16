@@ -389,6 +389,7 @@ constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean
 
 type Plan = [PlanItem]
 
+-- | Something that can have dependencies and can be depended upon.
 data PlanItem
   = -- | The undecorated bean.
     BareBean TypeRep
@@ -448,7 +449,7 @@ cookTree (treecipes) = do
   () <- first (uncurry MissingDependencies) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans treecipes
   Right
-    ( treeplan <&> \(graph, _) -> DependencyGraph {graph},
+    ( treeplan <&> \(planItemDeps, _) -> DependencyGraph {planItemDeps},
       followPlan (BoiledBeans accumMap) (snd <$> treeplan)
     )
 
@@ -692,11 +693,11 @@ data BadBeans
 -- functions from the
 -- [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-AdjacencyMap.html)
 -- library.
-newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap PlanItem}
+newtype DependencyGraph = DependencyGraph {planItemDeps :: AdjacencyMap PlanItem}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
 exportToDot :: FilePath -> DependencyGraph -> IO ()
-exportToDot filepath DependencyGraph {graph} = do
+exportToDot filepath DependencyGraph {planItemDeps} = do
   let prettyRep =
         let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
          in \case
@@ -706,7 +707,7 @@ exportToDot filepath DependencyGraph {graph} = do
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
-          graph
+          planItemDeps
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
 
 newtype Args args r = Args {runArgs :: NP I args -> r}
