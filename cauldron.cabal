@@ -1,4 +1,4 @@
-cabal-version:      3.0
+cabal-version:      3.4
 name:               cauldron
 version:            0.3.0.0
 synopsis:           Toy dependency injection framework
@@ -12,10 +12,10 @@ build-type:         Simple
 extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 category: Dependency Injection
+tested-with: GHC ==9.8.1 || ==9.6.3
 source-repository    head
     type:     git
     location: https://github.com/danidiaz/cauldron.git
-tested-with: GHC ==9.8.1 || ==9.6.3
 
 common common
     build-depends:
