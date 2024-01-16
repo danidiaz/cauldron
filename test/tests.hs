@@ -65,8 +65,8 @@ data Weird m = Weird
     anotherWeirdOp :: m ()
   }
 
-makeWeird :: M (Weird M)
-makeWeird = do
+makeWeird :: Logger M -> M (Weird M)
+makeWeird _ = do
   tell ["weird constructor"]
   pure
     Weird
@@ -120,25 +120,25 @@ cauldronWithCycle =
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty =
-  ( mempty
-      & do
-        let packer = Packer do fmap (\(reg, bean) -> regs1 reg bean)
-        insert @(Logger M) do makeBean do pack packer do makeLogger
-      & insert @(Weird M) do makeBean do pack effect makeWeird
-  )
-    Data.List.NonEmpty.:| [ mempty
-                              & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-                              & insert @(Weird M)
-                                Bean
-                                  { constructor = pack effect makeSelfInvokingWeird,
-                                    decos =
-                                      fromConstructors
-                                        [ pack value do weirdDeco "inner",
-                                          pack value do weirdDeco "outer"
-                                        ]
-                                  }
-                              & insert @(Initializer, Repository M, Weird M) do makeBean do pack value do \a b c -> (a, b, c)
-                          ]
+  Data.List.NonEmpty.fromList
+    [ mempty
+        & do
+          let packer = Packer do fmap (\(reg, bean) -> regs1 reg bean)
+          insert @(Logger M) do makeBean do pack packer do makeLogger
+        & insert @(Weird M) do makeBean do pack effect makeWeird,
+      mempty
+        & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+        & insert @(Weird M)
+          Bean
+            { constructor = pack effect makeSelfInvokingWeird,
+              decos =
+                fromConstructors
+                  [ pack value do weirdDeco "inner",
+                    pack value do weirdDeco "outer"
+                  ]
+            }
+        & insert @(Initializer, Repository M, Weird M) do makeBean do pack value do \a b c -> (a, b, c)
+    ]
 
 tests :: TestTree
 tests =
