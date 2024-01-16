@@ -77,6 +77,7 @@ module Cauldron
     BoiledBeans,
     taste,
     BadBeans (..),
+    PathToCauldron,
 
     -- ** Drawing deps
     DependencyGraph (..),
@@ -444,7 +445,7 @@ cookTree ::
   Either BadBeans (Tree DependencyGraph, m (Tree BoiledBeans))
 cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
-  () <- first MissingDependencies do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
+  () <- first (uncurry MissingDependencies) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans treecipes
   Right
     ( treeplan <&> \(graph, _) -> DependencyGraph {graph},
@@ -461,21 +462,9 @@ checkNoDoubleDutyBeans treecipes = do
     then Left common
     else Right accumMap
 
-type TreeKey = [Int]
-
-decorate ::
-  (TreeKey, Map TypeRep TreeKey, Tree (Cauldron m)) ->
-  Tree (Map TypeRep TreeKey, Cauldron m)
-decorate = unfoldTree
-  do
-    \(key, acc, Node (current@Cauldron {recipes}) rest) ->
-      let -- current level has priority
-          newAcc = (recipes $> key) `Map.union` acc
-          newSeeds = do
-            (i, z) <- zip [0 ..] rest
-            let newKey = key ++ [i]
-            [(newKey, newAcc, z)]
-       in ((newAcc, current), newSeeds)
+-- | Always @[]@ when using 'cook'; identifies a 'Cauldron' in a hierarchy when
+-- using 'cookNonEmpty' or 'cookTree'.
+type PathToCauldron = [Int]
 
 cauldronTreeRegs :: Tree (Cauldron m) -> (Map TypeRep Dynamic, Set TypeRep)
 cauldronTreeRegs = foldMap cauldronRegs
@@ -497,11 +486,25 @@ checkMissingDeps ::
   -- | accums
   Set TypeRep ->
   Tree (Cauldron m) ->
-  Either (Map TypeRep (Set TypeRep)) ()
+  Either (PathToCauldron, Map TypeRep (Set TypeRep)) ()
 checkMissingDeps accums treecipes = do
   let decoratedTreecipes = decorate ([], Map.empty, treecipes)
-      missing = (\(available, requested) -> checkMissingDepsCauldron accums (Map.keysSet available) requested) <$> decoratedTreecipes
+      missing = (\(key, available, requested) -> first (key,) do checkMissingDepsCauldron accums (Map.keysSet available) requested) <$> decoratedTreecipes
   sequence_ missing
+  where
+    decorate ::
+      (PathToCauldron, Map TypeRep PathToCauldron, Tree (Cauldron m)) ->
+      Tree (PathToCauldron, Map TypeRep PathToCauldron, Cauldron m)
+    decorate = unfoldTree
+      do
+        \(key, acc, Node (current@Cauldron {recipes}) rest) ->
+          let -- current level has priority
+              newAcc = (recipes $> key) `Map.union` acc
+              newSeeds = do
+                (i, z) <- zip [0 ..] rest
+                let newKey = key ++ [i]
+                [(newKey, newAcc, z)]
+           in ((key, newAcc, current), newSeeds)
 
 checkMissingDepsCauldron ::
   -- | accums
@@ -671,7 +674,9 @@ taste' beans = do
 
 -- | Sometimes the 'cook'ing process goes wrong.
 data BadBeans
-  = MissingDependencies (Map TypeRep (Set TypeRep))
+  = -- | The 'Cauldron' identified by 'PathToCauldron' has beans
+    -- that depend on beans that can't be found either in the current 'Cauldron' or its ancestors.
+    MissingDependencies PathToCauldron (Map TypeRep (Set TypeRep))
   | -- | Beans that work both as primary beans and as secondary bean
     -- registrations are disallowed.
     DoubleDutyBeans (Set TypeRep)
