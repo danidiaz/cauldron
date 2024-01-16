@@ -462,7 +462,7 @@ checkNoDoubleDutyBeans treecipes = do
     then Left common
     else Right accumMap
 
--- | Always @[]@ when using 'cook'; identifies a 'Cauldron' in a hierarchy when
+-- | Always @[]@ when using 'cook'; identifies a 'Cauldron' in a hierarchy of 'Cauldron's when
 -- using 'cookNonEmpty' or 'cookTree'.
 type PathToCauldron = [Int]
 
