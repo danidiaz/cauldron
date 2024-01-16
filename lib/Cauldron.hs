@@ -81,7 +81,7 @@ module Cauldron
 
     -- ** Drawing deps
     DependencyGraph (..),
-    PlanItem (..),
+    BeanConstructionStep (..),
     exportToDot,
 
     -- * The Managed monad for handling resources
@@ -387,19 +387,15 @@ constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean
     typeRepHelper' = K (typeRep (Proxy @a), toDyn @a mempty)
     beanRep = typeRep (Proxy @bean)
 
-type Plan = [PlanItem]
+type Plan = [BeanConstructionStep]
 
--- | Something that can have dependencies and can be depended upon.
-data PlanItem
+-- | A step in building a bean value.
+data BeanConstructionStep
   = -- | The undecorated bean.
     BareBean TypeRep
-  | -- | Will depend on the 'BareBean' or in the
-    -- previous 'BeanDecorator'.
+  | -- | Apply a decorator. Comes after the 'BareBean' and any 'BeanDecorator's wrapped by the current decorator.
     BeanDecorator TypeRep Int
-  | -- | Final, complete version of the bean. Will depend on the 'BareBean' or
-    -- in the last 'BeanDecorator'.
-    --
-    -- Depended upon by other beans.
+  | -- | Final, fully decorated version of the bean. If there are no decorators, comes directly after 'BareBean'.
     BuiltBean TypeRep
   deriving stock (Show, Eq, Ord)
 
@@ -449,7 +445,7 @@ cookTree (treecipes) = do
   () <- first (uncurry MissingDependencies) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans treecipes
   Right
-    ( treeplan <&> \(planItemDeps, _) -> DependencyGraph {planItemDeps},
+    ( treeplan <&> \(stepDepsMap, _) -> DependencyGraph {stepDepsMap},
       followPlan (BoiledBeans accumMap) (snd <$> treeplan)
     )
 
@@ -531,7 +527,7 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
       )
         `Set.difference` accums
 
-buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty PlanItem) (Tree (AdjacencyMap PlanItem, (Plan, Fire m, Cauldron m)))
+buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty BeanConstructionStep) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
 buildPlans = traverse \(fire, cauldron) -> do
   let graph = buildDepGraphCauldron fire cauldron
   case Graph.topSort graph of
@@ -539,7 +535,7 @@ buildPlans = traverse \(fire, cauldron) -> do
       Left recipeCycle
     Right (reverse -> plan) -> Right (graph, (plan, fire, cauldron))
 
-buildDepGraphCauldron :: Fire m -> Cauldron m -> AdjacencyMap PlanItem
+buildDepGraphCauldron :: Fire m -> Cauldron m -> AdjacencyMap BeanConstructionStep
 buildDepGraphCauldron
   Fire {tweakConstructorReps, tweakConstructorRepsDeco}
   Cauldron {recipes} = Graph.edges
@@ -569,9 +565,9 @@ buildDepGraphCauldron
             beanDeps ++ decoDeps ++ innerDeps
 
 constructorEdges ::
-  PlanItem ->
+  BeanConstructionStep ->
   ConstructorReps ->
-  [(PlanItem, PlanItem)]
+  [(BeanConstructionStep, BeanConstructionStep)]
 constructorEdges item (ConstructorReps {argReps, regReps}) =
   -- consumers depend on their args
   ( do
@@ -605,7 +601,7 @@ followPlanStep ::
   Cauldron m ->
   BoiledBeans ->
   BoiledBeans ->
-  PlanItem ->
+  BeanConstructionStep ->
   m BoiledBeans
 followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
   BoiledBeans <$> case item of
@@ -682,7 +678,7 @@ data BadBeans
     -- registrations are disallowed.
     DoubleDutyBeans (Set TypeRep)
   | -- | Dependency cycles are disallowed by some 'Fire's.
-    DependencyCycle (NonEmpty PlanItem)
+    DependencyCycle (NonEmpty BeanConstructionStep)
   deriving stock (Show)
 
 -- | An edge means that the source depends on the target.
@@ -693,11 +689,11 @@ data BadBeans
 -- functions from the
 -- [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-AdjacencyMap.html)
 -- library.
-newtype DependencyGraph = DependencyGraph {planItemDeps :: AdjacencyMap PlanItem}
+newtype DependencyGraph = DependencyGraph {stepDepsMap :: AdjacencyMap BeanConstructionStep}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
 exportToDot :: FilePath -> DependencyGraph -> IO ()
-exportToDot filepath DependencyGraph {planItemDeps} = do
+exportToDot filepath DependencyGraph {stepDepsMap} = do
   let prettyRep =
         let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
          in \case
@@ -707,7 +703,7 @@ exportToDot filepath DependencyGraph {planItemDeps} = do
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
-          planItemDeps
+          stepDepsMap
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
 
 newtype Args args r = Args {runArgs :: NP I args -> r}
