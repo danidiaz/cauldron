@@ -1,5 +1,6 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 -- | We have a bunch of datatypes, and a single recipe (constructor) for each
 -- datatype. This means the wiring can be type-directed: we don't have to make a
@@ -189,13 +190,13 @@ coolWiring :: Fire IO -> Either BadBeans (DependencyGraph, IO (Initializer, Insp
 coolWiring fire = do
   let cauldron :: Cauldron IO =
         mempty
-          & insert @A do makeBean do pack value makeA
-          & insert @B do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
-          & insert @C do makeBean do pack value makeC
-          & insert @D do makeBean do pack value makeD
-          & insert @E do makeBean do pack value makeE
-          & insert @F do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
-          & insert @G do
+          & insert @A do BareBean { constructor = pack value makeA }
+          & insert @B do BareBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
+          & insert @C do BareBean do pack value makeC
+          & insert @D do BareBean do pack value makeD
+          & insert @E do BareBean do pack value makeE
+          & insert @F do BareBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
+          & insert @G
             Bean
               { constructor = pack value makeG,
                 decos =

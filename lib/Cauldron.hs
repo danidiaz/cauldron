@@ -9,6 +9,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -27,6 +28,7 @@ module Cauldron
 
     -- * Beans
     Bean (..),
+    pattern BareBean,
     makeBean,
     setConstructor,
     setDecos,
@@ -104,6 +106,7 @@ import Algebra.Graph.Export.Dot qualified as Dot
 import Control.Applicative
 import Control.Concurrent.MVar
 import Control.Exception.Base
+import Control.Monad
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Data.Bifunctor (first)
@@ -979,3 +982,8 @@ instance MonadIO Managed where
     a <- m
     return_ a
   {-# INLINE liftIO #-}
+
+pattern BareBean :: Constructor m bean -> Bean m bean
+pattern BareBean {constructor} <- Bean {constructor = constructor, decos = Decos (Data.Foldable.toList -> [])}
+  where
+    BareBean constructor = Bean {constructor, decos = mempty}
