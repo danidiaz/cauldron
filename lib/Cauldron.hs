@@ -445,7 +445,7 @@ cookTree (treecipes) = do
   () <- first (uncurry MissingDependencies) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans treecipes
   Right
-    ( treeplan <&> \(stepDepsMap, _) -> DependencyGraph {stepDepsMap},
+    ( treeplan <&> \(depsForEachStep, _) -> DependencyGraph {depsForEachStep},
       followPlan (BoiledBeans accumMap) (snd <$> treeplan)
     )
 
@@ -691,11 +691,11 @@ data BadBeans
 -- functions from the
 -- [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-AdjacencyMap.html)
 -- library.
-newtype DependencyGraph = DependencyGraph {stepDepsMap :: AdjacencyMap BeanConstructionStep}
+newtype DependencyGraph = DependencyGraph {depsForEachStep :: AdjacencyMap BeanConstructionStep}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
 exportToDot :: FilePath -> DependencyGraph -> IO ()
-exportToDot filepath DependencyGraph {stepDepsMap} = do
+exportToDot filepath DependencyGraph {depsForEachStep} = do
   let prettyRep =
         let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
          in \case
@@ -705,7 +705,7 @@ exportToDot filepath DependencyGraph {stepDepsMap} = do
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
-          stepDepsMap
+          depsForEachStep
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
 
 newtype Args args r = Args {runArgs :: NP I args -> r}
