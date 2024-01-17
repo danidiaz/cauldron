@@ -309,8 +309,8 @@ delete Cauldron {recipes} =
 --
 -- Terrible uninformative name caused by a metaphor stretched too far.
 data Fire m = Fire
-  { tweakConstructorReps :: ConstructorReps -> ConstructorReps,
-    tweakConstructorRepsDeco :: ConstructorReps -> ConstructorReps,
+  { 
+    omitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
       Cauldron m ->
       BoiledBeans ->
@@ -334,8 +334,10 @@ removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
 allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
-    { tweakConstructorReps = removeBeanFromArgs,
-      tweakConstructorRepsDeco = removeBeanFromArgs,
+    { 
+      omitDependency = \case
+        (BareBean bean, BoiledBean anotherBean) | bean == anotherBean -> True
+        _ -> False,
       followPlanCauldron = \cauldron initial plan ->
         mfix do
           \final ->
@@ -349,8 +351,7 @@ allowSelfDeps =
 forbidDepCycles :: (Monad m) => Fire m
 forbidDepCycles =
   Fire
-    { tweakConstructorReps = id,
-      tweakConstructorRepsDeco = removeBeanFromArgs,
+    { omitDependency = \_ -> False,
       followPlanCauldron = \cauldron initial plan ->
         Data.Foldable.foldlM
           do followPlanStep cauldron BoiledBeans {beans = Map.empty}
@@ -527,21 +528,19 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
       )
         `Set.difference` accums
 
-buildPlans :: (Monad m) => Tree (Fire m, Cauldron m) -> Either (NonEmpty BeanConstructionStep) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
-buildPlans = traverse \(fire, cauldron) -> do
-  let graph = buildDepGraphCauldron fire cauldron
+buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty BeanConstructionStep) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
+buildPlans = traverse \(fire@Fire { omitDependency }, cauldron) -> do
+  let deps = filter (not . omitDependency) do buildDepsCauldron cauldron
+  let graph = Graph.edges deps
   case Graph.topSort graph of
     Left recipeCycle ->
       Left recipeCycle
     Right (reverse -> plan) -> do
-      let completeGraph = buildDepGraphCauldron forbidDepCycles cauldron
+      let completeGraph = Graph.edges deps
       Right (completeGraph, (plan, fire, cauldron))
 
-buildDepGraphCauldron :: Fire m -> Cauldron m -> AdjacencyMap BeanConstructionStep
-buildDepGraphCauldron
-  Fire {tweakConstructorReps, tweakConstructorRepsDeco}
-  Cauldron {recipes} = Graph.edges
-    do
+buildDepsCauldron :: Cauldron m -> [(BeanConstructionStep, BeanConstructionStep)]
+buildDepsCauldron Cauldron {recipes} = do
       (flip Map.foldMapWithKey)
         recipes
         \beanRep
@@ -558,10 +557,10 @@ buildDepGraphCauldron
                   (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
                   [(BeanDecorator beanRep decoIndex, decoCon)]
                 beanDeps = do
-                  constructorEdges bareBean (tweakConstructorReps do constructorReps constructor)
+                  constructorEdges bareBean (do constructorReps constructor)
                 decoDeps = do
                   (decoBean, decoCon) <- decos
-                  constructorEdges decoBean (tweakConstructorRepsDeco do constructorReps decoCon)
+                  constructorEdges decoBean (removeBeanFromArgs do constructorReps decoCon)
                 full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [boiledBean]
                 innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
             beanDeps ++ decoDeps ++ innerDeps

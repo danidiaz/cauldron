@@ -74,6 +74,12 @@ makeWeird _ = do
         anotherWeirdOp = tell ["another weirdOp"]
       }
 
+data Lonely m = Lonely { soLonely :: m ()}
+
+makeLonely :: Lonely M
+makeLonely = do
+  Lonely { soLonely = tell ["so lonely"]}
+
 -- | Note that the patter-match on the self-dependency must be lazy, or else a
 -- nasty, difficult to diagnose infinite loop will happen!
 makeSelfInvokingWeird :: Weird M -> M (Weird M)
@@ -140,6 +146,9 @@ cauldronNonEmpty =
         & insert @(Initializer, Repository M, Weird M) do makeBean do pack value do \a b c -> (a, b, c)
     ]
 
+cauldronLonely :: Cauldron M
+cauldronLonely  = emptyCauldron & insert @(Lonely M) do makeBean do pack0 value makeLonely
+
 tests :: TestTree
 tests =
   testGroup
@@ -196,6 +205,15 @@ tests =
             "weirdOp 2"
           ]
           traces,
+      testCase "lonely beans get build" do
+        (_, _) <- case cook' cauldronLonely of
+          Left _ -> assertFailure "could not wire"
+          Right (_, beansAction) -> runWriterT do
+            boiledBeans <- beansAction
+            let Lonely {soLonely} = fromJust . taste $ boiledBeans
+            soLonely
+            pure ()
+        pure (),
       testCase "cauldron missing dep" do
         case cook' cauldronMissingDep of
           Left (MissingDependencies {}) -> pure ()
