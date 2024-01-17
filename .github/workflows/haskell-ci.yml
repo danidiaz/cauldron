@@ -180,7 +180,6 @@ jobs:
       - name: cabal-docspec
         run: |
           mkdir -p $HOME/.cabal/bin
-          git clone 
           git clone --depth=1 -b master --single-branch https://github.com/phadej/cabal-extras.git $RUNNER_TEMP/cabal-extras
           cd $RUNNER_TEMP/cabal-extras/cabal-docspec 
           $CABAL vs-install
