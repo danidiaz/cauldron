@@ -180,13 +180,18 @@ jobs:
       - name: cabal-docspec
         run: |
           mkdir -p $HOME/.cabal/bin
-          curl -sL hhttps://github.com/phadej/cabal-extras/releases/download/cabal-docspec-0.0.0.20231219/cabal-docspec-0.0.0.20231219-x86_64-linux.xz > cabal-docspec.xz
-          echo '3551aab1db63eb4862423560d820a5191ac9ee84e56d8509fefb40dcdf0bff9a cabal-docspec.xz' | sha256sum -c -
-          xz -d < cabal-docspec.xz > $HOME/.cabal/bin/cabal-docspec
-          rm -f cabal-docspec.xz
-          chmod a+x $HOME/.cabal/bin/cabal-docspec
-          $HOME/.cabal/bin/cabal-docspec --version
-          echo "foo -------------------"
+          git clone 
+          git clone --depth=1 -b master --single-branch https://github.com/phadej/cabal-extras.git $RUNNER_TEMP/cabal-extras
+          cd $RUNNER_TEMP/cabal-extras/cabal-docspec 
+          $CABAL vs-install
+          cd -
+          # curl -sL hhttps://github.com/phadej/cabal-extras/releases/download/cabal-docspec-0.0.0.20231219/cabal-docspec-0.0.0.20231219-x86_64-linux.xz > cabal-docspec.xz
+          # echo '3551aab1db63eb4862423560d820a5191ac9ee84e56d8509fefb40dcdf0bff9a cabal-docspec.xz' | sha256sum -c -
+          # xz -d < cabal-docspec.xz > $HOME/.cabal/bin/cabal-docspec
+          # rm -f cabal-docspec.xz
+          # chmod a+x $HOME/.cabal/bin/cabal-docspec
+          # $HOME/.cabal/bin/cabal-docspec --version
+          # echo "foo -------------------"
           $HOME/.cabal/bin/cabal-docspec -v --phase1
           echo "bar -------------------"
       - name: cabal check
