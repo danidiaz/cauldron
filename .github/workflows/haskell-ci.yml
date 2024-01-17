@@ -182,7 +182,7 @@ jobs:
           mkdir -p $HOME/.cabal/bin
           git clone --depth=1 -b master --single-branch https://github.com/phadej/cabal-extras.git $RUNNER_TEMP/cabal-extras
           cd $RUNNER_TEMP/cabal-extras/cabal-docspec 
-          $CABAL v2-install
+          $CABAL v2-install $ARG_COMPILER
           cd -
           # curl -sL hhttps://github.com/phadej/cabal-extras/releases/download/cabal-docspec-0.0.0.20231219/cabal-docspec-0.0.0.20231219-x86_64-linux.xz > cabal-docspec.xz
           # echo '3551aab1db63eb4862423560d820a5191ac9ee84e56d8509fefb40dcdf0bff9a cabal-docspec.xz' | sha256sum -c -
