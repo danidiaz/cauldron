@@ -396,7 +396,7 @@ data BeanConstructionStep
     BeanDecorator TypeRep Int
   | -- | Final, fully decorated version of the bean. If there are no decorators, comes directly after 'BareBean'.
     BuiltBean TypeRep
-  | RegBean TypeRep
+  | SecondaryBean TypeRep
   deriving stock (Show, Eq, Ord)
 
 -- | Can't do a lot with them other than to 'taste' them.
@@ -543,7 +543,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
   let makeTargetStep :: TypeRep -> BeanConstructionStep
       makeTargetStep rep =
         if rep `Set.member` secondary
-          then RegBean rep
+          then SecondaryBean rep
           else BuiltBean rep
   (flip Map.foldMapWithKey)
     recipes
@@ -578,15 +578,15 @@ constructorEdges makeTargetStep item (ConstructorReps {argReps, regReps}) =
   -- consumers depend on their args
   ( do
       argRep <- Set.toList argReps
-      let argItem = makeTargetStep argRep
-      [(item, argItem)]
+      let argStep = makeTargetStep argRep
+      [(item, argStep)]
   )
     ++
-    -- regs depend on their producers
+    -- secondary beans depend on their producers
     ( do
         (regRep, _) <- Map.toList regReps
-        let repItem = RegBean regRep
-        [(repItem, item)]
+        let repStep = SecondaryBean regRep
+        [(repStep, item)]
     )
 
 followPlan ::
@@ -630,9 +630,9 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
     -- \| We do nothing here, the work has been done in previous 'BareBean' and
     -- 'BeanDecorator' steps.
     BuiltBean _ -> pure super
-    -- \| We do nothing here, \"registraton\" beans are built as a byproduct
+    -- \| We do nothing here, secondary beans are built as a byproduct
     -- of normal beans.
-    RegBean _ -> pure super
+    SecondaryBean _ -> pure super
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
@@ -711,7 +711,7 @@ exportToDot filepath DependencyGraph {depsForEachStep} = do
               BareBean rep -> p rep <> Data.Text.pack "#bare"
               BeanDecorator rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
               BuiltBean rep -> p rep
-              RegBean rep -> p rep <> Data.Text.pack "#reg"
+              SecondaryBean rep -> p rep <> Data.Text.pack "#agg"
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
