@@ -142,11 +142,14 @@ import Type.Reflection qualified
 -- 4
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
-  deriving newtype (Monoid)
 
--- | Union of two 'Cauldron's, preferring values from the /left/ cauldron when
--- both contain the same bean.
-deriving newtype instance Semigroup (Cauldron m)
+-- | Union of two 'Cauldron's, right-biased: prefers values from the /right/ cauldron when
+-- both contain the same bean. (Note that 'Data.Map.Map' is left-biased.)
+instance Semigroup (Cauldron m) where
+  Cauldron {recipes = r1 } <> Cauldron {recipes = r2} = Cauldron do Map.unionWith (flip const) r1 r2
+
+instance Monoid (Cauldron m) where
+  mempty = Cauldron do Map.empty
 
 emptyCauldron :: Cauldron m
 emptyCauldron = mempty
