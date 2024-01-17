@@ -74,11 +74,11 @@ makeWeird _ = do
         anotherWeirdOp = tell ["another weirdOp"]
       }
 
-data Lonely m = Lonely { soLonely :: m ()}
+data Lonely m = Lonely {soLonely :: m ()}
 
 makeLonely :: Lonely M
 makeLonely = do
-  Lonely { soLonely = tell ["so lonely"]}
+  Lonely {soLonely = tell ["so lonely"]}
 
 -- | Note that the patter-match on the self-dependency must be lazy, or else a
 -- nasty, difficult to diagnose infinite loop will happen!
@@ -147,7 +147,7 @@ cauldronNonEmpty =
     ]
 
 cauldronLonely :: Cauldron M
-cauldronLonely  = emptyCauldron & insert @(Lonely M) do makeBean do pack0 value makeLonely
+cauldronLonely = emptyCauldron & insert @(Lonely M) do makeBean do pack0 value makeLonely
 
 tests :: TestTree
 tests =

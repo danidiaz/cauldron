@@ -309,8 +309,7 @@ delete Cauldron {recipes} =
 --
 -- Terrible uninformative name caused by a metaphor stretched too far.
 data Fire m = Fire
-  { 
-    shouldOmitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
+  { shouldOmitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
       Cauldron m ->
       BoiledBeans ->
@@ -334,9 +333,8 @@ removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
 allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
-    { 
-      shouldOmitDependency = \case
-        (BareBean bean, BoiledBean anotherBean) | bean == anotherBean -> True
+    { shouldOmitDependency = \case
+        (BareBean bean, BuiltBean anotherBean) | bean == anotherBean -> True
         _ -> False,
       followPlanCauldron = \cauldron initial plan ->
         mfix do
@@ -397,7 +395,8 @@ data BeanConstructionStep
   | -- | Apply a decorator. Comes after the 'BareBean' and any 'BeanDecorator's wrapped by the current decorator.
     BeanDecorator TypeRep Int
   | -- | Final, fully decorated version of the bean. If there are no decorators, comes directly after 'BareBean'.
-    BoiledBean TypeRep
+    BuiltBean TypeRep
+  | RegBean TypeRep
   deriving stock (Show, Eq, Ord)
 
 -- | Can't do a lot with them other than to 'taste' them.
@@ -444,7 +443,7 @@ cookTree ::
 cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
   () <- first (uncurry MissingDependencies) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
-  treeplan <- first DependencyCycle do buildPlans treecipes
+  treeplan <- first DependencyCycle do buildPlans (Map.keysSet accumMap) treecipes
   Right
     ( treeplan <&> \(depsForEachStep, _) -> DependencyGraph {depsForEachStep},
       followPlan (BoiledBeans accumMap) (snd <$> treeplan)
@@ -528,9 +527,9 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
       )
         `Set.difference` accums
 
-buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty BeanConstructionStep) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
-buildPlans = traverse \(fire@Fire { shouldOmitDependency }, cauldron) -> do
-  let deps = filter (not . shouldOmitDependency) do buildDepsCauldron cauldron
+buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either (NonEmpty BeanConstructionStep) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
+buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) -> do
+  let deps = filter (not . shouldOmitDependency) do buildDepsCauldron secondary cauldron
   let graph = Graph.edges deps
   case Graph.topSort graph of
     Left recipeCycle ->
@@ -539,48 +538,54 @@ buildPlans = traverse \(fire@Fire { shouldOmitDependency }, cauldron) -> do
       let completeGraph = Graph.edges deps
       Right (completeGraph, (plan, fire, cauldron))
 
-buildDepsCauldron :: Cauldron m -> [(BeanConstructionStep, BeanConstructionStep)]
-buildDepsCauldron Cauldron {recipes} = do
-      (flip Map.foldMapWithKey)
-        recipes
-        \beanRep
-         ( SomeBean
-             ( Bean
-                 { constructor = constructor :: Constructor m bean,
-                   decos = Decos {decoCons}
-                 }
-               )
-           ) -> do
-            let bareBean = BareBean beanRep
-                boiledBean = BoiledBean beanRep
-                decos = do
-                  (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
-                  [(BeanDecorator beanRep decoIndex, decoCon)]
-                beanDeps = do
-                  constructorEdges bareBean (do constructorReps constructor)
-                decoDeps = do
-                  (decoBean, decoCon) <- decos
-                  constructorEdges decoBean (removeBeanFromArgs do constructorReps decoCon)
-                full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [boiledBean]
-                innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
-            beanDeps ++ decoDeps ++ innerDeps
+buildDepsCauldron :: Set TypeRep -> Cauldron m -> [(BeanConstructionStep, BeanConstructionStep)]
+buildDepsCauldron secondary Cauldron {recipes} = do
+  let makeTargetStep :: TypeRep -> BeanConstructionStep
+      makeTargetStep rep =
+        if rep `Set.member` secondary
+          then RegBean rep
+          else BuiltBean rep
+  (flip Map.foldMapWithKey)
+    recipes
+    \beanRep
+     ( SomeBean
+         ( Bean
+             { constructor = constructor :: Constructor m bean,
+               decos = Decos {decoCons}
+             }
+           )
+       ) -> do
+        let bareBean = BareBean beanRep
+            boiledBean = BuiltBean beanRep
+            decos = do
+              (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
+              [(BeanDecorator beanRep decoIndex, decoCon)]
+            beanDeps = do
+              constructorEdges makeTargetStep bareBean (do constructorReps constructor)
+            decoDeps = do
+              (decoBean, decoCon) <- decos
+              constructorEdges makeTargetStep decoBean (removeBeanFromArgs do constructorReps decoCon)
+            full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [boiledBean]
+            innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
+        beanDeps ++ decoDeps ++ innerDeps
 
 constructorEdges ::
+  (TypeRep -> BeanConstructionStep) ->
   BeanConstructionStep ->
   ConstructorReps ->
   [(BeanConstructionStep, BeanConstructionStep)]
-constructorEdges item (ConstructorReps {argReps, regReps}) =
+constructorEdges makeTargetStep item (ConstructorReps {argReps, regReps}) =
   -- consumers depend on their args
   ( do
       argRep <- Set.toList argReps
-      let argItem = BoiledBean argRep
+      let argItem = makeTargetStep argRep
       [(item, argItem)]
   )
     ++
     -- regs depend on their producers
     ( do
         (regRep, _) <- Map.toList regReps
-        let repItem = BoiledBean regRep
+        let repItem = RegBean regRep
         [(repItem, item)]
     )
 
@@ -622,7 +627,12 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
         -- Unlike before, we don't delete the beanRep before running the constructor.
         (super', bean) <- followConstructor decoCon final super
         pure do Map.insert beanRep (toDyn bean) super'
-    BoiledBean _ -> pure super
+    -- \| We do nothing here, the work has been done in previous 'BareBean' and
+    -- 'BeanDecorator' steps.
+    BuiltBean _ -> pure super
+    -- \| We do nothing here, \"registraton\" beans are built as a byproduct
+    -- of normal beans.
+    RegBean _ -> pure super
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
@@ -700,7 +710,8 @@ exportToDot filepath DependencyGraph {depsForEachStep} = do
          in \case
               BareBean rep -> p rep <> Data.Text.pack "#bare"
               BeanDecorator rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
-              BoiledBean rep -> p rep
+              BuiltBean rep -> p rep
+              RegBean rep -> p rep <> Data.Text.pack "#reg"
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
