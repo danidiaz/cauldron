@@ -80,12 +80,13 @@ module Cauldron
     PathToCauldron,
 
     -- ** Drawing deps
-    DependencyGraph (..),
+    DependencyGraph,
     BeanConstructionStep (..),
-    ignoreSecondaryBeans,
-    ignoreDecos,
-    simplifyPrimaryBeans,
+    removeSecondaryBeans,
+    removeDecos,
+    collapsePrimaryBeans,
     exportToDot,
+    toAdjacencyMap,
 
     -- * The Managed monad for handling resources
     Managed,
@@ -136,6 +137,9 @@ import Multicurryable
 import Type.Reflection qualified
 
 -- | A map of 'Bean' recipes indexed by the type of the bean.
+--
+-- >>> 3 :: Int
+-- 4
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
   deriving newtype (Monoid)
@@ -449,7 +453,7 @@ cookTree (treecipes) = do
   () <- first (uncurry MissingDependencies) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans (Map.keysSet accumMap) treecipes
   Right
-    ( treeplan <&> \(depsForEachStep, _) -> DependencyGraph {depsForEachStep},
+    ( treeplan <&> \(graph, _) -> DependencyGraph {graph},
       followPlan (BoiledBeans accumMap) (snd <$> treeplan)
     )
 
@@ -704,21 +708,24 @@ data BadBeans
 -- functions from the
 -- [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-AdjacencyMap.html)
 -- library.
-newtype DependencyGraph = DependencyGraph {depsForEachStep :: AdjacencyMap BeanConstructionStep}
+newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap BeanConstructionStep}
 
-ignoreSecondaryBeans :: DependencyGraph -> DependencyGraph
-ignoreSecondaryBeans DependencyGraph {depsForEachStep} =
-  DependencyGraph {depsForEachStep = Graph.induce (\case SecondaryBean {} -> False; _ -> True) depsForEachStep}
+toAdjacencyMap :: DependencyGraph -> AdjacencyMap BeanConstructionStep
+toAdjacencyMap DependencyGraph {graph} = graph
 
-ignoreDecos :: DependencyGraph -> DependencyGraph
-ignoreDecos DependencyGraph {depsForEachStep} =
-  DependencyGraph {depsForEachStep = Graph.induce (\case PrimaryBeanDeco {} -> False; _ -> True) depsForEachStep}
+removeSecondaryBeans :: DependencyGraph -> DependencyGraph
+removeSecondaryBeans DependencyGraph {graph} =
+  DependencyGraph {graph = Graph.induce (\case SecondaryBean {} -> False; _ -> True) graph}
+
+removeDecos :: DependencyGraph -> DependencyGraph
+removeDecos DependencyGraph {graph} =
+  DependencyGraph {graph = Graph.induce (\case PrimaryBeanDeco {} -> False; _ -> True) graph}
 
 -- Unifies 'PrimaryBean's with their respective 'BarePrimaryBean's and 'PrimaryBeanDeco's.
 --
 -- Also removes any self-loops.
-simplifyPrimaryBeans :: DependencyGraph -> DependencyGraph
-simplifyPrimaryBeans DependencyGraph {depsForEachStep} = do
+collapsePrimaryBeans :: DependencyGraph -> DependencyGraph
+collapsePrimaryBeans DependencyGraph {graph} = do
   let simplified =
         Graph.gmap
           ( \case
@@ -726,7 +733,7 @@ simplifyPrimaryBeans DependencyGraph {depsForEachStep} = do
               PrimaryBeanDeco rep _ -> PrimaryBean rep
               other -> other
           )
-          depsForEachStep
+          graph
       -- Is there a simpler way to removoe self-loops?
       vertices = Graph.vertexList simplified
       edges = Graph.edgeList simplified
@@ -737,22 +744,22 @@ simplifyPrimaryBeans DependencyGraph {depsForEachStep} = do
               _ -> True
           )
           edges
-  DependencyGraph {depsForEachStep = Graph.vertices vertices `Graph.overlay` Graph.edges edgesWithoutSelfLoops}
+  DependencyGraph {graph = Graph.vertices vertices `Graph.overlay` Graph.edges edgesWithoutSelfLoops}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
 exportToDot :: FilePath -> DependencyGraph -> IO ()
-exportToDot filepath DependencyGraph {depsForEachStep} = do
+exportToDot filepath DependencyGraph {graph} = do
   let prettyRep =
         let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
          in \case
               BarePrimaryBean rep -> p rep <> Data.Text.pack "#bare"
               PrimaryBeanDeco rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
               PrimaryBean rep -> p rep
-              SecondaryBean rep -> p rep <> Data.Text.pack "#agg"
+              SecondaryBean rep -> p rep <> Data.Text.pack "#sec"
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
-          depsForEachStep
+          graph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
 
 newtype Args args r = Args {runArgs :: NP I args -> r}
