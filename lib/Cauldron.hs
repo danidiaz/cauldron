@@ -527,13 +527,15 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
       )
         `Set.difference` accums
 
-buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty BeanConstructionStep) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
+buildPlans :: (Monad m) => Tree (Fire m, Cauldron m) -> Either (NonEmpty BeanConstructionStep) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
 buildPlans = traverse \(fire, cauldron) -> do
   let graph = buildDepGraphCauldron fire cauldron
   case Graph.topSort graph of
     Left recipeCycle ->
       Left recipeCycle
-    Right (reverse -> plan) -> Right (graph, (plan, fire, cauldron))
+    Right (reverse -> plan) -> do
+      let completeGraph = buildDepGraphCauldron forbidDepCycles cauldron
+      Right (completeGraph, (plan, fire, cauldron))
 
 buildDepGraphCauldron :: Fire m -> Cauldron m -> AdjacencyMap BeanConstructionStep
 buildDepGraphCauldron
