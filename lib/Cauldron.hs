@@ -139,7 +139,7 @@ import Type.Reflection qualified
 -- | A map of 'Bean' recipes indexed by the type of the bean.
 --
 -- >>> 3 :: Int
--- 4
+-- 3
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
 
