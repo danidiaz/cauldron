@@ -396,7 +396,7 @@ data BeanConstructionStep
   | -- | Apply a decorator. Comes after the 'BareBean' and any 'BeanDecorator's wrapped by the current decorator.
     BeanDecorator TypeRep Int
   | -- | Final, fully decorated version of the bean. If there are no decorators, comes directly after 'BareBean'.
-    BuiltBean TypeRep
+    BoiledBean TypeRep
   deriving stock (Show, Eq, Ord)
 
 -- | Can't do a lot with them other than to 'taste' them.
@@ -459,7 +459,7 @@ checkNoDoubleDutyBeans treecipes = do
     then Left common
     else Right accumMap
 
--- | Always @[]@ when using 'cook'; identifies a 'Cauldron' in a hierarchy of 'Cauldron's when
+-- | Will always be @[]@ when using 'cook'; identifies a 'Cauldron' in a hierarchy of 'Cauldron's when
 -- using 'cookNonEmpty' or 'cookTree'.
 type PathToCauldron = [Int]
 
@@ -551,7 +551,7 @@ buildDepGraphCauldron
                )
            ) -> do
             let bareBean = BareBean beanRep
-                builtBean = BuiltBean beanRep
+                boiledBean = BoiledBean beanRep
                 decos = do
                   (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
                   [(BeanDecorator beanRep decoIndex, decoCon)]
@@ -560,7 +560,7 @@ buildDepGraphCauldron
                 decoDeps = do
                   (decoBean, decoCon) <- decos
                   constructorEdges decoBean (tweakConstructorRepsDeco do constructorReps decoCon)
-                full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [builtBean]
+                full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [boiledBean]
                 innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
             beanDeps ++ decoDeps ++ innerDeps
 
@@ -572,14 +572,14 @@ constructorEdges item (ConstructorReps {argReps, regReps}) =
   -- consumers depend on their args
   ( do
       argRep <- Set.toList argReps
-      let argItem = BuiltBean argRep
+      let argItem = BoiledBean argRep
       [(item, argItem)]
   )
     ++
     -- regs depend on their producers
     ( do
         (regRep, _) <- Map.toList regReps
-        let repItem = BuiltBean regRep
+        let repItem = BoiledBean regRep
         [(repItem, item)]
     )
 
@@ -614,7 +614,6 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
         -- There is a test for this.
         (super', bean) <- followConstructor constructor final (Map.delete beanRep super)
         pure do Map.insert beanRep (toDyn bean) super'
-    BuiltBean _ -> pure super
     BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
       SomeBean (Bean {decos = Decos {decoCons}}) -> do
         let decoCon = fromJust do Seq.lookup index decoCons
@@ -622,6 +621,7 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
         -- Unlike before, we don't delete the beanRep before running the constructor.
         (super', bean) <- followConstructor decoCon final super
         pure do Map.insert beanRep (toDyn bean) super'
+    BoiledBean _ -> pure super
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
@@ -699,7 +699,7 @@ exportToDot filepath DependencyGraph {stepDepsMap} = do
          in \case
               BareBean rep -> p rep <> Data.Text.pack "#bare"
               BeanDecorator rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
-              BuiltBean rep -> p rep
+              BoiledBean rep -> p rep
       dot =
         Dot.export
           do Dot.defaultStyle prettyRep
