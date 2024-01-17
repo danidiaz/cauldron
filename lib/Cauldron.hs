@@ -82,8 +82,10 @@ module Cauldron
     -- ** Drawing deps
     DependencyGraph (..),
     BeanConstructionStep (..),
+    ignoreSecondaryBeans,
+    ignoreDecos,
+    simplifyPrimaryBeans,
     exportToDot,
-
     -- * The Managed monad for handling resources
     Managed,
     managed,
@@ -390,12 +392,13 @@ type Plan = [BeanConstructionStep]
 
 -- | A step in building a bean value.
 data BeanConstructionStep
-  = -- | The undecorated bean.
+  = -- | Undecorated bean.
     BareBean TypeRep
   | -- | Apply a decorator. Comes after the 'BareBean' and any 'BeanDecorator's wrapped by the current decorator.
     BeanDecorator TypeRep Int
-  | -- | Final, fully decorated version of the bean. If there are no decorators, comes directly after 'BareBean'.
+  | -- | Final, fully decorated version of a bean. If there are no decorators, comes directly after 'BareBean'.
     PrimaryBean TypeRep
+    -- | Beans that are secondary registrations of a 'Constructor' and which are aggregated monadically.
   | SecondaryBean TypeRep
   deriving stock (Show, Eq, Ord)
 
@@ -701,6 +704,24 @@ data BadBeans
 -- [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-AdjacencyMap.html)
 -- library.
 newtype DependencyGraph = DependencyGraph {depsForEachStep :: AdjacencyMap BeanConstructionStep}
+
+ignoreSecondaryBeans :: DependencyGraph -> DependencyGraph
+ignoreSecondaryBeans DependencyGraph {depsForEachStep} =
+  DependencyGraph {depsForEachStep = Graph.induce (\case SecondaryBean {} -> False ; _ -> True) depsForEachStep}
+
+ignoreDecos :: DependencyGraph -> DependencyGraph
+ignoreDecos DependencyGraph {depsForEachStep} =
+  DependencyGraph {depsForEachStep = Graph.induce (\case BeanDecorator {} -> False ; _ -> True) depsForEachStep}
+
+-- Unify 'PrimaryBean's with their respective 'BareBean's and 'BeanDecorator's.
+simplifyPrimaryBeans :: DependencyGraph -> DependencyGraph
+simplifyPrimaryBeans DependencyGraph {depsForEachStep} =
+  DependencyGraph {depsForEachStep = Graph.gmap (
+    \case 
+      BareBean rep -> PrimaryBean rep 
+      BeanDecorator rep _ -> PrimaryBean rep
+      other -> other) depsForEachStep}
+
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
 exportToDot :: FilePath -> DependencyGraph -> IO ()
