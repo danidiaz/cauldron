@@ -899,6 +899,7 @@ instance MonadFix Managed where
     where
       unManage (Managed a) = a
 
+-- | Make use of the managed resource by supplying a callback.
 with :: Managed a -> (a -> IO b) -> IO b
 with (Managed r) = r
 
