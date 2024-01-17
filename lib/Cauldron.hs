@@ -86,6 +86,7 @@ module Cauldron
     ignoreDecos,
     simplifyPrimaryBeans,
     exportToDot,
+
     -- * The Managed monad for handling resources
     Managed,
     managed,
@@ -398,8 +399,8 @@ data BeanConstructionStep
     BeanDecorator TypeRep Int
   | -- | Final, fully decorated version of a bean. If there are no decorators, comes directly after 'BareBean'.
     PrimaryBean TypeRep
-    -- | Beans that are secondary registrations of a 'Constructor' and which are aggregated monadically.
-  | SecondaryBean TypeRep
+  | -- | Beans that are secondary registrations of a 'Constructor' and which are aggregated monadically.
+    SecondaryBean TypeRep
   deriving stock (Show, Eq, Ord)
 
 -- | Can't do a lot with them other than to 'taste' them.
@@ -707,21 +708,36 @@ newtype DependencyGraph = DependencyGraph {depsForEachStep :: AdjacencyMap BeanC
 
 ignoreSecondaryBeans :: DependencyGraph -> DependencyGraph
 ignoreSecondaryBeans DependencyGraph {depsForEachStep} =
-  DependencyGraph {depsForEachStep = Graph.induce (\case SecondaryBean {} -> False ; _ -> True) depsForEachStep}
+  DependencyGraph {depsForEachStep = Graph.induce (\case SecondaryBean {} -> False; _ -> True) depsForEachStep}
 
 ignoreDecos :: DependencyGraph -> DependencyGraph
 ignoreDecos DependencyGraph {depsForEachStep} =
-  DependencyGraph {depsForEachStep = Graph.induce (\case BeanDecorator {} -> False ; _ -> True) depsForEachStep}
+  DependencyGraph {depsForEachStep = Graph.induce (\case BeanDecorator {} -> False; _ -> True) depsForEachStep}
 
--- Unify 'PrimaryBean's with their respective 'BareBean's and 'BeanDecorator's.
+-- Unifies 'PrimaryBean's with their respective 'BareBean's and 'BeanDecorator's.
+--
+-- Also removes any self-loops.
 simplifyPrimaryBeans :: DependencyGraph -> DependencyGraph
-simplifyPrimaryBeans DependencyGraph {depsForEachStep} =
-  DependencyGraph {depsForEachStep = Graph.gmap (
-    \case 
-      BareBean rep -> PrimaryBean rep 
-      BeanDecorator rep _ -> PrimaryBean rep
-      other -> other) depsForEachStep}
-
+simplifyPrimaryBeans DependencyGraph {depsForEachStep} = do
+  let simplified =
+        Graph.gmap
+          ( \case
+              BareBean rep -> PrimaryBean rep
+              BeanDecorator rep _ -> PrimaryBean rep
+              other -> other
+          )
+          depsForEachStep
+      -- Is there a simpler way to removoe self-loops?
+      vertices = Graph.vertexList simplified
+      edges = Graph.edgeList simplified
+      edgesWithoutSelfLoops =
+        filter
+          ( \case
+              (PrimaryBean source, PrimaryBean target) -> if source == target then False else True
+              _ -> True
+          )
+          edges
+  DependencyGraph {depsForEachStep = Graph.vertices vertices `Graph.overlay` Graph.edges edgesWithoutSelfLoops}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
 exportToDot :: FilePath -> DependencyGraph -> IO ()
