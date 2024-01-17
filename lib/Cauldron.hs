@@ -334,7 +334,7 @@ allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
     { shouldOmitDependency = \case
-        (BareBean bean, BuiltBean anotherBean) | bean == anotherBean -> True
+        (BareBean bean, PrimaryBean anotherBean) | bean == anotherBean -> True
         _ -> False,
       followPlanCauldron = \cauldron initial plan ->
         mfix do
@@ -395,7 +395,7 @@ data BeanConstructionStep
   | -- | Apply a decorator. Comes after the 'BareBean' and any 'BeanDecorator's wrapped by the current decorator.
     BeanDecorator TypeRep Int
   | -- | Final, fully decorated version of the bean. If there are no decorators, comes directly after 'BareBean'.
-    BuiltBean TypeRep
+    PrimaryBean TypeRep
   | SecondaryBean TypeRep
   deriving stock (Show, Eq, Ord)
 
@@ -544,7 +544,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
       makeTargetStep rep =
         if rep `Set.member` secondary
           then SecondaryBean rep
-          else BuiltBean rep
+          else PrimaryBean rep
   (flip Map.foldMapWithKey)
     recipes
     \beanRep
@@ -556,7 +556,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
            )
        ) -> do
         let bareBean = BareBean beanRep
-            boiledBean = BuiltBean beanRep
+            boiledBean = PrimaryBean beanRep
             decos = do
               (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
               [(BeanDecorator beanRep decoIndex, decoCon)]
@@ -629,9 +629,9 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
         pure do Map.insert beanRep (toDyn bean) super'
     -- \| We do nothing here, the work has been done in previous 'BareBean' and
     -- 'BeanDecorator' steps.
-    BuiltBean _ -> pure super
+    PrimaryBean _ -> pure super
     -- \| We do nothing here, secondary beans are built as a byproduct
-    -- of normal beans.
+    -- of primary beans and decorators.
     SecondaryBean _ -> pure super
 
 -- | Build a bean out of already built beans.
@@ -710,7 +710,7 @@ exportToDot filepath DependencyGraph {depsForEachStep} = do
          in \case
               BareBean rep -> p rep <> Data.Text.pack "#bare"
               BeanDecorator rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
-              BuiltBean rep -> p rep
+              PrimaryBean rep -> p rep
               SecondaryBean rep -> p rep <> Data.Text.pack "#agg"
       dot =
         Dot.export
