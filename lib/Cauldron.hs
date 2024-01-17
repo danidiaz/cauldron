@@ -337,7 +337,7 @@ allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
     { shouldOmitDependency = \case
-        (BareBean bean, PrimaryBean anotherBean) | bean == anotherBean -> True
+        (BarePrimaryBean bean, PrimaryBean anotherBean) | bean == anotherBean -> True
         _ -> False,
       followPlanCauldron = \cauldron initial plan ->
         mfix do
@@ -394,10 +394,10 @@ type Plan = [BeanConstructionStep]
 -- | A step in building a bean value.
 data BeanConstructionStep
   = -- | Undecorated bean.
-    BareBean TypeRep
-  | -- | Apply a decorator. Comes after the 'BareBean' and any 'BeanDecorator's wrapped by the current decorator.
-    BeanDecorator TypeRep Int
-  | -- | Final, fully decorated version of a bean. If there are no decorators, comes directly after 'BareBean'.
+    BarePrimaryBean TypeRep
+  | -- | Apply a decorator. Comes after the 'BarePrimaryBean' and any 'PrimaryBeanDeco's wrapped by the current decorator.
+    PrimaryBeanDeco TypeRep Int
+  | -- | Final, fully decorated version of a bean. If there are no decorators, comes directly after 'BarePrimaryBean'.
     PrimaryBean TypeRep
   | -- | Beans that are secondary registrations of a 'Constructor' and which are aggregated monadically.
     SecondaryBean TypeRep
@@ -559,11 +559,11 @@ buildDepsCauldron secondary Cauldron {recipes} = do
              }
            )
        ) -> do
-        let bareBean = BareBean beanRep
+        let bareBean = BarePrimaryBean beanRep
             boiledBean = PrimaryBean beanRep
             decos = do
               (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
-              [(BeanDecorator beanRep decoIndex, decoCon)]
+              [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
             beanDeps = do
               constructorEdges makeTargetStep bareBean (do constructorReps constructor)
             decoDeps = do
@@ -615,7 +615,7 @@ followPlanStep ::
   m BoiledBeans
 followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
   BoiledBeans <$> case item of
-    BareBean rep -> case fromJust do Map.lookup rep recipes of
+    BarePrimaryBean rep -> case fromJust do Map.lookup rep recipes of
       SomeBean (Bean {constructor}) -> do
         let ConstructorReps {beanRep} = constructorReps constructor
         -- We delete the beanRep before running the constructor,
@@ -624,15 +624,15 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
         -- There is a test for this.
         (super', bean) <- followConstructor constructor final (Map.delete beanRep super)
         pure do Map.insert beanRep (toDyn bean) super'
-    BeanDecorator rep index -> case fromJust do Map.lookup rep recipes of
+    PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
       SomeBean (Bean {decos = Decos {decoCons}}) -> do
         let decoCon = fromJust do Seq.lookup index decoCons
         let ConstructorReps {beanRep} = constructorReps decoCon
         -- Unlike before, we don't delete the beanRep before running the constructor.
         (super', bean) <- followConstructor decoCon final super
         pure do Map.insert beanRep (toDyn bean) super'
-    -- \| We do nothing here, the work has been done in previous 'BareBean' and
-    -- 'BeanDecorator' steps.
+    -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
+    -- 'PrimaryBeanDeco' steps.
     PrimaryBean _ -> pure super
     -- \| We do nothing here, secondary beans are built as a byproduct
     -- of primary beans and decorators.
@@ -712,9 +712,9 @@ ignoreSecondaryBeans DependencyGraph {depsForEachStep} =
 
 ignoreDecos :: DependencyGraph -> DependencyGraph
 ignoreDecos DependencyGraph {depsForEachStep} =
-  DependencyGraph {depsForEachStep = Graph.induce (\case BeanDecorator {} -> False; _ -> True) depsForEachStep}
+  DependencyGraph {depsForEachStep = Graph.induce (\case PrimaryBeanDeco {} -> False; _ -> True) depsForEachStep}
 
--- Unifies 'PrimaryBean's with their respective 'BareBean's and 'BeanDecorator's.
+-- Unifies 'PrimaryBean's with their respective 'BarePrimaryBean's and 'PrimaryBeanDeco's.
 --
 -- Also removes any self-loops.
 simplifyPrimaryBeans :: DependencyGraph -> DependencyGraph
@@ -722,8 +722,8 @@ simplifyPrimaryBeans DependencyGraph {depsForEachStep} = do
   let simplified =
         Graph.gmap
           ( \case
-              BareBean rep -> PrimaryBean rep
-              BeanDecorator rep _ -> PrimaryBean rep
+              BarePrimaryBean rep -> PrimaryBean rep
+              PrimaryBeanDeco rep _ -> PrimaryBean rep
               other -> other
           )
           depsForEachStep
@@ -745,8 +745,8 @@ exportToDot filepath DependencyGraph {depsForEachStep} = do
   let prettyRep =
         let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
          in \case
-              BareBean rep -> p rep <> Data.Text.pack "#bare"
-              BeanDecorator rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
+              BarePrimaryBean rep -> p rep <> Data.Text.pack "#bare"
+              PrimaryBeanDeco rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
               PrimaryBean rep -> p rep
               SecondaryBean rep -> p rep <> Data.Text.pack "#agg"
       dot =
