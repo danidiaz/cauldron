@@ -310,7 +310,7 @@ delete Cauldron {recipes} =
 -- Terrible uninformative name caused by a metaphor stretched too far.
 data Fire m = Fire
   { 
-    omitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
+    shouldOmitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
       Cauldron m ->
       BoiledBeans ->
@@ -335,7 +335,7 @@ allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
     { 
-      omitDependency = \case
+      shouldOmitDependency = \case
         (BareBean bean, BoiledBean anotherBean) | bean == anotherBean -> True
         _ -> False,
       followPlanCauldron = \cauldron initial plan ->
@@ -351,7 +351,7 @@ allowSelfDeps =
 forbidDepCycles :: (Monad m) => Fire m
 forbidDepCycles =
   Fire
-    { omitDependency = \_ -> False,
+    { shouldOmitDependency = \_ -> False,
       followPlanCauldron = \cauldron initial plan ->
         Data.Foldable.foldlM
           do followPlanStep cauldron BoiledBeans {beans = Map.empty}
@@ -529,8 +529,8 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
         `Set.difference` accums
 
 buildPlans :: Tree (Fire m, Cauldron m) -> Either (NonEmpty BeanConstructionStep) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
-buildPlans = traverse \(fire@Fire { omitDependency }, cauldron) -> do
-  let deps = filter (not . omitDependency) do buildDepsCauldron cauldron
+buildPlans = traverse \(fire@Fire { shouldOmitDependency }, cauldron) -> do
+  let deps = filter (not . shouldOmitDependency) do buildDepsCauldron cauldron
   let graph = Graph.edges deps
   case Graph.topSort graph of
     Left recipeCycle ->
