@@ -204,4 +204,4 @@ jobs:
           chmod a+x $HOME/.cabal/bin/cabal-docspec
           $HOME/.cabal/bin/cabal-docspec --version
           echo "foo -------------------"
-          cabal-docspec 2>&1 | tee output.log
+          cabal-docspec -v
