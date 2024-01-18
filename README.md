@@ -8,7 +8,9 @@
 >
 > In the caldron boil and bake;
 
-**cauldron** is a library for dependency injection. It's an alternative to manually wiring the constructors for the components ("beans") of your application. 
+**cauldron** is a library for dependency injection. It's an alternative to
+*manually wiring the constructors for the components ("beans") of your
+*application. 
 
 It expects the component constructors to conform to a certain shape.
 
@@ -46,14 +48,14 @@ the component produced by this constructor, and it has `Logger` and `Repository`
 as dependencies.
 
 Sometimes constructors are effectful because they must perform some
-initialization (for expample allocating some `IORef` for the internal `Server`
+initialization (for example allocating some `IORef` for the internal `Server`
 state). In that case the shape of the constructor becomes something like:
 
 ```
 makeServer :: Logger -> Repository -> IO Server
 ```
 
-**cauldron** also supports constructors of this shape. 
+**cauldron** supports constructors of this shape as well. 
 
 Having more than one constructor for the same bean type is disallowed. The
 wiring is *type-directed*, so there can't be any ambiguity about which value
@@ -61,7 +63,8 @@ constructor to use.
 
 ## Registering secondary beans
 
-More complex constructors can return beans besides the "primary" bean, for example:
+More complex constructors can return—besides a "primary" bean as seen in the
+previous section—one or more "secondary" beans. For example:
 
 ```
 makeServer :: Logger -> Repository -> (Initializer, Inspector, Server)
@@ -74,12 +77,12 @@ makeServer :: Logger -> Repository -> IO (Initializer, Inspector, Server)
 ```
 
 These secondary outputs of a constructor, like `Initializer` and `Inspector`,
-*must* have `Monoid` instances. Unlike with the "primary" bean, they
+*must* have `Monoid` instances. Unlike with the "primary" bean that the constructor produces, they
 *can* be produced by more than one constructor. Their values will be aggregated
 across all the constructors that produce them.
 
-Constructors can depend on the *aggregated* value of these monoidal registrations,
-by having them as dependencies:
+Constructors can depend on the aggregated value of a secondary bean
+by taking the bean as a regular argument:
 
 ```
 makeDebuggingServer :: Inspector -> IO DebuggingServer
@@ -87,23 +90,20 @@ makeDebuggingServer :: Inspector -> IO DebuggingServer
 
 ## Decorators
 
-Decorators are special constructors that modify beans. They are like regular
-constructors, only that they have the bean they decorate as an argument:
+Decorators are like normal constructors, but they're used to *modify* a primary
+bean, instead of *producing* it. Because of that, they usually take the bean
+that they decorate as an argument:
 
 ```
 makeServerDecorator :: Server -> Server
 ```
 
-Like normal constructors, decorators can have dependencies, effects, and
-register secondary beans:
+Like normal constructors, decorators can have their own dependencies (other than the
+decorated bean), perform effects, and register secondary beans:
 
 ```
 makeServerDecorator :: Logger -> Server -> IO (Initializer,Server)
 ```
-
-Optionally, the main constructor of a bean may also (optionally) depend on
-itself. If it does, it will receive the final, fully decorated version of
-itself. This is useful to have decorated self-invocations.
 
 # Example code
 
@@ -116,6 +116,11 @@ dependency injection (although of course Spring has many more features).
 
 First, a big *difference*: there's no analogue here of annotations, or classpath
 scanning. Beans and decorators must be explicitly registered. 
+
+- Java POJOs are Haskell records-of-functions, where the functions will usually
+be closures which encapsulate access to some shared internal state (like
+configuration values, or mutable references). Functions that return
+records-of-functions correspond to POJO constructors.
 
 - [@PostConstruct](https://docs.spring.io/spring-framework/reference/core/beans/annotation-config/postconstruct-and-predestroy-annotations.html#page-title) roughly corresponds to effectful constructors.
 
