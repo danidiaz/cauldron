@@ -8,13 +8,13 @@
 >
 > In the caldron boil and bake;
 
-**cauldron** is a library for dependency injection. It's an alternative to
-*manually wiring the constructors for the components ("beans") of your
-*application. 
+**cauldron** is a library for performing dependency injection. It's an alternative to
+manually wiring the constructors for the components ("beans") of your
+application. 
 
-It expects the component constructors to conform to a certain shape.
+It expects the bean constructors to conform to a certain shape.
 
-**cauldron** should be used at the [composition root](https://stackoverflow.com/questions/6277771/what-is-a-composition-root-in-the-context-of-dependency-injection). Component constructors shouldn't be aware that **cauldron** exists, or depend on its types.
+**cauldron** should be used at the [composition root](https://stackoverflow.com/questions/6277771/what-is-a-composition-root-in-the-context-of-dependency-injection). Bean constructors shouldn't be aware that **cauldron** exists, or depend on its types.
 
 **cauldron** relies on dynamic typing and finds wiring errors at runtime, not compilation time.
 
@@ -55,10 +55,15 @@ state). In that case the shape of the constructor becomes something like:
 makeServer :: Logger -> Repository -> IO Server
 ```
 
-**cauldron** supports constructors of this shape as well. 
+or even, for constructors which want to ensure that [resources are
+deallocated](https://hackage.haskell.org/package/managed) after we are finished using the bean:
+
+```
+makeServer :: Logger -> Repository -> Managed Server
+```
 
 Having more than one constructor for the same bean type is disallowed. The
-wiring is *type-directed*, so there can't be any ambiguity about which value
+wiring is *type-directed*, so there can't be any ambiguity about which bean
 constructor to use.
 
 ## Registering secondary beans
@@ -77,18 +82,22 @@ makeServer :: Logger -> Repository -> IO (Initializer, Inspector, Server)
 ```
 
 These secondary outputs of a constructor, like `Initializer` and `Inspector`,
-*must* have `Monoid` instances. Unlike with the "primary" bean the constructor produces, they
+must have `Monoid` instances. Unlike with the "primary" bean the constructor produces, they
 *can* be produced by more than one constructor. Their values will be aggregated
 across all the constructors that produce them.
 
 Constructors can depend on the aggregated value of a secondary bean by taking
 the bean as a regular argument. Here, `makeDebuggingServer` receives the
 `mappend`ed value of all the `Inspector`s produced by other constructors (or
-`mempty` if no constructor produces them):
+`mempty`, if no constructor produces them):
 
 ```
 makeDebuggingServer :: Inspector -> IO DebuggingServer
 ```
+
+Constructors that produce secondary beans require a bit more work from the
+**cauldron** user. He must tell the library which is the primary bean and which
+are the secondary ones, because it's not detected automatically.
 
 ## Decorators
 
@@ -120,7 +129,7 @@ First, a big *difference*: there's no analogue here of annotations, or classpath
 scanning. Beans and decorators must be explicitly registered. 
 
 - Java POJOs are Haskell records-of-functions, where the functions will usually
-be closures which encapsulate access to some shared internal state (like
+be closures which encapsulate access to some shared internal state (state like
 configuration values, or mutable references). Functions that return
 records-of-functions correspond to POJO constructors.
 
