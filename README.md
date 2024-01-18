@@ -77,12 +77,14 @@ makeServer :: Logger -> Repository -> IO (Initializer, Inspector, Server)
 ```
 
 These secondary outputs of a constructor, like `Initializer` and `Inspector`,
-*must* have `Monoid` instances. Unlike with the "primary" bean that the constructor produces, they
+*must* have `Monoid` instances. Unlike with the "primary" bean the constructor produces, they
 *can* be produced by more than one constructor. Their values will be aggregated
 across all the constructors that produce them.
 
-Constructors can depend on the aggregated value of a secondary bean
-by taking the bean as a regular argument:
+Constructors can depend on the aggregated value of a secondary bean by taking
+the bean as a regular argument. Here, `makeDebuggingServer` receives the
+`mappend`ed value of all the `Inspector`s produced by other constructors (or
+`mempty` if no constructor produces them):
 
 ```
 makeDebuggingServer :: Inspector -> IO DebuggingServer
@@ -92,7 +94,7 @@ makeDebuggingServer :: Inspector -> IO DebuggingServer
 
 Decorators are like normal constructors, but they're used to *modify* a primary
 bean, instead of *producing* it. Because of that, they usually take the bean
-that they decorate as an argument:
+they decorate as an argument:
 
 ```
 makeServerDecorator :: Server -> Server
@@ -131,10 +133,16 @@ records-of-functions correspond to POJO constructors.
 - [decorated self-invocations](https://docs.spring.io/spring-framework/reference/core/aop/proxying.html#aop-understanding-aop-proxies) correspond to constructors that
   depend on the same bean that they produce.
 
-- [context hierachies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to "cooking"
-  a list or a tree of "cauldrons".
+  Note that this is different from decorators that depend on the bean they
+  modify. The constructor will receive the fully decorated bean "from the
+  future" (with the possibility of infinite loops if it makes use of it too
+  eagerly). In contrast, a decorator will receive either the bare "undecorated"
+  bean, or the in-construction result of applying the decorators that come
+  earlier in the decorator sequence.
 
-- [injecting all the beans that implement a certain interface as a list](https://twitter.com/NiestrojRobert/status/1746808940435042410) roughly corresponds to a constructor that takes a monoidal "secondary bean" registration as an argument. 
+- [context hierachies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to distributing the constructors into various sets organized in parent-child relationships, so that constructors in a child can see the beans of the parent, but not vice-versa. 
+
+- [injecting all the beans that implement a certain interface as a list](https://twitter.com/NiestrojRobert/status/1746808940435042410) roughly corresponds to a constructor that takes a monoidally aggregated "secondary bean" as an argument. 
 
 Some features I haven't been able to mimic yet:
 
