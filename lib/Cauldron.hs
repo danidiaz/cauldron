@@ -15,7 +15,21 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
--- | A library for performing dependency injection.
+-- | This is a library for performing dependency injection. 
+--
+-- >>> :{
+-- data A = A deriving Show
+-- data B = B deriving Show
+-- makeA :: A ; makeA = A
+-- makeB :: A -> B ; makeB = \_ -> B
+-- makeB makeA
+-- :}
+-- B
+--
+-- into the more succint
+--
+-- let c = emptyCauldron
+
 module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
