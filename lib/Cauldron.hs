@@ -18,11 +18,11 @@
 -- | This is a library for performing dependency injection.
 --
 -- >>> :{
--- data A = A deriving Show
--- data B = B deriving Show
--- makeA :: A ; makeA = A
--- makeB :: A -> B ; makeB = \_ -> B
--- makeB makeA
+-- let makeA :: A
+--     makeA = A
+--     makeB :: A -> B
+--     makeB = \_ -> B
+--  in makeB makeA
 -- :}
 -- B
 --
@@ -922,3 +922,7 @@ unsafeTreeToNonEmpty = \case
   Node a [] -> a Data.List.NonEmpty.:| []
   Node a [b] -> Data.List.NonEmpty.cons a (unsafeTreeToNonEmpty b)
   _ -> error "tree not list-shaped"
+
+-- $setup
+-- >>> data A = A deriving Show
+-- >>> data B = B deriving Show
