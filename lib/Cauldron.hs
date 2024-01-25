@@ -68,6 +68,7 @@ module Cauldron
     hoistBean,
 
     -- ** Decorators
+    -- $decos
     Decos,
     emptyDecos,
     fromConstructors,
@@ -206,6 +207,45 @@ hoistBean f (Bean {constructor, decos}) =
 -- | A 'Bean' without decorators, having only the main constructor.
 makeBean :: Constructor m a -> Bean m a
 makeBean constructor = Bean {constructor, decos = mempty}
+
+-- $decos
+--
+-- >>> :{
+-- newtype Foo = Foo { sayFoo :: IO () }
+-- makeFoo :: Foo
+-- makeFoo = Foo { sayFoo = putStrLn "foo" }
+-- makeFooDeco1 :: Foo -> Foo
+-- makeFooDeco1 Foo { sayFoo } = Foo { sayFoo = putStrLn "deco1 enter" >> sayFoo >> putStrLn "deco1 exit" }
+-- makeFooDeco2 :: Foo -> Foo
+-- makeFooDeco2 Foo { sayFoo } = Foo { sayFoo = putStrLn "deco2 enter" >> sayFoo >> putStrLn "deco2 exit" }
+-- :}
+--
+-- >>> :{
+-- do
+--   let cauldron :: Cauldron IO
+--       cauldron =
+--         emptyCauldron
+--         & insert @Foo 
+--           Bean {
+--             constructor = pack value makeFoo,
+--             decos = fromConstructors [
+--                  pack value makeFooDeco1,
+--                  pack value makeFooDeco2
+--               ]
+--           }
+--       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
+--   beans <- action
+--   let Just Foo {sayFoo} = taste beans
+--   sayFoo
+-- :}
+-- deco2 enter
+-- deco1 enter
+-- foo
+-- deco1 exit
+-- deco2 exit
+--
+
+
 
 -- | A list of 'Constructor's for the decorators of some 'Bean'.
 --
