@@ -15,20 +15,41 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
--- | This is a library for performing dependency injection.
+-- | This is a library for performing dependency injection. It's an alternative
+-- to manually wiring your functions and passing all required parameters
+-- explicitly. Instead of that, you throw your functions into a 'Cauldron', which wires
+-- them for you, guiding itself by the types.
+--
+-- Wiring errors are detected at runtime, not at compile time.
+--
+-- This library should be used at the ["composition root"](https://stackoverflow.com/questions/6277771/what-is-a-composition-root-in-the-context-of-dependency-injection) of the application,
+-- and only there: the components we are wiring together need not be aware that the library exists.
 --
 -- >>> :{
--- let makeA :: A
---     makeA = A
---     makeB :: A -> B
---     makeB = \_ -> B
---  in makeB makeA
+-- data A = A deriving Show
+-- data B = B deriving Show
+-- data C = C deriving Show
+-- makeA :: A
+-- makeA = A
+-- makeB :: A -> B
+-- makeB = \_ -> B
+-- makeC :: A -> B -> IO C
+-- makeC = \_ _ -> pure C
 -- :}
--- B
 --
--- into the more succint
---
--- let c = emptyCauldron
+-- >>> :{
+-- do
+--   let cauldron :: Cauldron IO
+--       cauldron =
+--         emptyCauldron
+--         & insert @A do makeBean do pack value makeA
+--         & insert @B do makeBean do pack value makeB
+--         & insert @C do makeBean do pack effect makeC
+--       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
+--   beans <- action
+--   pure do taste @C beans
+-- :}
+-- Just C
 module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
@@ -66,7 +87,7 @@ module Cauldron
     value,
     effect,
 
-    -- *** Dealing with registrations
+    -- *** Registering secondary beans
     -- $registrations
     valueWith,
     effectWith,
@@ -94,12 +115,12 @@ module Cauldron
 
     -- ** Drawing deps
     DependencyGraph,
-    BeanConstructionStep (..),
     removeSecondaryBeans,
     removeDecos,
     collapsePrimaryBeans,
     exportToDot,
     toAdjacencyMap,
+    BeanConstructionStep (..),
   )
 where
 
@@ -138,10 +159,8 @@ import GHC.Exts (IsList (..))
 import Multicurryable
 import Type.Reflection qualified
 
--- | A map of 'Bean' recipes indexed by the type of the bean.
---
--- >>> 3 :: Int
--- 4
+-- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
+-- 'Constructor's might have effects.
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
 
@@ -191,10 +210,7 @@ makeBean constructor = Bean {constructor, decos = mempty}
 -- | A list of 'Constructor's for the decorators of some 'Bean'.
 --
 -- 'Constructor's for a decorator will have the @bean@ itself among their
--- arguments. That's the way each 'Constructor' gets hold of it, in order to
--- return the decorated version.
---
--- That @bean@ argument will be either the \"bare\" undecorated
+-- arguments. That @bean@ argument will be either the \"bare\" undecorated
 -- bean (for the first decorator) or the result of applying the previous
 -- decorator in the list.
 --
@@ -250,7 +266,7 @@ fromConstructors ::
 fromConstructors cons = Decos do Seq.fromList cons
 
 -- | A way of building some @bean@ value, potentially requiring some
--- dependencies, potentially returning some secondary beans (\"registrations\")
+-- dependencies, potentially returning some secondary beans
 -- along the primary @bean@ result, and also potentially requiring some
 -- initialization effect in a monad @m@.
 --
@@ -278,6 +294,9 @@ hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor 
 hoistConstructor f (Constructor {constructor_}) = Constructor do fmap f constructor_
 
 -- | Put a recipe for a 'Bean' into the 'Cauldron'.
+--
+-- Only one recipe is allowed for each different @bean@ type, so 'insert' for a
+-- @bean@ will overwrite previous recipes for that type.
 insert ::
   forall (bean :: Type) m.
   (Typeable bean) =>
@@ -319,7 +338,7 @@ delete Cauldron {recipes} =
 
 -- | Strategy for dealing with dependency cycles.
 --
--- Terrible uninformative name caused by a metaphor stretched too far.
+-- (Terrible uninformative name caused by a metaphor stretched too far.)
 data Fire m = Fire
   { shouldOmitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
@@ -408,11 +427,11 @@ data BeanConstructionStep
     PrimaryBeanDeco TypeRep Int
   | -- | Final, fully decorated version of a bean. If there are no decorators, comes directly after 'BarePrimaryBean'.
     PrimaryBean TypeRep
-  | -- | Beans that are secondary registrations of a 'Constructor' and which are aggregated monadically.
+  | -- | Beans that are secondary registrations of a 'Constructor' and which are aggregated monoidally.
     SecondaryBean TypeRep
   deriving stock (Show, Eq, Ord)
 
--- | Can't do a lot with them other than to 'taste' them.
+-- | The successful result of 'cook'ing a 'Cauldron'. Can't do a lot with them other than to 'taste' them.
 newtype BoiledBeans where
   BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
 
@@ -698,8 +717,8 @@ data BadBeans
   = -- | The 'Cauldron' identified by 'PathToCauldron' has beans
     -- that depend on beans that can't be found either in the current 'Cauldron' or its ancestors.
     MissingDependencies PathToCauldron (Map TypeRep (Set TypeRep))
-  | -- | Beans that work both as primary beans and as secondary bean
-    -- registrations are disallowed.
+  | -- | Beans that work both as primary beans and as secondary beans
+    -- are disallowed.
     DoubleDutyBeans (Set TypeRep)
   | -- | Dependency cycles are disallowed by some 'Fire's.
     DependencyCycle (NonEmpty BeanConstructionStep)
@@ -708,13 +727,12 @@ data BadBeans
 -- | An edge means that the source depends on the target.
 --
 -- The dependencies of each bean are given separatedly from its decorators.
---
--- If that level of detail is excessive, the graph can be simplified using
--- functions from the
--- [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-AdjacencyMap.html)
--- library.
 newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap BeanConstructionStep}
 
+-- | Conversion to a graph type
+-- from the
+-- [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-AdjacencyMap.html)
+-- library for further processing.
 toAdjacencyMap :: DependencyGraph -> AdjacencyMap BeanConstructionStep
 toAdjacencyMap DependencyGraph {graph} = graph
 
@@ -789,29 +807,29 @@ argsN = Args . multiuncurry
 -- as if it were a normal bean.
 --
 -- The 'Regs' type is used to represent the main bean along with the secondary
--- beans that it registers. Because constructor functions do not use the 'Regs' type,
--- a 'Packer' must be used to coax the \"tip\" of the constructor function into the
--- required shape expected by 'Constructor'.
+-- beans that it registers. Because usually we'll be working with functions that
+-- do not use the 'Regs' type, a 'Packer' must be used to coax the \"tip\" of
+-- the constructor function into the required shape expected by 'Constructor'.
 
 -- | Auxiliary type which contains a primary bean along with zero or more
--- secondary \"registration\" beans. The \"registration\" beans must have
+-- secondary beans. The secondary beans must have
 -- 'Monoid' instances.
 data Regs (regs :: [Type]) bean = Regs (NP I regs) bean
   deriving (Functor)
 
--- | A plain @bean@ without registrations.
+-- | A primary @bean@ without secondary beans.
 regs0 :: bean -> Regs '[] bean
 regs0 bean = Regs Nil bean
 
--- | A @bean@ with one secondary bean registration.
+-- | A primary @bean@ with one secondary bean.
 regs1 :: reg1 -> bean -> Regs '[reg1] bean
 regs1 reg1 bean = Regs (I reg1 :* Nil) bean
 
--- | A @bean@ with two secondary bean registrations.
+-- | A primary @bean@ with two secondary beans.
 regs2 :: reg1 -> reg2 -> bean -> Regs '[reg1, reg2] bean
 regs2 reg1 reg2 bean = Regs (I reg1 :* I reg2 :* Nil) bean
 
--- | A @bean@ with three secondary bean registrations.
+-- | A primary @bean@ with three secondary beans.
 regs3 :: reg1 -> reg2 -> reg3 -> bean -> Regs '[reg1, reg2, reg3] bean
 regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
@@ -924,5 +942,7 @@ unsafeTreeToNonEmpty = \case
   _ -> error "tree not list-shaped"
 
 -- $setup
--- >>> data A = A deriving Show
--- >>> data B = B deriving Show
+-- >>> :set -XBlockArguments
+-- >>> :set -Wno-incomplete-uni-patterns
+-- >>> import Data.Functor.Identity
+-- >>> import Data.Function ((&))
