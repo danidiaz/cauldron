@@ -7,6 +7,7 @@
 module Main (main) where
 
 import Cauldron
+import Cauldron.Managed
 import Data.Function ((&))
 import Data.IORef
 import Data.Maybe (fromJust)

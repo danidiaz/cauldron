@@ -37,7 +37,9 @@ common common-tests
 
 library
     import:           common
-    exposed-modules:  Cauldron
+    exposed-modules:  
+        Cauldron
+        Cauldron.Managed
     build-depends:
         algebraic-graphs ^>= 0.7,
         multicurryable ^>= 0.1.1.0,
