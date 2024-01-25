@@ -216,8 +216,8 @@ makeBean constructor = Bean {constructor, decos = mempty}
 -- makeFoo = Foo { sayFoo = putStrLn "foo" }
 -- makeFooDeco1 :: Foo -> Foo
 -- makeFooDeco1 Foo { sayFoo } = Foo { sayFoo = putStrLn "deco1 enter" >> sayFoo >> putStrLn "deco1 exit" }
--- makeFooDeco2 :: Foo -> Foo
--- makeFooDeco2 Foo { sayFoo } = Foo { sayFoo = putStrLn "deco2 enter" >> sayFoo >> putStrLn "deco2 exit" }
+-- makeFooDeco2 :: Foo -> IO Foo
+-- makeFooDeco2 Foo { sayFoo } = putStrLn "deco2 init" >> pure Foo { sayFoo = putStrLn "deco2 enter" >> sayFoo >> putStrLn "deco2 exit" }
 -- :}
 --
 -- >>> :{
@@ -230,7 +230,7 @@ makeBean constructor = Bean {constructor, decos = mempty}
 --             constructor = pack value makeFoo,
 --             decos = fromConstructors [
 --                  pack value makeFooDeco1,
---                  pack value makeFooDeco2
+--                  pack effect makeFooDeco2
 --               ]
 --           }
 --       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
@@ -238,6 +238,7 @@ makeBean constructor = Bean {constructor, decos = mempty}
 --   let Just Foo {sayFoo} = taste beans
 --   sayFoo
 -- :}
+-- deco2 init
 -- deco2 enter
 -- deco1 enter
 -- foo
