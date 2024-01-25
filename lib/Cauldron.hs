@@ -15,7 +15,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
--- | This is a library for performing dependency injection. 
+-- | This is a library for performing dependency injection.
 --
 -- >>> :{
 -- data A = A deriving Show
@@ -29,7 +29,6 @@
 -- into the more succint
 --
 -- let c = emptyCauldron
-
 module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
@@ -108,7 +107,6 @@ import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
-
 import Control.Applicative
 import Control.Monad.Fix
 import Data.Bifunctor (first)
@@ -150,7 +148,7 @@ newtype Cauldron m where
 -- | Union of two 'Cauldron's, right-biased: prefers values from the /right/ cauldron when
 -- both contain the same bean. (Note that 'Data.Map.Map' is left-biased.)
 instance Semigroup (Cauldron m) where
-  Cauldron {recipes = r1 } <> Cauldron {recipes = r2} = Cauldron do Map.unionWith (flip const) r1 r2
+  Cauldron {recipes = r1} <> Cauldron {recipes = r2} = Cauldron do Map.unionWith (flip const) r1 r2
 
 instance Monoid (Cauldron m) where
   mempty = Cauldron do Map.empty

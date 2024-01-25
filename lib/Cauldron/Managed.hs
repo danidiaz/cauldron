@@ -1,15 +1,17 @@
 {-# LANGUAGE BlockArguments #-}
-module Cauldron.Managed (
-    -- * The Managed monad for handling resources
+
+module Cauldron.Managed
+  ( -- * The Managed monad for handling resources
     Managed,
     managed,
     with,
- ) where
+  )
+where
 
-import Control.Monad.Fix
-import Control.Monad.IO.Class
 import Control.Concurrent.MVar
 import Control.Exception.Base
+import Control.Monad.Fix
+import Control.Monad.IO.Class
 import GHC.IO.Unsafe
 
 -- | This is a copy of the @Managed@ type from the
