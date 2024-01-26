@@ -77,13 +77,14 @@ module Cauldron
     hoistDecos,
 
     -- ** Constructors
+    -- $constructors
     Constructor,
-    hoistConstructor,
     pack,
     pack0,
     pack1,
     pack2,
     pack3,
+    hoistConstructor,
     Packer (..),
     value,
     effect,
@@ -306,15 +307,26 @@ fromConstructors ::
   Decos m bean
 fromConstructors cons = Decos do Seq.fromList cons
 
+-- $constructors
+--
+-- The bean-producing or bean-decorating functions that we want to wire need to be
+-- coaxed into a 'Constructor' value before creating a 'Bean' recipe and adding it to the 'Cauldron'.
+--  
+-- If your aren't dealing with secondary beans, don't sweat it: use @pack value@ for pure
+-- constructors functions and @pack effect@ for effectful ones. That should be enough.
+
 -- | A way of building some @bean@ value, potentially requiring some
 -- dependencies, potentially returning some secondary beans
 -- along the primary @bean@ result, and also potentially requiring some
 -- initialization effect in a monad @m@.
 --
+-- Note that only the type of the primary @bean@ is reflected in the
+-- 'Constructor' type. Those of the dependencies and secondary beans are not.
+--
 -- A typical initialization monad will be 'IO', used for example to create
 -- mutable references that the bean will use internally. Sometimes the a
 -- constructor will allocate resources with bracket-like operations, and in that
--- case a monad like 'Managed' may be needed instead.
+-- case a monad like 'Managed' might be needed instead.
 data Constructor m bean where
   Constructor ::
     (All Typeable args, All (Typeable `And` Monoid) regs) =>
@@ -417,7 +429,7 @@ allowSelfDeps =
               plan
     }
 
--- | Forbid any kind of cyclic dependencies between beans.
+-- | Forbid any kind of cyclic dependencies between beans. This is probably what you want.
 forbidDepCycles :: (Monad m) => Fire m
 forbidDepCycles =
   Fire
@@ -851,6 +863,34 @@ argsN = Args . multiuncurry
 -- beans that it registers. Because usually we'll be working with functions that
 -- do not use the 'Regs' type, a 'Packer' must be used to coax the \"tip\" of
 -- the constructor function into the required shape expected by 'Constructor'.
+--
+-- >>> :{
+-- data A = A deriving Show
+-- data B = B deriving Show
+-- data C = C (Sum Int) deriving Show
+-- makeA :: (Sum Int, A)
+-- makeA = (Sum 1, A)
+-- makeB :: A -> IO (Sum Int, B)
+-- makeB = \_ -> pure (Sum 2, B)
+-- makeC :: Sum Int -> C
+-- makeC = \theSum -> C theSum
+-- :}
+--
+--
+-- >>> :{
+-- do
+--   let cauldron :: Cauldron IO
+--       cauldron =
+--         emptyCauldron
+--         & insert @A do makeBean do pack (valueWith \(s, a) -> regs1 s a) makeA
+--         & insert @B do makeBean do pack (effectWith \(s, b) -> regs1 s b) makeB
+--         & insert @C do makeBean do pack value makeC
+--       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
+--   beans <- action
+--   pure do taste @C beans
+-- :}
+-- Just (C (Sum {getSum = 3}))
+--
 
 -- | Auxiliary type which contains a primary bean along with zero or more
 -- secondary beans. The secondary beans must have
@@ -875,7 +915,8 @@ regs3 :: reg1 -> reg2 -> reg3 -> bean -> Regs '[reg1, reg2, reg3] bean
 regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
 
 -- | Applies a transformation to the tip of a curried function, coaxing
--- it into the shape expected by a 'Constructor'.
+-- it into the shape expected by a 'Constructor', which includes information
+-- about which is the primary bean and which are the secondary ones.
 --
 -- * For pure constructors without registrations, try 'value'.
 --
@@ -917,6 +958,9 @@ effectWith f = Packer do fmap f
 
 -- | Take a curried function that constructs a bean, uncurry it recursively and
 -- then apply a 'Packer' to its tip, resulting in a 'Constructor'.
+--
+-- There are 'pack0', 'pack1'... functions which work for specific number of arguments, but 
+-- the generic 'pack' should work in most cases anyway.
 pack ::
   forall (args :: [Type]) r curried regs bean m.
   ( MulticurryableF args r curried (IsFunction curried),
@@ -937,6 +981,7 @@ pack packer curried = Constructor do runPacker packer <$> do argsN curried
 pack0 ::
   (All (Typeable `And` Monoid) regs) =>
   Packer m regs bean r ->
+  -- | @0@-argument constructor
   r ->
   Constructor m bean
 pack0 packer r = Constructor do Args @'[] \Nil -> runPacker packer r
@@ -987,3 +1032,4 @@ unsafeTreeToNonEmpty = \case
 -- >>> :set -Wno-incomplete-uni-patterns
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
+-- >>> import Data.Monoid

@@ -43,7 +43,7 @@ be it by inserting a new bean, overriding another, or adding a decorator.
 makeServer :: Logger -> Repository -> Server
 ```
 
-Where `Logger`, `Repository` and `Server` are records-of-functions. `Server` is
+Where `Logger`, `Repository` and `Server` are [records-of-functions](https://www.iankduncan.com/articles/2024-01-26-records-of-effects). `Server` is
 the component produced by this constructor, and it has `Logger` and `Repository`
 as dependencies.
 
@@ -128,7 +128,7 @@ dependency injection (although of course Spring has many more features).
 First, a big *difference*: there's no analogue here of annotations, or classpath
 scanning. Beans and decorators must be explicitly registered. 
 
-- Java POJOs are Haskell records-of-functions, where the functions will usually
+- Java POJOs are Haskell [records-of-functions](https://www.iankduncan.com/articles/2024-01-26-records-of-effects), where the functions will usually
 be closures which encapsulate access to some shared internal state (state like
 configuration values, or mutable references). Functions that return
 records-of-functions correspond to POJO constructors.
