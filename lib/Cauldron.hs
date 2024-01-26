@@ -211,6 +211,17 @@ makeBean constructor = Bean {constructor, decos = mempty}
 
 -- $decos
 --
+-- Decorators are 'Constructor's which, instead constructing the original
+-- version of a bean, they modify it in some way (but without changing its
+-- type). Because they modify the bean, typically decorators will take the bean
+-- as an argument.
+--
+-- Decorators can have other dependencies beyond the modified bean.
+--
+-- When the bean is a record-of-functions, decorators can be used to
+-- add behaviors like caching, logging... to the functions.
+--
+--
 -- >>> :{
 -- newtype Foo = Foo { sayFoo :: IO () }
 -- makeFoo :: Foo
@@ -226,7 +237,7 @@ makeBean constructor = Bean {constructor, decos = mempty}
 --   let cauldron :: Cauldron IO
 --       cauldron =
 --         emptyCauldron
---         & insert @Foo 
+--         & insert @Foo
 --           Bean {
 --             constructor = pack value makeFoo,
 --             decos = fromConstructors [
@@ -245,9 +256,6 @@ makeBean constructor = Bean {constructor, decos = mempty}
 -- foo
 -- deco1 exit
 -- deco2 exit
---
-
-
 
 -- | A list of 'Constructor's for the decorators of some 'Bean'.
 --
@@ -311,7 +319,7 @@ fromConstructors cons = Decos do Seq.fromList cons
 --
 -- The bean-producing or bean-decorating functions that we want to wire need to be
 -- coaxed into a 'Constructor' value before creating a 'Bean' recipe and adding it to the 'Cauldron'.
---  
+--
 -- If your aren't dealing with secondary beans, don't sweat it: use @pack value@ for pure
 -- constructors functions and @pack effect@ for effectful ones. That should be enough.
 
@@ -890,7 +898,6 @@ argsN = Args . multiuncurry
 --   pure do taste @C beans
 -- :}
 -- Just (C (Sum {getSum = 3}))
---
 
 -- | Auxiliary type which contains a primary bean along with zero or more
 -- secondary beans. The secondary beans must have
@@ -942,6 +949,15 @@ value = Packer \bean -> pure do regs0 bean
 effect :: (Applicative m) => Packer m '[] bean (m bean)
 effect = Packer \action -> do fmap regs0 action
 
+-- |
+-- >>> :{
+-- data A = A deriving Show
+-- data B = B deriving Show
+-- makeB :: A -> (Sum Int, B)
+-- makeB = \_ -> (Sum 1, B)
+-- constructorB :: Constructor IO B
+-- constructorB = pack (valueWith \(s,bean) -> regs1 s bean) makeB
+-- :}
 valueWith ::
   (Applicative m, All (Typeable `And` Monoid) regs) =>
   -- | Massage the pure value at the tip of the constructor into a 'Regs'.
@@ -949,6 +965,15 @@ valueWith ::
   Packer m regs bean r
 valueWith f = Packer do pure . f
 
+-- |
+-- >>> :{
+-- data A = A deriving Show
+-- data B = B deriving Show
+-- makeB :: A -> IO (Sum Int, B)
+-- makeB = \_ -> pure (Sum 1, B)
+-- constructorB :: Constructor IO B
+-- constructorB = pack (effectWith \(s,bean) -> regs1 s bean) makeB
+-- :}
 effectWith ::
   (Applicative m, All (Typeable `And` Monoid) regs) =>
   -- | Massage the value returned by the action at the tip of the constructor into a 'Regs'.
@@ -959,7 +984,21 @@ effectWith f = Packer do fmap f
 -- | Take a curried function that constructs a bean, uncurry it recursively and
 -- then apply a 'Packer' to its tip, resulting in a 'Constructor'.
 --
--- There are 'pack0', 'pack1'... functions which work for specific number of arguments, but 
+-- >>> :{
+-- data A = A deriving Show
+-- data B = B deriving Show
+-- data C = C deriving Show
+-- makeB :: A -> B
+-- makeB = \_ -> B
+-- makeC :: A -> B -> IO C
+-- makeC = \_ _ -> pure C
+-- constructorB :: Constructor IO B
+-- constructorB = pack value makeB
+-- constructorC :: Constructor IO C
+-- constructorC = pack effect makeC
+-- :}
+--
+-- There are 'pack0', 'pack1'... functions which work for specific number of arguments, but
 -- the generic 'pack' should work in most cases anyway.
 pack ::
   forall (args :: [Type]) r curried regs bean m.
