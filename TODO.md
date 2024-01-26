@@ -1,2 +1,0 @@
-- add doctests
-- move Managed to a separate module
