@@ -112,7 +112,9 @@ cauldron =
     & insert @(Initializer, Repository M) do makeBean do pack value do \a b -> (a, b)
 
 cauldronMissingDep :: Cauldron M
-cauldronMissingDep = delete @(Logger M) cauldron
+cauldronMissingDep = 
+  cauldron 
+  & delete @(Logger M)
 
 cauldronDoubleDutyBean :: Cauldron M
 cauldronDoubleDutyBean =
@@ -216,7 +218,9 @@ tests =
         pure (),
       testCase "cauldron missing dep" do
         case cook' cauldronMissingDep of
-          Left (MissingDependencies {}) -> pure ()
+          Left (MissingDependencies [] missingMap) 
+            | Map.size missingMap == 1 -> pure ()
+            | otherwise -> assertFailure "missing dependency error has too many entries"
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do

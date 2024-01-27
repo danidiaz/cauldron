@@ -1,5 +1,9 @@
 # Revision history for cauldron
 
+## 0.3.1.0 
+
+* Now the `MissingDependencies` only includes keys with actual missing dependencies.
+
 ## 0.3.0.0 
 
 * Add `cookNonEmpty` and `cookTree` for cooking hierarchies of 'Cauldron's.

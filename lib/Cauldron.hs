@@ -604,9 +604,13 @@ checkMissingDepsCauldron ::
   Cauldron m ->
   Either (Map TypeRep (Set TypeRep)) ()
 checkMissingDepsCauldron accums available Cauldron {recipes} = do
-  let demandedMap = Set.filter (`Set.notMember` available) . demanded <$> recipes
-  if Data.Foldable.any (not . Set.null) demandedMap
-    then Left demandedMap
+  let missingMap = (`Map.mapMaybe` recipes) \someBean -> do
+        let missing = Set.filter (`Set.notMember` available) do demanded someBean
+        if Set.null missing
+          then Nothing
+          else Just missing
+  if not (Map.null missingMap)
+    then Left missingMap
     else Right ()
   where
     demanded :: SomeBean m -> Set TypeRep
