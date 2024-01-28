@@ -160,3 +160,6 @@ Some features I haven't been able to mimic yet:
 # See also
 
 - [registry](https://hackage.haskell.org/package/registry) is a more mature and useable library for dependency injection in Haskell.
+
+- [di library for Python](https://python-dependency-injector.ets-labs.org/). [tweet](https://twitter.com/mr_le_fox/status/1754132600459784364).
+
