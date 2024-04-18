@@ -117,13 +117,13 @@ module Cauldron
 
     -- ** Drawing deps
     DependencyGraph,
+    exportToDot,
+    defaultStepToText,
+    BeanConstructionStep (..),
     removeSecondaryBeans,
     removeDecos,
     collapsePrimaryBeans,
-    exportToDot,
-    defaultStepToText,
     toAdjacencyMap,
-    BeanConstructionStep (..),
   )
 where
 
@@ -481,11 +481,11 @@ constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean
 
 type Plan = [BeanConstructionStep]
 
--- | A step in building a bean value.
+-- | A step in the construction of a bean value.
 data BeanConstructionStep
   = -- | Undecorated bean.
     BarePrimaryBean TypeRep
-  | -- | Apply a decorator. Comes after the 'BarePrimaryBean' and any 'PrimaryBeanDeco's wrapped by the current decorator.
+  | -- | Apply the decorator with the given index. Comes after the 'BarePrimaryBean' and all 'PrimaryBeanDeco's with a lower index value.
     PrimaryBeanDeco TypeRep Int
   | -- | Final, fully decorated version of a bean. If there are no decorators, comes directly after 'BarePrimaryBean'.
     PrimaryBean TypeRep
@@ -810,7 +810,7 @@ removeDecos :: DependencyGraph -> DependencyGraph
 removeDecos DependencyGraph {graph} =
   DependencyGraph {graph = Graph.induce (\case PrimaryBeanDeco {} -> False; _ -> True) graph}
 
--- Unifies 'PrimaryBean's with their respective 'BarePrimaryBean's and 'PrimaryBeanDeco's.
+-- | Unifies 'PrimaryBean's with their respective 'BarePrimaryBean's and 'PrimaryBeanDeco's.
 --
 -- Also removes any self-loops.
 collapsePrimaryBeans :: DependencyGraph -> DependencyGraph
