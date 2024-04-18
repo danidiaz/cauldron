@@ -228,11 +228,11 @@ main = do
     Left badBeans -> do
       print badBeans
     Right (depGraph, action) -> do
-      exportToDot "beans.dot" depGraph
-      exportToDot "beans-no-agg.dot" do removeSecondaryBeans do depGraph
-      exportToDot "beans-no-agg-no-decos.dot" do removeDecos do removeSecondaryBeans do depGraph
-      exportToDot "beans-simple.dot" do collapsePrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
-      exportToDot "beans-simple-with-decos.dot" do collapsePrimaryBeans do removeSecondaryBeans do depGraph
+      exportToDot defaultStepToText "beans.dot" depGraph
+      exportToDot defaultStepToText "beans-no-agg.dot" do removeSecondaryBeans do depGraph
+      exportToDot defaultStepToText "beans-no-agg-no-decos.dot" do removeDecos do removeSecondaryBeans do depGraph
+      exportToDot defaultStepToText "beans-simple.dot" do collapsePrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
+      exportToDot defaultStepToText "beans-simple-with-decos.dot" do collapsePrimaryBeans do removeSecondaryBeans do depGraph
       (Initializer {runInitializer}, Inspector {inspect}, z) <- action
       inspection <- inspect
       print inspection

@@ -121,6 +121,7 @@ module Cauldron
     removeDecos,
     collapsePrimaryBeans,
     exportToDot,
+    defaultStepToText,
     toAdjacencyMap,
     BeanConstructionStep (..),
   )
@@ -835,20 +836,22 @@ collapsePrimaryBeans DependencyGraph {graph} = do
   DependencyGraph {graph = Graph.vertices vertices `Graph.overlay` Graph.edges edgesWithoutSelfLoops}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
-exportToDot :: FilePath -> DependencyGraph -> IO ()
-exportToDot filepath DependencyGraph {graph} = do
-  let prettyRep =
-        let p rep = Data.Text.pack do tyConName do typeRepTyCon rep
-         in \case
-              BarePrimaryBean rep -> p rep <> Data.Text.pack "#bare"
-              PrimaryBeanDeco rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
-              PrimaryBean rep -> p rep
-              SecondaryBean rep -> p rep <> Data.Text.pack "#sec"
-      dot =
+exportToDot :: (BeanConstructionStep -> Data.Text.Text) -> FilePath -> DependencyGraph -> IO ()
+exportToDot prettyRep filepath DependencyGraph {graph} = do
+  let dot =
         Dot.export
           do Dot.defaultStyle prettyRep
           graph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
+
+defaultStepToText :: BeanConstructionStep -> Data.Text.Text
+defaultStepToText =
+  let p rep = Data.Text.pack do show rep
+   in \case
+        BarePrimaryBean rep -> p rep <> Data.Text.pack "#bare"
+        PrimaryBeanDeco rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
+        PrimaryBean rep -> p rep
+        SecondaryBean rep -> p rep <> Data.Text.pack "#sec"
 
 newtype Args args r = Args {runArgs :: NP I args -> r}
   deriving newtype (Functor, Applicative, Monad)

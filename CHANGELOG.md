@@ -1,5 +1,9 @@
 # Revision history for cauldron
 
+## 0.4.0.0
+
+* `exportToDot` takes a new parameter to configure how to print the steps. Before, only the TyCon was printed. Now, the full type is printed by default.
+
 ## 0.3.1.0 
 
 * Now the `MissingDependencies` only includes keys with actual missing dependencies.

@@ -153,13 +153,14 @@ records-of-functions correspond to POJO constructors.
 
 - [injecting all the beans that implement a certain interface as a list](https://twitter.com/NiestrojRobert/status/1746808940435042410) roughly corresponds to a constructor that takes a monoidally aggregated "secondary bean" as an argument. 
 
-Some features I haven't been able to mimic yet:
+Some features I'm not yet sure how to mimic:
 
-- [bean scopes](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html), like [request scope](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html#beans-factory-scopes-other-injection). [This Stack Overflow post](https://stackoverflow.com/a/77174979/1364288) about how they are implemented in Spring might be useful.
+- [bean scopes](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html), like [request scope](https://docs.spring.io/spring-framework/reference/core/beans/factory-scopes.html#beans-factory-scopes-other-injection). [This Stack Overflow post](https://stackoverflow.com/a/77174979/1364288) gives some information about how they are implemented in Spring.
+
+  The SO post explains that in Spring the injection of request scoped beans into long-lived beans involves thread-local variables. I explored such a technique for Cauldron [here](https://discourse.haskell.org/t/i-got-rid-of-readert-and-now-my-application-is-hanging-by-a-thread/9330).
 
 # See also
 
-- [registry](https://hackage.haskell.org/package/registry) is a more mature and useable library for dependency injection in Haskell.
+- [registry](https://hackage.haskell.org/package/registry) is a more mature and useable library for dependency injection in Haskell. See [this explanatory video](https://www.youtube.com/watch?v=fFCcvsbCrH8).
 
 - [di library for Python](https://python-dependency-injector.ets-labs.org/). [tweet](https://twitter.com/mr_le_fox/status/1754132600459784364).
-
