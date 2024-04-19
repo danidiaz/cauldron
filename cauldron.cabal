@@ -17,40 +17,40 @@ source-repository    head
     type:     git
     location: https://github.com/danidiaz/cauldron.git
 
-common common
+common common-base
     build-depends:
         base >= 4.18.0 && < 5,
     ghc-options: -Wall
     default-language: GHC2021
 
+common common-lib
+    import: common-base
+    build-depends:
+      containers >= 0.5.0 && < 0.8,
+      text >= 2.0 && < 2.2,
+
 common common-tests
-    import: common
+    import: common-lib
     build-depends:
       tasty           ^>= 1.5,
       tasty-hunit     ^>= 0.10,
-      containers >= 0.5.0 && < 0.7,
-      text >= 2.0 && < 2.2,
       transformers >= 0.5 && < 0.7,
       cauldron,
-    ghc-options: -Wall
-    default-language: GHC2021
 
 library
-    import:           common
-    exposed-modules:  
-        Cauldron
-        Cauldron.Managed
+    import:           common-lib
     build-depends:
         algebraic-graphs ^>= 0.7,
         multicurryable ^>= 0.1.1.0,
-        containers >= 0.5.0 && < 0.7,
         bytestring >= 0.10.0 && < 0.13,
         sop-core >= 0.5.0 && < 0.6,
-        text >= 2.0 && < 2.2,
     hs-source-dirs:   lib
+    exposed-modules:  
+        Cauldron
+        Cauldron.Managed
 
 executable cauldron-example-wiring
-    import:           common
+    import:           common-base
     main-is:          Main.hs
     build-depends:
         cauldron,
