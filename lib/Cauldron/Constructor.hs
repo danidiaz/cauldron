@@ -14,16 +14,18 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
+
 -- {-# LANGUAGE TypeAbstractions #-}
 
-module Cauldron.Constructor (
-    Constructor,
+module Cauldron.Constructor
+  ( Constructor,
     arg,
     Beans,
     taste,
     fromDynList,
     toDynMap,
-) where
+  )
+where
 
 import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
@@ -58,46 +60,45 @@ import Data.Type.Equality (testEquality)
 import Data.Typeable
 import GHC.Exts (IsList (..))
 import Multicurryable
-import Type.Reflection (eqTypeRep, SomeTypeRep(..))
+import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
 
+data Constructor a = Constructor
+  { runConstructor :: [Beans] -> Either TypeRep a
+  }
+  deriving (Functor)
 
-data Constructor a = Constructor {
-        runConstructor :: NonEmpty Beans -> Either TypeRep a
-    }
-    deriving Functor
+arg :: forall a. (Typeable a) => Constructor a
+arg =
+  let tr = Type.Reflection.typeRep @a
+      runConstructor bss =
+        case asum do taste <$> bss of
+          Just v -> Right v
+          Nothing -> Left (SomeTypeRep tr)
+   in Constructor {runConstructor}
 
-arg :: forall a . Typeable a => Constructor a
-arg = 
-    let tr = Type.Reflection.typeRep @a
-        runConstructor bss =
-            case asum do taste <$> bss of
-                Just v -> Right v
-                Nothing -> Left (SomeTypeRep tr)
-     in Constructor { runConstructor }
-    
-taste :: forall a . Typeable a => Beans -> Maybe a
-taste Beans { beanMap } = 
-    let tr = Type.Reflection.typeRep @a
-     in case Map.lookup (SomeTypeRep tr) beanMap of
-                        Just (Dynamic tr' v) | Just HRefl <- tr `eqTypeRep` tr' -> Just v
-                        _ -> Nothing
+taste :: forall a. (Typeable a) => Beans -> Maybe a
+taste Beans {beanMap} =
+  let tr = Type.Reflection.typeRep @a
+   in case Map.lookup (SomeTypeRep tr) beanMap of
+        Just (Dynamic tr' v) | Just HRefl <- tr `eqTypeRep` tr' -> Just v
+        _ -> Nothing
 
 instance Applicative Constructor where
-    pure a = Constructor do pure do pure a
-    Constructor f <*> Constructor a =
-        Constructor do \beans -> f beans <*> a beans
+  pure a = Constructor do pure do pure a
+  Constructor f <*> Constructor a =
+    Constructor do \beans -> f beans <*> a beans
 
-newtype Beans = Beans { beanMap :: Map TypeRep Dynamic }
+newtype Beans = Beans {beanMap :: Map TypeRep Dynamic}
 
 instance Semigroup Beans where
   Beans {beanMap = r1} <> Beans {beanMap = r2} = Beans do Map.unionWith (flip const) r1 r2
 
 instance Monoid Beans where
-    mempty = Beans mempty
+  mempty = Beans mempty
 
-fromDynList :: [ Dynamic ] -> Beans
+fromDynList :: [Dynamic] -> Beans
 fromDynList ds = Beans do Map.fromList do ds <&> \d -> (dynTypeRep d, d)
-    
+
 toDynMap :: Beans -> Map TypeRep Dynamic
-toDynMap Beans { beanMap } =  beanMap
+toDynMap Beans {beanMap} = beanMap
