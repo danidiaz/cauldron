@@ -47,6 +47,7 @@ library
     hs-source-dirs:   lib
     exposed-modules:  
         Cauldron
+        Cauldron.Constructor
         Cauldron.Managed
 
 executable cauldron-example-wiring
