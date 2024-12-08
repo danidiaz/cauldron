@@ -59,23 +59,27 @@ import Data.Tree
 import Data.Type.Equality (testEquality)
 import Data.Typeable
 import GHC.Exts (IsList (..))
+import GHC.IsList
 import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
 
 data Constructor a = Constructor
-  { runConstructor :: [Beans] -> Either TypeRep a
+  { argReps :: Set TypeRep,
+    runConstructor :: [Beans] -> Either TypeRep a
   }
   deriving (Functor)
 
 arg :: forall a. (Typeable a) => Constructor a
 arg =
-  let tr = Type.Reflection.typeRep @a
-      runConstructor bss =
-        case asum do taste <$> bss of
-          Just v -> Right v
-          Nothing -> Left (SomeTypeRep tr)
-   in Constructor {runConstructor}
+  let tr = typeRep (Proxy @a)
+   in Constructor
+        { argReps = Set.singleton tr,
+          runConstructor = \bss ->
+            case asum do taste <$> bss of
+              Just v -> Right v
+              Nothing -> Left tr
+        }
 
 taste :: forall a. (Typeable a) => Beans -> Maybe a
 taste Beans {beanMap} =
@@ -85,9 +89,23 @@ taste Beans {beanMap} =
         _ -> Nothing
 
 instance Applicative Constructor where
-  pure a = Constructor do pure do pure a
-  Constructor f <*> Constructor a =
-    Constructor do \beans -> f beans <*> a beans
+  pure a =
+    Constructor
+      { argReps = Set.empty,
+        runConstructor = pure do pure a
+      }
+  Constructor
+    { argReps = argReps1,
+      runConstructor = f
+    }
+    <*> Constructor
+      { argReps = argReps2,
+        runConstructor = a
+      } =
+      Constructor
+        { argReps = argReps1 `Set.union` argReps2,
+          runConstructor = \beans -> f beans <*> a beans
+        }
 
 newtype Beans = Beans {beanMap :: Map TypeRep Dynamic}
 
@@ -96,6 +114,11 @@ instance Semigroup Beans where
 
 instance Monoid Beans where
   mempty = Beans mempty
+
+instance IsList Beans where
+  type Item Beans = Dynamic
+  toList (Beans {beanMap}) = Map.elems beanMap
+  fromList = fromDynList
 
 fromDynList :: [Dynamic] -> Beans
 fromDynList ds = Beans do Map.fromList do ds <&> \d -> (dynTypeRep d, d)
