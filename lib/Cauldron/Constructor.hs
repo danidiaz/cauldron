@@ -13,17 +13,23 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE NoFieldSelectors #-}
 
 -- {-# LANGUAGE TypeAbstractions #-}
 
 module Cauldron.Constructor
   ( Constructor,
+    argReps,
+    regReps,
+    runConstructor,
     arg,
+    reg,
     Beans,
     taste,
     fromDynList,
     toDynMap,
+    Regs,
+    runRegs,
+    SomeMonoidTypeRep (..),
   )
 where
 
@@ -66,6 +72,7 @@ import Type.Reflection qualified
 
 data Constructor a = Constructor
   { argReps :: Set TypeRep,
+    regReps :: Set SomeMonoidTypeRep,
     runConstructor :: [Beans] -> Either TypeRep a
   }
   deriving (Functor)
@@ -75,10 +82,21 @@ arg =
   let tr = typeRep (Proxy @a)
    in Constructor
         { argReps = Set.singleton tr,
+          regReps = Set.empty,
           runConstructor = \bss ->
             case asum do taste <$> bss of
               Just v -> Right v
               Nothing -> Left tr
+        }
+
+reg :: forall a. (Typeable a, Monoid a) => Constructor (a -> Regs ())
+reg =
+  let tr = SomeMonoidTypeRep (Type.Reflection.typeRep @a)
+   in Constructor
+        { argReps = Set.empty,
+          regReps = Set.singleton tr,
+          runConstructor = pure $ pure \a ->
+            Regs (Map.singleton tr (toDyn a)) ()
         }
 
 taste :: forall a. (Typeable a) => Beans -> Maybe a
@@ -92,18 +110,22 @@ instance Applicative Constructor where
   pure a =
     Constructor
       { argReps = Set.empty,
+        regReps = Set.empty,
         runConstructor = pure do pure a
       }
   Constructor
     { argReps = argReps1,
+      regReps = regReps1,
       runConstructor = f
     }
     <*> Constructor
       { argReps = argReps2,
+        regReps = regReps2,
         runConstructor = a
       } =
       Constructor
         { argReps = argReps1 `Set.union` argReps2,
+          regReps = regReps1 `Set.union` regReps2,
           runConstructor = \beans -> f beans <*> a beans
         }
 
@@ -125,3 +147,47 @@ fromDynList ds = Beans do Map.fromList do ds <&> \d -> (dynTypeRep d, d)
 
 toDynMap :: Beans -> Map TypeRep Dynamic
 toDynMap Beans {beanMap} = beanMap
+
+--
+data SomeMonoidTypeRep where
+  SomeMonoidTypeRep ::
+    forall a.
+    (Typeable a, Monoid a) =>
+    Type.Reflection.TypeRep a ->
+    SomeMonoidTypeRep
+
+instance Show SomeMonoidTypeRep where
+  show (SomeMonoidTypeRep tr) = show tr
+
+instance Eq SomeMonoidTypeRep where
+  (SomeMonoidTypeRep tr1) == (SomeMonoidTypeRep tr2) =
+    (SomeTypeRep tr1) == (SomeTypeRep tr2)
+
+instance Ord SomeMonoidTypeRep where
+  (SomeMonoidTypeRep tr1) `compare` (SomeMonoidTypeRep tr2) =
+    (SomeTypeRep tr1) `compare` (SomeTypeRep tr2)
+
+-- | Unrestricted building SHOULD NOT be public!
+data Regs a = Regs (Map SomeMonoidTypeRep Dynamic) a
+  deriving (Functor)
+
+instance Applicative Regs where
+  pure a = Regs Map.empty a
+  Regs w1 f <*> Regs w2 a2 =
+    Regs (Map.unionWithKey combineMonoidRegs w1 w2) (f a2)
+
+instance Monad Regs where
+  (Regs w1 a) >>= k =
+    let Regs w2 r = k a
+     in Regs (Map.unionWithKey combineMonoidRegs w1 w2) r
+
+combineMonoidRegs :: SomeMonoidTypeRep -> Dynamic -> Dynamic -> Dynamic
+combineMonoidRegs mtr d1 d2 = case (mtr, d1, d2) of
+  (SomeMonoidTypeRep tr, Dynamic tr1 v1, Dynamic tr2 v2)
+    | Just HRefl <- tr `eqTypeRep` tr1,
+      Just HRefl <- tr `eqTypeRep` tr2 ->
+        toDyn (v1 <> v2)
+  _ -> error "impossible"
+
+runRegs :: Regs a -> (Map SomeMonoidTypeRep Dynamic, a)
+runRegs (Regs w a) = (w, a)
