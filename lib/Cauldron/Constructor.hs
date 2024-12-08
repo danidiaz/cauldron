@@ -71,7 +71,7 @@ import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
 
 data Constructor a = Constructor
-  { argReps :: Set TypeRep,
+  { argReps :: Set SomeTypeRep,
     regReps :: Set SomeMonoidTypeRep,
     runConstructor :: [Beans] -> Either TypeRep a
   }
