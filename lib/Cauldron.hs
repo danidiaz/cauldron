@@ -79,8 +79,6 @@ module Cauldron
     allowSelfDeps,
 
     -- ** Tasting the results
-    BoiledBeans,
-    taste,
     RecipeError (..),
     PathToCauldron,
 
@@ -135,6 +133,9 @@ import GHC.Exts (IsList (..))
 import Multicurryable
 import Type.Reflection qualified
 import Cauldron.Constructor
+import Data.Semigroup qualified
+
+import Data.Function ((&))
 
 -- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
 -- 'Constructor's might have effects.
@@ -363,10 +364,17 @@ forbidDepCycles =
 constructorReps :: forall bean m . (Typeable bean) => Constructor m bean -> ConstructorReps
 constructorReps c =
   ConstructorReps
-    { beanRep = toRep (Proxy @bean),
+    { beanRep = typeRep (Proxy @bean),
       argReps = getArgReps c,
-      regReps = getRegReps c
+      regReps = 
+        c 
+        & getRegReps
+        & Set.map (\mtr@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (Type.Reflection.SomeTypeRep tr) (toDyn (someMonoidTypeRepMempty mtr)))
+        & Map.fromArgSet 
     }
+    where
+      someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
+      someMonoidTypeRepMempty (SomeMonoidTypeRep @t _) = toDyn (mempty @t)
 
 type Plan = [BeanConstructionStep]
 
@@ -630,9 +638,9 @@ followConstructor ::
   Map TypeRep Dynamic ->
   Map TypeRep Dynamic ->
   m (Map TypeRep Dynamic, bean)
-followConstructor final super = do
-  let action = runConstructor [super, final] c
-  Right (regs, bean) <- runArgs args
+followConstructor c final super = do
+  let Right action = runConstructor [super, final] c
+  (regs, bean) <- action
   pure (unionBeansMonoidally (getRegReps c) super regs, bean)
 
 newtype Extractor a where
