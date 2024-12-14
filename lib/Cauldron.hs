@@ -64,10 +64,6 @@ module Cauldron
     recipe,
     hoistRecipe,
 
-    -- ** Constructors
-    -- $constructors
-    Constructor,
-
     -- * Cooking the beans
     cook,
     cookNonEmpty,
