@@ -165,7 +165,7 @@ import Type.Reflection qualified
 -- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
 -- 'Constructor's might have effects.
 newtype Cauldron m where
-  Cauldron :: {recipes :: Map TypeRep (SomeBean m)} -> Cauldron m
+  Cauldron :: {recipes :: Map TypeRep (SomeRecipe m)} -> Cauldron m
 
 -- | Union of two 'Cauldron's, right-biased: prefers values from the /right/ cauldron when
 -- both contain the same bean. (Note that 'Data.Map.Map' is left-biased.)
@@ -180,13 +180,13 @@ emptyCauldron = mempty
 
 -- | Change the monad used by the beans in the 'Cauldron'.
 hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
-hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeBean f <$> recipes}
+hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$> recipes}
 
-data SomeBean m where
-  SomeBean :: (Typeable bean) => Recipe m bean -> SomeBean m
+data SomeRecipe m where
+  SomeRecipe :: (Typeable bean) => Recipe m bean -> SomeRecipe m
 
-hoistSomeBean :: (forall x. m x -> n x) -> SomeBean m -> SomeBean n
-hoistSomeBean f (SomeBean bean) = SomeBean do hoistBean f bean
+hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
+hoistSomeRecipe f (SomeRecipe bean) = SomeRecipe do hoistBean f bean
 
 -- | A bean recipe, to be inserted into a 'Cauldron'.
 data Recipe m bean where
@@ -367,7 +367,7 @@ insert ::
   Cauldron m
 insert aRecipe Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
-  Cauldron {recipes = Map.insert rep (SomeBean aRecipe) recipes}
+  Cauldron {recipes = Map.insert rep (SomeRecipe aRecipe) recipes}
 
 -- | Tweak an already existing 'Recipe' recipe.
 adjust ::
@@ -382,10 +382,10 @@ adjust f (Cauldron {recipes}) = do
     { recipes =
         Map.adjust
           do
-            \(SomeBean (r :: Recipe m a)) ->
+            \(SomeRecipe (r :: Recipe m a)) ->
               case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
                 Nothing -> error "should never happen"
-                Just Refl -> SomeBean (f r)
+                Just Refl -> SomeRecipe (f r)
           rep
           recipes
     }
@@ -567,8 +567,8 @@ cauldronRegs Cauldron {recipes} =
     recipes
 
 -- | Returns the accumulators, not the main bean
-recipeRegs :: SomeBean m -> Map TypeRep Dynamic
-recipeRegs (SomeBean (Recipe {constructor, decos = Decos {decoCons}})) = do
+recipeRegs :: SomeRecipe m -> Map TypeRep Dynamic
+recipeRegs (SomeRecipe (Recipe {constructor, decos = Decos {decoCons}})) = do
   let extractRegReps = (.regReps) . constructorReps
   extractRegReps constructor
     <> foldMap extractRegReps decoCons
@@ -614,8 +614,8 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
     then Left missingMap
     else Right ()
   where
-    demanded :: SomeBean m -> Set TypeRep
-    demanded (SomeBean Recipe {constructor, decos = Decos {decoCons}}) =
+    demanded :: SomeRecipe m -> Set TypeRep
+    demanded (SomeRecipe Recipe {constructor, decos = Decos {decoCons}}) =
       ( Set.fromList do
           let ConstructorReps {argReps = beanArgReps} = constructorReps constructor
           Set.toList beanArgReps ++ do
@@ -646,7 +646,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
   (flip Map.foldMapWithKey)
     recipes
     \beanRep
-     ( SomeBean
+     ( SomeRecipe
          ( Recipe
              { constructor = constructor :: Constructor m bean,
                decos = Decos {decoCons}
@@ -710,7 +710,7 @@ followPlanStep ::
 followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
   BoiledBeans <$> case item of
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipes of
-      SomeBean (Recipe {constructor}) -> do
+      SomeRecipe (Recipe {constructor}) -> do
         let ConstructorReps {beanRep} = constructorReps constructor
         -- We delete the beanRep before running the constructor,
         -- because if we have a self-dependency, we don't want to use the bean
@@ -719,7 +719,7 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
         (super', bean) <- followConstructor constructor final (Map.delete beanRep super)
         pure do Map.insert beanRep (toDyn bean) super'
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
-      SomeBean (Recipe {decos = Decos {decoCons}}) -> do
+      SomeRecipe (Recipe {decos = Decos {decoCons}}) -> do
         let decoCon = fromJust do Seq.lookup index decoCons
         let ConstructorReps {beanRep} = constructorReps decoCon
         -- Unlike before, we don't delete the beanRep before running the constructor.
