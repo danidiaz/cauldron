@@ -137,7 +137,7 @@ cauldronNonEmpty =
       mempty
         & insert @(Repository M) do recipe do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
         & insert @(Weird M)
-          Bean
+          Recipe
             { constructor = pack effect makeSelfInvokingWeird,
               decos =
                 fromConstructors

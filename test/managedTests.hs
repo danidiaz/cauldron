@@ -76,7 +76,7 @@ managedCauldron ref =
   emptyCauldron
     & insert @(Logger IO) do recipe do pack effect do managed (makeLogger ref)
     & insert @(Weird IO)
-      Bean
+      Recipe
         { constructor = pack effect do \logger self -> managed (makeSelfInvokingWeird ref logger self),
           decos =
             fromConstructors
