@@ -189,12 +189,12 @@ coolWiring :: Fire IO -> Either BadBeans (DependencyGraph, IO (Initializer, Insp
 coolWiring fire = do
   let cauldron :: Cauldron IO =
         mempty
-          & insert @A do makeBean do pack value makeA
-          & insert @B do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
-          & insert @C do makeBean do pack value makeC
-          & insert @D do makeBean do pack value makeD
-          & insert @E do makeBean do pack value makeE
-          & insert @F do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
+          & insert @A do recipe do pack value makeA
+          & insert @B do recipe do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
+          & insert @C do recipe do pack value makeC
+          & insert @D do recipe do pack value makeD
+          & insert @E do recipe do pack value makeE
+          & insert @F do recipe do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
           & insert @G do
             Bean
               { constructor = pack value makeG,
@@ -203,7 +203,7 @@ coolWiring fire = do
                     [ pack value makeGDeco1
                     ]
               }
-          & insert @H do makeBean do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
+          & insert @H do recipe do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z do
             Bean
               { constructor = pack value makeZ,
@@ -213,7 +213,7 @@ coolWiring fire = do
                       pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
                     ]
               }
-          & insert @(Initializer, Inspector, Z) do makeBean do pack value \a b c -> (a, b, c)
+          & insert @(Initializer, Inspector, Z) do recipe do pack value \a b c -> (a, b, c)
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
 main :: IO ()

@@ -107,9 +107,9 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 cauldron :: Cauldron M
 cauldron =
   mempty
-    & insert @(Logger M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
-    & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Initializer, Repository M) do makeBean do pack value do \a b -> (a, b)
+    & insert @(Logger M) do recipe do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
+    & insert @(Repository M) do recipe do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+    & insert @(Initializer, Repository M) do recipe do pack value do \a b -> (a, b)
 
 cauldronMissingDep :: Cauldron M
 cauldronMissingDep =
@@ -119,12 +119,12 @@ cauldronMissingDep =
 cauldronDoubleDutyBean :: Cauldron M
 cauldronDoubleDutyBean =
   cauldron
-    & insert @Initializer do makeBean do pack value do do (Initializer (pure ()))
+    & insert @Initializer do recipe do pack value do do (Initializer (pure ()))
 
 cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
-    & insert @(Logger M) do makeBean do pack (Packer do fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
+    & insert @(Logger M) do recipe do pack (Packer do fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty =
@@ -132,10 +132,10 @@ cauldronNonEmpty =
     [ mempty
         & do
           let packer = Packer do fmap (\(reg, bean) -> regs1 reg bean)
-          insert @(Logger M) do makeBean do pack packer do makeLogger
-        & insert @(Weird M) do makeBean do pack effect makeWeird,
+          insert @(Logger M) do recipe do pack packer do makeLogger
+        & insert @(Weird M) do recipe do pack effect makeWeird,
       mempty
-        & insert @(Repository M) do makeBean do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
+        & insert @(Repository M) do recipe do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
         & insert @(Weird M)
           Bean
             { constructor = pack effect makeSelfInvokingWeird,
@@ -145,11 +145,11 @@ cauldronNonEmpty =
                     pack value do weirdDeco "outer"
                   ]
             }
-        & insert @(Initializer, Repository M, Weird M) do makeBean do pack value do \a b c -> (a, b, c)
+        & insert @(Initializer, Repository M, Weird M) do recipe do pack value do \a b c -> (a, b, c)
     ]
 
 cauldronLonely :: Cauldron M
-cauldronLonely = emptyCauldron & insert @(Lonely M) do makeBean do pack0 value makeLonely
+cauldronLonely = emptyCauldron & insert @(Lonely M) do recipe do pack0 value makeLonely
 
 tests :: TestTree
 tests =

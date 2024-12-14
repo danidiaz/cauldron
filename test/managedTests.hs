@@ -74,7 +74,7 @@ makeWithWrapperWithMessage ref inMsg outMsg v handler = do
 managedCauldron :: IORef [Text] -> Cauldron Managed
 managedCauldron ref =
   emptyCauldron
-    & insert @(Logger IO) do makeBean do pack effect do managed (makeLogger ref)
+    & insert @(Logger IO) do recipe do pack effect do managed (makeLogger ref)
     & insert @(Weird IO)
       Bean
         { constructor = pack effect do \logger self -> managed (makeSelfInvokingWeird ref logger self),
@@ -83,7 +83,7 @@ managedCauldron ref =
               [ pack value makeWeirdDecorator
               ]
         }
-    & insert @(Logger IO, Weird IO) do makeBean do pack value do (,)
+    & insert @(Logger IO, Weird IO) do recipe do pack value do (,)
 
 tests :: TestTree
 tests =

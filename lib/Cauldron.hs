@@ -42,9 +42,9 @@
 --   let cauldron :: Cauldron IO
 --       cauldron =
 --         emptyCauldron
---         & insert @A do makeBean do pack value makeA
---         & insert @B do makeBean do pack value makeB
---         & insert @C do makeBean do pack effect makeC
+--         & insert @A do recipe do pack value makeA
+--         & insert @B do recipe do pack value makeB
+--         & insert @C do recipe do pack effect makeC
 --       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
 --   beans <- action
 --   pure do taste @C beans
@@ -61,7 +61,7 @@ module Cauldron
 
     -- * Beans
     Bean (..),
-    makeBean,
+    recipe,
     setConstructor,
     setDecos,
     overDecos,
@@ -207,8 +207,8 @@ hoistBean f (Bean {constructor, decos}) =
     }
 
 -- | A 'Bean' without decorators, having only the main constructor.
-makeBean :: Constructor m a -> Bean m a
-makeBean constructor = Bean {constructor, decos = mempty}
+recipe :: Constructor m a -> Bean m a
+recipe constructor = Bean {constructor, decos = mempty}
 
 -- $decos
 --
@@ -365,9 +365,9 @@ insert ::
   Bean m bean ->
   Cauldron m ->
   Cauldron m
-insert recipe Cauldron {recipes} = do
+insert aRecipe Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
-  Cauldron {recipes = Map.insert rep (SomeBean recipe) recipes}
+  Cauldron {recipes = Map.insert rep (SomeBean aRecipe) recipes}
 
 -- | Tweak an already existing 'Bean' recipe.
 adjust ::
@@ -563,7 +563,7 @@ cauldronTreeRegs = foldMap cauldronRegs
 cauldronRegs :: Cauldron m -> (Map TypeRep Dynamic, Set TypeRep)
 cauldronRegs Cauldron {recipes} =
   Map.foldMapWithKey
-    do \rep recipe -> (recipeRegs recipe, Set.singleton rep)
+    do \rep aRecipe -> (recipeRegs aRecipe, Set.singleton rep)
     recipes
 
 -- | Returns the accumulators, not the main bean
@@ -897,9 +897,9 @@ argsN = Args . multiuncurry
 --   let cauldron :: Cauldron IO
 --       cauldron =
 --         emptyCauldron
---         & insert @A do makeBean do pack (valueWith \(s, a) -> regs1 s a) makeA
---         & insert @B do makeBean do pack (effectWith \(s, b) -> regs1 s b) makeB
---         & insert @C do makeBean do pack value makeC
+--         & insert @A do recipe do pack (valueWith \(s, a) -> regs1 s a) makeA
+--         & insert @B do recipe do pack (effectWith \(s, b) -> regs1 s b) makeB
+--         & insert @C do recipe do pack value makeC
 --       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
 --   beans <- action
 --   pure do taste @C beans
