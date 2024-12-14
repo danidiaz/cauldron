@@ -630,14 +630,10 @@ followConstructor ::
   Map TypeRep Dynamic ->
   Map TypeRep Dynamic ->
   m (Map TypeRep Dynamic, bean)
-followConstructor Constructor {constructor_ = Args {runArgs}} final super = do
-  let Extractor {runExtractor} = sequence_NP do cpure_NP (Proxy @Typeable) makeExtractor
-      args = runExtractor final super
-  results <- runArgs args
-  case results of
-    Regs regs bean -> do
-      let inserters = cfoldMap_NP (Proxy @(Typeable `And` Monoid)) makeRegInserter regs
-      pure (appEndo inserters super, bean)
+followConstructor final super = do
+  let action = runConstructor [super, final] c
+  Right (regs, bean) <- runArgs args
+  pure (unionBeansMonoidally (getRegReps c) super regs, bean)
 
 newtype Extractor a where
   Extractor :: {runExtractor :: Map TypeRep Dynamic -> Map TypeRep Dynamic -> a} -> Extractor a

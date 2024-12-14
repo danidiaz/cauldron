@@ -36,6 +36,7 @@ module Cauldron.Constructor
     taste,
     fromDynList,
     toDynMap,
+    unionBeansMonoidally,
     SomeMonoidTypeRep (..),
   )
 where
@@ -76,6 +77,8 @@ import GHC.IsList
 import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
+import Data.Semigroup qualified
+import Data.Function ((&))
 
 newtype Constructor m a = Constructor (Args (m (Regs a)))
   deriving (Functor)
@@ -250,3 +253,18 @@ fillArgs curried =
       sequencedArgs = sequence_NP args
       _argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args 
    in uncurried <$> sequencedArgs <* Args { _argReps, _regReps = mempty, runArgs = \_ -> Right () } 
+
+unionBeansMonoidally :: Set SomeMonoidTypeRep -> Beans -> Beans -> Beans
+unionBeansMonoidally reps (Beans beans1) (Beans beans2) =
+  let d = reps 
+        & Set.map (\v@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (SomeTypeRep tr) v)
+        & Map.fromArgSet
+      combine tr d1 d2 =
+          case (Map.lookup tr d, d1, d2) of
+            (Just (SomeMonoidTypeRep tr'), Dynamic tr1 v1, Dynamic tr2 v2)
+              | Just HRefl <- tr' `eqTypeRep` tr1,
+                Just HRefl <- tr' `eqTypeRep` tr2 ->
+                  toDyn (v1 <> v2)
+            _ -> d2
+   in Beans $ Map.unionWithKey combine beans1 beans2
+
