@@ -23,6 +23,7 @@ module Cauldron.Constructor
     constructorWithRegs,
     effectfulConstructorWithRegs,
     runConstructor,
+    hoistConstructor,
     required,
     provided,
     Args,
@@ -99,6 +100,10 @@ runConstructor beans (Constructor Args {regReps, runArgs}) =
             Map.restrictKeys regBeans regReps
               `Map.union` Map.fromSet someMonoidTypeRepMempty regReps -- remember that union is left-biased!!!!
       pure (Beans $ Map.mapKeys someMonoidTypeRepToSomeTypeRep onlyStaticlyKnown, bean)
+
+-- | Change the monad in which the 'Constructor'\'s effects take place.
+hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
+hoistConstructor f (Constructor theArgs) = Constructor do fmap f theArgs
 
 required :: Constructor m a -> Set SomeTypeRep
 required (Constructor (Args {argReps})) = argReps

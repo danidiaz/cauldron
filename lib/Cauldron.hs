@@ -65,7 +65,7 @@ module Cauldron
     setConstructor,
     setDecos,
     overDecos,
-    hoistBean,
+    hoistRecipe,
 
     -- ** Decorators
     -- $decos
@@ -186,7 +186,7 @@ data SomeRecipe m where
   SomeRecipe :: (Typeable bean) => Recipe m bean -> SomeRecipe m
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
-hoistSomeRecipe f (SomeRecipe bean) = SomeRecipe do hoistBean f bean
+hoistSomeRecipe f (SomeRecipe bean) = SomeRecipe do hoistRecipe f bean
 
 -- | A bean recipe, to be inserted into a 'Cauldron'.
 data Recipe m bean where
@@ -199,8 +199,8 @@ data Recipe m bean where
     Recipe m bean
 
 -- | Change the monad used by the bean\'s 'Constructor' and its 'Decos'.
-hoistBean :: (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
-hoistBean f (Recipe {constructor, decos}) =
+hoistRecipe :: (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
+hoistRecipe f (Recipe {constructor, decos}) =
   Recipe
     { constructor = hoistConstructor f constructor,
       decos = hoistDecos f decos
