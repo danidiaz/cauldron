@@ -62,9 +62,6 @@ module Cauldron
     -- * Beans
     Recipe (..),
     recipe,
-    setConstructor,
-    setDecos,
-    overDecos,
     hoistRecipe,
 
     -- ** Decorators
@@ -282,15 +279,6 @@ emptyDecos = mempty
 -- | Change the monad used by the decorators.
 hoistDecos :: (forall x. m x -> n x) -> Decos m bean -> Decos n bean
 hoistDecos f (Decos {decoCons}) = Decos {decoCons = hoistConstructor f <$> decoCons}
-
-setConstructor :: Constructor m bean -> Recipe m bean -> Recipe m bean
-setConstructor bean (Recipe {decos}) = Recipe {bean, decos}
-
-setDecos :: Decos m bean -> Recipe m bean -> Recipe m bean
-setDecos decos (Recipe {bean}) = Recipe {bean, decos}
-
-overDecos :: (Decos m bean -> Decos m bean) -> Recipe m bean -> Recipe m bean
-overDecos f (Recipe {bean, decos}) = Recipe {bean, decos = f decos}
 
 -- | Add a new decorator that modifies the bean /after/ all existing decorators.
 --
@@ -710,13 +698,13 @@ followPlanStep ::
 followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
   BoiledBeans <$> case item of
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipes of
-      SomeRecipe (Recipe {bean}) -> do
-        let ConstructorReps {beanRep} = constructorReps bean
+      SomeRecipe (Recipe {bean = beanConstructor}) -> do
+        let ConstructorReps {beanRep} = constructorReps beanConstructor
         -- We delete the beanRep before running the bean,
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
         -- There is a test for this.
-        (super', bean) <- followConstructor bean final (Map.delete beanRep super)
+        (super', bean) <- followConstructor beanConstructor final (Map.delete beanRep super)
         pure do Map.insert beanRep (toDyn bean) super'
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
       SomeRecipe (Recipe {decos = Decos {decoCons}}) -> do
