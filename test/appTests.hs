@@ -119,7 +119,7 @@ coolWiring fire = do
           & insert @F do recipe do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
           & insert @G
             Recipe
-              { constructor = pack value do makeG,
+              { bean = pack value do makeG,
                 decos =
                   fromConstructors
                     [ pack value do makeGDeco1
@@ -128,7 +128,7 @@ coolWiring fire = do
           & insert @H do recipe do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z
             Recipe
-              { constructor = pack value do makeZ,
+              { bean = pack value do makeZ,
                 decos =
                   fromConstructors
                     [ pack value do makeZDeco1,

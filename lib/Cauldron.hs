@@ -192,7 +192,7 @@ hoistSomeRecipe f (SomeRecipe bean) = SomeRecipe do hoistRecipe f bean
 data Recipe m bean where
   Recipe ::
     { -- | How to build the bean itself.
-      constructor :: Constructor m bean,
+      bean :: Constructor m bean,
       -- | How to build the decorators that wrap the bean. There might be no decorators.
       decos :: Decos m bean
     } ->
@@ -200,15 +200,15 @@ data Recipe m bean where
 
 -- | Change the monad used by the bean\'s 'Constructor' and its 'Decos'.
 hoistRecipe :: (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
-hoistRecipe f (Recipe {constructor, decos}) =
+hoistRecipe f (Recipe {bean, decos}) =
   Recipe
-    { constructor = hoistConstructor f constructor,
+    { bean = hoistConstructor f bean,
       decos = hoistDecos f decos
     }
 
--- | A 'Recipe' without decorators, having only the main constructor.
+-- | A 'Recipe' without decorators, having only the main bean.
 recipe :: Constructor m a -> Recipe m a
-recipe constructor = Recipe {constructor, decos = mempty}
+recipe bean = Recipe {bean, decos = mempty}
 
 -- $decos
 --
@@ -240,7 +240,7 @@ recipe constructor = Recipe {constructor, decos = mempty}
 --         emptyCauldron
 --         & insert @Foo
 --           Recipe {
---             constructor = pack value makeFoo,
+--             bean = pack value makeFoo,
 --             decos = fromConstructors [
 --                  pack value makeFooDeco1,
 --                  pack effect makeFooDeco2
@@ -284,13 +284,13 @@ hoistDecos :: (forall x. m x -> n x) -> Decos m bean -> Decos n bean
 hoistDecos f (Decos {decoCons}) = Decos {decoCons = hoistConstructor f <$> decoCons}
 
 setConstructor :: Constructor m bean -> Recipe m bean -> Recipe m bean
-setConstructor constructor (Recipe {decos}) = Recipe {constructor, decos}
+setConstructor bean (Recipe {decos}) = Recipe {bean, decos}
 
 setDecos :: Decos m bean -> Recipe m bean -> Recipe m bean
-setDecos decos (Recipe {constructor}) = Recipe {constructor, decos}
+setDecos decos (Recipe {bean}) = Recipe {bean, decos}
 
 overDecos :: (Decos m bean -> Decos m bean) -> Recipe m bean -> Recipe m bean
-overDecos f (Recipe {constructor, decos}) = Recipe {constructor, decos = f decos}
+overDecos f (Recipe {bean, decos}) = Recipe {bean, decos = f decos}
 
 -- | Add a new decorator that modifies the bean /after/ all existing decorators.
 --
@@ -568,9 +568,9 @@ cauldronRegs Cauldron {recipes} =
 
 -- | Returns the accumulators, not the main bean
 recipeRegs :: SomeRecipe m -> Map TypeRep Dynamic
-recipeRegs (SomeRecipe (Recipe {constructor, decos = Decos {decoCons}})) = do
+recipeRegs (SomeRecipe (Recipe {bean, decos = Decos {decoCons}})) = do
   let extractRegReps = (.regReps) . constructorReps
-  extractRegReps constructor
+  extractRegReps bean
     <> foldMap extractRegReps decoCons
 
 checkMissingDeps ::
@@ -615,9 +615,9 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
     else Right ()
   where
     demanded :: SomeRecipe m -> Set TypeRep
-    demanded (SomeRecipe Recipe {constructor, decos = Decos {decoCons}}) =
+    demanded (SomeRecipe Recipe {bean, decos = Decos {decoCons}}) =
       ( Set.fromList do
-          let ConstructorReps {argReps = beanArgReps} = constructorReps constructor
+          let ConstructorReps {argReps = beanArgReps} = constructorReps bean
           Set.toList beanArgReps ++ do
             decoCon <- Data.Foldable.toList decoCons
             let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
@@ -648,7 +648,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
     \beanRep
      ( SomeRecipe
          ( Recipe
-             { constructor = constructor :: Constructor m bean,
+             { bean = bean :: Constructor m bean,
                decos = Decos {decoCons}
              }
            )
@@ -659,7 +659,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
               (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
               [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
             beanDeps = do
-              constructorEdges makeTargetStep bareBean (do constructorReps constructor)
+              constructorEdges makeTargetStep bareBean (do constructorReps bean)
             decoDeps = do
               (decoBean, decoCon) <- decos
               constructorEdges makeTargetStep decoBean (removeBeanFromArgs do constructorReps decoCon)
@@ -710,13 +710,13 @@ followPlanStep ::
 followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
   BoiledBeans <$> case item of
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipes of
-      SomeRecipe (Recipe {constructor}) -> do
-        let ConstructorReps {beanRep} = constructorReps constructor
-        -- We delete the beanRep before running the constructor,
+      SomeRecipe (Recipe {bean}) -> do
+        let ConstructorReps {beanRep} = constructorReps bean
+        -- We delete the beanRep before running the bean,
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
         -- There is a test for this.
-        (super', bean) <- followConstructor constructor final (Map.delete beanRep super)
+        (super', bean) <- followConstructor bean final (Map.delete beanRep super)
         pure do Map.insert beanRep (toDyn bean) super'
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
       SomeRecipe (Recipe {decos = Decos {decoCons}}) -> do
