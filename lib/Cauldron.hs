@@ -67,25 +67,6 @@ module Cauldron
     -- ** Constructors
     -- $constructors
     Constructor,
-    pack,
-    pack0,
-    pack1,
-    pack2,
-    pack3,
-    hoistConstructor,
-    Packer (..),
-    value,
-    effect,
-
-    -- *** Registering secondary beans
-    -- $registrations
-    valueWith,
-    effectWith,
-    Regs,
-    regs0,
-    regs1,
-    regs2,
-    regs3,
 
     -- * Cooking the beans
     cook,
@@ -112,6 +93,8 @@ module Cauldron
     removeDecos,
     collapsePrimaryBeans,
     toAdjacencyMap,
+    -- * Re-exported 
+    module Cauldron.Constructor
   )
 where
 
@@ -151,6 +134,7 @@ import Data.Typeable
 import GHC.Exts (IsList (..))
 import Multicurryable
 import Type.Reflection qualified
+import Cauldron.Constructor
 
 -- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
 -- 'Constructor's might have effects.
@@ -268,12 +252,6 @@ recipe bean = Recipe {bean, decos = mempty}
 -- mutable references that the bean will use internally. Sometimes the a
 -- constructor will allocate resources with bracket-like operations, and in that
 -- case a monad like 'Managed' might be needed instead.
-data Constructor m bean where
-  Constructor ::
-    (All Typeable args, All (Typeable `And` Monoid) regs) =>
-    { constructor_ :: Args args (m (Regs regs bean))
-    } ->
-    Constructor m bean
 
 data ConstructorReps where
   ConstructorReps ::
@@ -282,10 +260,6 @@ data ConstructorReps where
       regReps :: Map TypeRep Dynamic
     } ->
     ConstructorReps
-
--- | Change the monad in which the 'Constructor'\'s effects take place.
-hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
-hoistConstructor f (Constructor {constructor_}) = Constructor do fmap f constructor_
 
 -- | Put a recipe for a 'Recipe' into the 'Cauldron'.
 --
@@ -386,30 +360,13 @@ forbidDepCycles =
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 
 -- | This function DOESN'T return the bean rep itself in the argreps.
-constructorReps :: (Typeable bean) => Constructor m bean -> ConstructorReps
-constructorReps Constructor {constructor_ = (_ :: Args args (m (Regs accums bean)))} =
+constructorReps :: forall bean m . (Typeable bean) => Constructor m bean -> ConstructorReps
+constructorReps c =
   ConstructorReps
-    { beanRep,
-      argReps =
-        do
-          Set.fromList do
-            collapse_NP do
-              cpure_NP @_ @args
-                do Proxy @Typeable
-                typeRepHelper,
-      regReps =
-        Map.fromList do
-          collapse_NP do
-            cpure_NP @_ @accums
-              do Proxy @(Typeable `And` Monoid)
-              typeRepHelper'
+    { beanRep = toRep (Proxy @bean),
+      argReps = getArgReps c,
+      regReps = getRegReps c
     }
-  where
-    typeRepHelper :: forall a. (Typeable a) => K TypeRep a
-    typeRepHelper = K (typeRep (Proxy @a))
-    typeRepHelper' :: forall a. ((Typeable `And` Monoid) a) => K (TypeRep, Dynamic) a
-    typeRepHelper' = K (typeRep (Proxy @a), toDyn @a mempty)
-    beanRep = typeRep (Proxy @bean)
 
 type Plan = [BeanConstructionStep]
 
@@ -784,215 +741,6 @@ defaultStepToText =
         PrimaryBeanDeco rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
         PrimaryBean rep -> p rep
         SecondaryBean rep -> p rep <> Data.Text.pack "#sec"
-
-newtype Args args r = Args {runArgs :: NP I args -> r}
-  deriving newtype (Functor, Applicative, Monad)
-
-argsN ::
-  forall (args :: [Type]) r curried.
-  (MulticurryableF args r curried (IsFunction curried)) =>
-  curried ->
-  Args args r
-argsN = Args . multiuncurry
-
--- $registrations
---
--- 'Constructor's produce a single primary bean, but sometimes they might also
--- \"register\" a number of secondary beans.
---
--- These secondary beans
--- must have 'Monoid' instances and, unlike the primary bean, can be produced by
--- more that one 'Constructor'. Their values are aggregated across all the 'Constructor's
--- that produce them. The final aggregated value can be depended upon by other 'Constructor's
--- as if it were a normal bean.
---
--- The 'Regs' type is used to represent the main bean along with the secondary
--- beans that it registers. Because usually we'll be working with functions that
--- do not use the 'Regs' type, a 'Packer' must be used to coax the \"tip\" of
--- the constructor function into the required shape expected by 'Constructor'.
---
--- >>> :{
--- data A = A deriving Show
--- data B = B deriving Show
--- data C = C (Sum Int) deriving Show
--- makeA :: (Sum Int, A)
--- makeA = (Sum 1, A)
--- makeB :: A -> IO (Sum Int, B)
--- makeB = \_ -> pure (Sum 2, B)
--- makeC :: Sum Int -> C
--- makeC = \theSum -> C theSum
--- :}
---
---
--- >>> :{
--- do
---   let cauldron :: Cauldron IO
---       cauldron =
---         emptyCauldron
---         & insert @A do recipe do pack (valueWith \(s, a) -> regs1 s a) makeA
---         & insert @B do recipe do pack (effectWith \(s, b) -> regs1 s b) makeB
---         & insert @C do recipe do pack value makeC
---       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
---   beans <- action
---   pure do taste @C beans
--- :}
--- Just (C (Sum {getSum = 3}))
-
--- | Auxiliary type which contains a primary bean along with zero or more
--- secondary beans. The secondary beans must have
--- 'Monoid' instances.
-data Regs (regs :: [Type]) bean = Regs (NP I regs) bean
-  deriving (Functor)
-
--- | A primary @bean@ without secondary beans.
-regs0 :: bean -> Regs '[] bean
-regs0 bean = Regs Nil bean
-
--- | A primary @bean@ with one secondary bean.
-regs1 :: reg1 -> bean -> Regs '[reg1] bean
-regs1 reg1 bean = Regs (I reg1 :* Nil) bean
-
--- | A primary @bean@ with two secondary beans.
-regs2 :: reg1 -> reg2 -> bean -> Regs '[reg1, reg2] bean
-regs2 reg1 reg2 bean = Regs (I reg1 :* I reg2 :* Nil) bean
-
--- | A primary @bean@ with three secondary beans.
-regs3 :: reg1 -> reg2 -> reg3 -> bean -> Regs '[reg1, reg2, reg3] bean
-regs3 reg1 reg2 reg3 bean = Regs (I reg1 :* I reg2 :* I reg3 :* Nil) bean
-
--- | Applies a transformation to the tip of a curried function, coaxing
--- it into the shape expected by a 'Constructor', which includes information
--- about which is the primary bean and which are the secondary ones.
---
--- * For pure constructors without registrations, try 'value'.
---
--- * For effectful constructors without registrations, try 'effect'.
---
--- More complex cases might require 'valueWith', 'effectWith', or working with
--- the 'Packer' constructor itself.
-newtype Packer m regs bean r = Packer (r -> m (Regs regs bean))
-
-runPacker :: Packer m regs bean r -> r -> m (Regs regs bean)
-runPacker (Packer f) = f
-
-instance Contravariant (Packer m regs bean) where
-  contramap f (Packer p) = Packer (p . f)
-
--- | For pure constructors that return the @bean@ directly, and do not register
--- secondary beans.
-value :: (Applicative m) => Packer m '[] bean bean
-value = Packer \bean -> pure do regs0 bean
-
--- | For effectul constructors that return an @m bean@ initialization action,
--- and do not register secondary beans.
-effect :: (Applicative m) => Packer m '[] bean (m bean)
-effect = Packer \action -> do fmap regs0 action
-
--- |
--- >>> :{
--- data A = A deriving Show
--- data B = B deriving Show
--- makeB :: A -> (Sum Int, B)
--- makeB = \_ -> (Sum 1, B)
--- constructorB :: Constructor IO B
--- constructorB = pack (valueWith \(s,bean) -> regs1 s bean) makeB
--- :}
-valueWith ::
-  (Applicative m, All (Typeable `And` Monoid) regs) =>
-  -- | Massage the pure value at the tip of the constructor into a 'Regs'.
-  (r -> Regs regs bean) ->
-  Packer m regs bean r
-valueWith f = Packer do pure . f
-
--- |
--- >>> :{
--- data A = A deriving Show
--- data B = B deriving Show
--- makeB :: A -> IO (Sum Int, B)
--- makeB = \_ -> pure (Sum 1, B)
--- constructorB :: Constructor IO B
--- constructorB = pack (effectWith \(s,bean) -> regs1 s bean) makeB
--- :}
-effectWith ::
-  (Applicative m, All (Typeable `And` Monoid) regs) =>
-  -- | Massage the value returned by the action at the tip of the constructor into a 'Regs'.
-  (r -> Regs regs bean) ->
-  Packer m regs bean (m r)
-effectWith f = Packer do fmap f
-
--- | Take a curried function that constructs a bean, uncurry it recursively and
--- then apply a 'Packer' to its tip, resulting in a 'Constructor'.
---
--- >>> :{
--- data A = A deriving Show
--- data B = B deriving Show
--- data C = C deriving Show
--- makeB :: A -> B
--- makeB = \_ -> B
--- makeC :: A -> B -> IO C
--- makeC = \_ _ -> pure C
--- constructorB :: Constructor IO B
--- constructorB = pack value makeB
--- constructorC :: Constructor IO C
--- constructorC = pack effect makeC
--- :}
---
--- There are 'pack0', 'pack1'... functions which work for specific number of arguments, but
--- the generic 'pack' should work in most cases anyway.
-pack ::
-  forall (args :: [Type]) r curried regs bean m.
-  ( MulticurryableF args r curried (IsFunction curried),
-    All Typeable args,
-    All (Typeable `And` Monoid) regs
-  ) =>
-  -- | Fit the outputs of the constructor into the auxiliary 'Regs' type.
-  --
-  -- See 'regs1' and similar functions.
-  Packer m regs bean r ->
-  -- | Action returning a function ending in @r@, some datatype containing
-  -- @regs@ and @bean@ values.
-  curried ->
-  Constructor m bean
-pack packer curried = Constructor do runPacker packer <$> do argsN curried
-
--- | Slightly simpler version of 'pack' for @0@-argument functions.
-pack0 ::
-  (All (Typeable `And` Monoid) regs) =>
-  Packer m regs bean r ->
-  -- | @0@-argument constructor
-  r ->
-  Constructor m bean
-pack0 packer r = Constructor do Args @'[] \Nil -> runPacker packer r
-
--- | Slightly simpler version of 'pack' for @1@-argument functions.
-pack1 ::
-  forall arg1 r m regs bean.
-  (Typeable arg1, All (Typeable `And` Monoid) regs) =>
-  Packer m regs bean r ->
-  -- | @1@-argument constructor
-  (arg1 -> r) ->
-  Constructor m bean
-pack1 packer f = Constructor do Args @'[arg1] \(I arg1 :* Nil) -> runPacker packer (f arg1)
-
--- | Slightly simpler version of 'pack' for @2@-argument functions.
-pack2 ::
-  forall arg1 arg2 r m regs bean.
-  (Typeable arg1, Typeable arg2, All (Typeable `And` Monoid) regs) =>
-  Packer m regs bean r ->
-  -- | @2@-argument constructor
-  (arg1 -> arg2 -> r) ->
-  Constructor m bean
-pack2 packer f = Constructor do Args @[arg1, arg2] \(I arg1 :* I arg2 :* Nil) -> runPacker packer (f arg1 arg2)
-
--- | Slightly simpler version of 'pack' for @3@-argument functions.
-pack3 ::
-  forall arg1 arg2 arg3 r m regs bean.
-  (Typeable arg1, Typeable arg2, Typeable arg3, All (Typeable `And` Monoid) regs) =>
-  Packer m regs bean r ->
-  -- | @3@-argument constructor
-  (arg1 -> arg2 -> arg3 -> r) ->
-  Constructor m bean
-pack3 packer f = Constructor do Args @[arg1, arg2, arg3] \(I arg1 :* I arg2 :* I arg3 :* Nil) -> runPacker packer (f arg1 arg2 arg3)
 
 nonEmptyToTree :: NonEmpty a -> Tree a
 nonEmptyToTree = \case
