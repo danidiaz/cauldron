@@ -391,10 +391,6 @@ data BeanConstructionStep
     SecondaryBean TypeRep
   deriving stock (Show, Eq, Ord)
 
--- | The successful result of 'cook'ing a 'Cauldron'. Can't do a lot with them other than to 'taste' them.
-newtype BoiledBeans where
-  BoiledBeans :: {beans :: Map TypeRep Dynamic} -> BoiledBeans
-
 -- | Build the beans using the recipes stored in the 'Cauldron'.
 cook ::
   forall m.
