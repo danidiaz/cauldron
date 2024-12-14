@@ -16,11 +16,11 @@
 
 -- {-# LANGUAGE TypeAbstractions #-}
 
-module Cauldron.Constructor
-  ( Constructor,
+module Cauldron.Args
+  ( Args,
     argReps,
     regReps,
-    runConstructor,
+    runArgs,
     arg,
     reg,
     Beans,
@@ -70,32 +70,32 @@ import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
 
-data Constructor a = Constructor
+data Args a = Args
   { argReps :: Set SomeTypeRep,
     regReps :: Set SomeMonoidTypeRep,
-    runConstructor :: [Beans] -> Either TypeRep a
+    runArgs :: [Beans] -> Either TypeRep a
   }
   deriving (Functor)
 
-arg :: forall a. (Typeable a) => Constructor a
+arg :: forall a. (Typeable a) => Args a
 arg =
   let tr = typeRep (Proxy @a)
-   in Constructor
+   in Args
         { argReps = Set.singleton tr,
           regReps = Set.empty,
-          runConstructor = \bss ->
+          runArgs = \bss ->
             case asum do taste <$> bss of
               Just v -> Right v
               Nothing -> Left tr
         }
 
-reg :: forall a. (Typeable a, Monoid a) => Constructor (a -> Regs ())
+reg :: forall a. (Typeable a, Monoid a) => Args (a -> Regs ())
 reg =
   let tr = SomeMonoidTypeRep (Type.Reflection.typeRep @a)
-   in Constructor
+   in Args
         { argReps = Set.empty,
           regReps = Set.singleton tr,
-          runConstructor = pure $ pure \a ->
+          runArgs = pure $ pure \a ->
             Regs (Map.singleton tr (toDyn a)) ()
         }
 
@@ -106,27 +106,27 @@ taste Beans {beanMap} =
         Just (Dynamic tr' v) | Just HRefl <- tr `eqTypeRep` tr' -> Just v
         _ -> Nothing
 
-instance Applicative Constructor where
+instance Applicative Args where
   pure a =
-    Constructor
+    Args
       { argReps = Set.empty,
         regReps = Set.empty,
-        runConstructor = pure do pure a
+        runArgs = pure do pure a
       }
-  Constructor
+  Args
     { argReps = argReps1,
       regReps = regReps1,
-      runConstructor = f
+      runArgs = f
     }
-    <*> Constructor
+    <*> Args
       { argReps = argReps2,
         regReps = regReps2,
-        runConstructor = a
+        runArgs = a
       } =
-      Constructor
+      Args
         { argReps = argReps1 `Set.union` argReps2,
           regReps = regReps1 `Set.union` regReps2,
-          runConstructor = \beans -> f beans <*> a beans
+          runArgs = \beans -> f beans <*> a beans
         }
 
 newtype Beans = Beans {beanMap :: Map TypeRep Dynamic}
