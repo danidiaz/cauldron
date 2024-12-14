@@ -134,6 +134,7 @@ import Multicurryable
 import Type.Reflection qualified
 import Cauldron.Constructor
 import Data.Semigroup qualified
+import Data.Either (fromRight)
 
 import Data.Function ((&))
 
@@ -312,9 +313,9 @@ data Fire m = Fire
   { shouldOmitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
       Cauldron m ->
-      BoiledBeans ->
+      Beans ->
       Plan ->
-      m BoiledBeans
+      m Beans
   }
 
 removeBeanFromArgs :: ConstructorReps -> ConstructorReps
@@ -352,7 +353,7 @@ forbidDepCycles =
     { shouldOmitDependency = \_ -> False,
       followPlanCauldron = \cauldron initial plan ->
         Data.Foldable.foldlM
-          do followPlanStep cauldron BoiledBeans {beans = Map.empty}
+          do followPlanStep cauldron mempty
           initial
           plan
     }
@@ -400,7 +401,7 @@ cook ::
   (Monad m) =>
   Fire m ->
   Cauldron m ->
-  Either RecipeError (DependencyGraph, m BoiledBeans)
+  Either RecipeError (DependencyGraph, m Beans)
 cook fire cauldron = do
   let result = cookTree (Node (fire, cauldron) [])
   result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
@@ -415,7 +416,7 @@ cookNonEmpty ::
   forall m.
   (Monad m) =>
   NonEmpty (Fire m, Cauldron m) ->
-  Either RecipeError (NonEmpty DependencyGraph, m (NonEmpty BoiledBeans))
+  Either RecipeError (NonEmpty DependencyGraph, m (NonEmpty Beans))
 cookNonEmpty nonemptyCauldronList = do
   let result = cookTree (nonEmptyToTree nonemptyCauldronList)
   result <&> \(ng, m) -> (unsafeTreeToNonEmpty ng, unsafeTreeToNonEmpty <$> m)
@@ -430,14 +431,14 @@ cookTree ::
   forall m.
   (Monad m) =>
   Tree (Fire m, Cauldron m) ->
-  Either RecipeError (Tree DependencyGraph, m (Tree BoiledBeans))
+  Either RecipeError (Tree DependencyGraph, m (Tree Beans))
 cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
   () <- first (uncurry MissingDependencies) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans (Map.keysSet accumMap) treecipes
   Right
     ( treeplan <&> \(graph, _) -> DependencyGraph {graph},
-      followPlan (BoiledBeans accumMap) (snd <$> treeplan)
+      followPlan (fromDynList (Data.Foldable.toList accumMap)) (snd <$> treeplan)
     )
 
 checkNoDoubleDutyBeans ::
@@ -586,9 +587,9 @@ constructorEdges makeTargetStep item (ConstructorReps {argReps, regReps}) =
 
 followPlan ::
   (Monad m) =>
-  BoiledBeans ->
+  Beans ->
   (Tree (Plan, Fire m, Cauldron m)) ->
-  m (Tree BoiledBeans)
+  m (Tree Beans)
 followPlan initial treecipes =
   unfoldTreeM
     ( \(initial', Node (plan, Fire {followPlanCauldron}, cauldron) rest) -> do
@@ -600,12 +601,12 @@ followPlan initial treecipes =
 followPlanStep ::
   (Monad m) =>
   Cauldron m ->
-  BoiledBeans ->
-  BoiledBeans ->
+  Beans ->
+  Beans ->
   BeanConstructionStep ->
-  m BoiledBeans
-followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
-  BoiledBeans <$> case item of
+  m Beans
+followPlanStep Cauldron {recipes} final super item =
+  case item of
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipes of
       SomeRecipe (Recipe {bean = beanConstructor}) -> do
         let ConstructorReps {beanRep} = constructorReps beanConstructor
@@ -613,15 +614,14 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
         -- There is a test for this.
-        (super', bean) <- followConstructor beanConstructor final (Map.delete beanRep super)
-        pure do Map.insert beanRep (toDyn bean) super'
+        (super', bean) <- followConstructor beanConstructor final (deleteBean beanRep super)
+        pure do insertBean bean super'
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
       SomeRecipe (Recipe {decos}) -> do
         let decoCon = decos Data.List.!! index
-        let ConstructorReps {beanRep} = constructorReps decoCon
         -- Unlike before, we don't delete the beanRep before running the constructor.
         (super', bean) <- followConstructor decoCon final super
-        pure do Map.insert beanRep (toDyn bean) super'
+        pure do insertBean bean super'
     -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
     -- 'PrimaryBeanDeco' steps.
     PrimaryBean _ -> pure super
@@ -635,41 +635,13 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
 followConstructor ::
   (Monad m) =>
   Constructor m bean ->
-  Map TypeRep Dynamic ->
-  Map TypeRep Dynamic ->
-  m (Map TypeRep Dynamic, bean)
+  Beans ->
+  Beans ->
+  m (Beans, bean)
 followConstructor c final super = do
   let Right action = runConstructor [super, final] c
   (regs, bean) <- action
   pure (unionBeansMonoidally (getRegReps c) super regs, bean)
-
-newtype Extractor a where
-  Extractor :: {runExtractor :: Map TypeRep Dynamic -> Map TypeRep Dynamic -> a} -> Extractor a
-  deriving (Functor, Applicative) via ((->) (Map TypeRep Dynamic) `Compose` ((->) (Map TypeRep Dynamic)))
-
-makeExtractor :: forall a. (Typeable a) => Extractor a
-makeExtractor =
-  let runExtractor final super =
-        fromJust do taste' @a super <|> taste' @a final
-   in Extractor {runExtractor}
-
-makeRegInserter :: forall a. ((Typeable `And` Monoid) a) => I a -> Endo (Map TypeRep Dynamic)
-makeRegInserter (I a) =
-  let appEndo dynMap = do
-        let reg = fromJust do taste' @a dynMap
-            dyn = toDyn (reg <> a)
-        Map.insert (dynTypeRep dyn) dyn dynMap
-   in Endo {appEndo}
-
--- | Return the resulting @bean@, if present.
-taste :: forall bean. (Typeable bean) => BoiledBeans -> Maybe bean
-taste BoiledBeans {beans} = taste' beans
-
-taste' :: forall bean. (Typeable bean) => Map TypeRep Dynamic -> Maybe bean
-taste' beans = do
-  let rep = typeRep (Proxy @bean)
-  dyn <- Map.lookup rep beans
-  fromDynamic @bean dyn
 
 -- | Sometimes the 'cook'ing process goes wrong.
 data RecipeError

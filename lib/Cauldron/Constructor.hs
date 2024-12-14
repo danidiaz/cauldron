@@ -33,6 +33,9 @@ module Cauldron.Constructor
     reg,
     Regs,
     Beans,
+    insertBean,
+    deleteBean,
+    lookupBean,
     taste,
     fromDynList,
     toDynMap,
@@ -144,6 +147,17 @@ reg =
           runArgs = pure $ pure \a ->
             Regs (Map.singleton tr (toDyn a)) ()
         }
+
+insertBean :: forall bean. (Typeable bean) => bean -> Beans -> Beans
+insertBean bean Beans {beanMap} = 
+  Beans { beanMap = Map.insert (typeRep (Proxy @bean)) (toDyn bean) beanMap}
+
+deleteBean :: forall bean. (Typeable bean) => SomeTypeRep -> Beans -> Beans
+deleteBean tr Beans {beanMap} = 
+  Beans { beanMap = Map.delete tr beanMap}
+
+lookupBean :: forall a. (Typeable a) => Beans -> Maybe a
+lookupBean = taste
 
 taste :: forall a. (Typeable a) => Beans -> Maybe a
 taste Beans {beanMap} =
