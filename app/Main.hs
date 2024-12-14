@@ -199,19 +199,17 @@ coolWiring fire = do
             Recipe
               { bean = pack value makeG,
                 decos =
-                  fromConstructors
-                    [ pack value makeGDeco1
-                    ]
+                  [ pack value makeGDeco1
+                  ]
               }
           & insert @H do recipe do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
           & insert @Z do
             Recipe
               { bean = pack value makeZ,
                 decos =
-                  fromConstructors
-                    [ pack value makeZDeco1,
-                      pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
-                    ]
+                  [ pack value makeZDeco1,
+                    pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
+                  ]
               }
           & insert @(Initializer, Inspector, Z) do recipe do pack value \a b c -> (a, b, c)
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron

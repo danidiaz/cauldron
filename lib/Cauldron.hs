@@ -59,19 +59,10 @@ module Cauldron
     delete,
     hoistCauldron,
 
-    -- * Beans
+    -- * Recipes
     Recipe (..),
     recipe,
     hoistRecipe,
-
-    -- ** Decorators
-    -- $decos
-    Decos,
-    emptyDecos,
-    fromConstructors,
-    addOuter,
-    addInner,
-    hoistDecos,
 
     -- ** Constructors
     -- $constructors
@@ -132,12 +123,14 @@ import Control.Applicative
 import Control.Monad.Fix
 import Data.Bifunctor (first)
 import Data.ByteString qualified
+import Data.ByteString qualified as Data.List
 import Data.Dynamic
 import Data.Foldable qualified
 import Data.Functor (($>), (<&>))
 import Data.Functor.Compose
 import Data.Functor.Contravariant
 import Data.Kind
+import Data.List qualified
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified
 import Data.Map.Strict (Map)
@@ -191,7 +184,7 @@ data Recipe m bean where
     { -- | How to build the bean itself.
       bean :: Constructor m bean,
       -- | How to build the decorators that wrap the bean. There might be no decorators.
-      decos :: Decos m bean
+      decos :: [Constructor m bean]
     } ->
     Recipe m bean
 
@@ -200,7 +193,7 @@ hoistRecipe :: (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
 hoistRecipe f (Recipe {bean, decos}) =
   Recipe
     { bean = hoistConstructor f bean,
-      decos = hoistDecos f decos
+      decos = hoistConstructor f <$> decos
     }
 
 -- | A 'Recipe' without decorators, having only the main bean.
@@ -238,7 +231,7 @@ recipe bean = Recipe {bean, decos = mempty}
 --         & insert @Foo
 --           Recipe {
 --             bean = pack value makeFoo,
---             decos = fromConstructors [
+--             decos = [
 --                  pack value makeFooDeco1,
 --                  pack effect makeFooDeco2
 --               ]
@@ -254,55 +247,6 @@ recipe bean = Recipe {bean, decos = mempty}
 -- foo
 -- deco1 exit
 -- deco2 exit
-
--- | A list of 'Constructor's for the decorators of some 'Recipe'.
---
--- 'Constructor's for a decorator will have the @bean@ itself among their
--- arguments. That @bean@ argument will be either the \"bare\" undecorated
--- bean (for the first decorator) or the result of applying the previous
--- decorator in the list.
---
--- Decorators can have other dependencies besides the @bean@.
-newtype Decos m bean where
-  Decos :: {decoCons :: Seq (Constructor m bean)} -> Decos m bean
-  deriving newtype (Semigroup, Monoid)
-
-instance IsList (Decos m bean) where
-  type Item (Decos m bean) = Constructor m bean
-  fromList decos = Decos do GHC.Exts.fromList decos
-  toList (Decos {decoCons}) = GHC.Exts.toList decoCons
-
--- | Empty list of decorators.
-emptyDecos :: Decos m bean
-emptyDecos = mempty
-
--- | Change the monad used by the decorators.
-hoistDecos :: (forall x. m x -> n x) -> Decos m bean -> Decos n bean
-hoistDecos f (Decos {decoCons}) = Decos {decoCons = hoistConstructor f <$> decoCons}
-
--- | Add a new decorator that modifies the bean /after/ all existing decorators.
---
--- This means the behaviours it adds to the bean\'s methods will be applied
--- /first/ when entering the method.
-addOuter :: Constructor m bean -> Decos m bean -> Decos m bean
-addOuter con (Decos {decoCons}) = Decos do decoCons Seq.|> con
-
--- | Add a new decorator that modifies the bean /before/ all existing
--- decorators.
---
--- This means the behaviours it adds to the bean\'s methods will be applied
--- /last/, just before entering the base bean's method.
---
--- Usually 'addOuter' is preferrable.
-addInner :: Constructor m bean -> Decos m bean -> Decos m bean
-addInner con (Decos {decoCons}) = Decos do con Seq.<| decoCons
-
--- | Build the decorators from a list of 'Constructor's, first innermost,
--- last outermost.
-fromConstructors ::
-  [Constructor m bean] ->
-  Decos m bean
-fromConstructors cons = Decos do Seq.fromList cons
 
 -- $constructors
 --
@@ -556,10 +500,10 @@ cauldronRegs Cauldron {recipes} =
 
 -- | Returns the accumulators, not the main bean
 recipeRegs :: SomeRecipe m -> Map TypeRep Dynamic
-recipeRegs (SomeRecipe (Recipe {bean, decos = Decos {decoCons}})) = do
+recipeRegs (SomeRecipe (Recipe {bean, decos})) = do
   let extractRegReps = (.regReps) . constructorReps
   extractRegReps bean
-    <> foldMap extractRegReps decoCons
+    <> foldMap extractRegReps decos
 
 checkMissingDeps ::
   -- | accums
@@ -603,11 +547,11 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
     else Right ()
   where
     demanded :: SomeRecipe m -> Set TypeRep
-    demanded (SomeRecipe Recipe {bean, decos = Decos {decoCons}}) =
+    demanded (SomeRecipe Recipe {bean, decos}) =
       ( Set.fromList do
           let ConstructorReps {argReps = beanArgReps} = constructorReps bean
           Set.toList beanArgReps ++ do
-            decoCon <- Data.Foldable.toList decoCons
+            decoCon <- decos
             let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
             Set.toList decoArgReps
       )
@@ -637,7 +581,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
      ( SomeRecipe
          ( Recipe
              { bean = bean :: Constructor m bean,
-               decos = Decos {decoCons}
+               decos = decoCons
              }
            )
        ) -> do
@@ -707,8 +651,8 @@ followPlanStep Cauldron {recipes} (BoiledBeans final) (BoiledBeans super) item =
         (super', bean) <- followConstructor beanConstructor final (Map.delete beanRep super)
         pure do Map.insert beanRep (toDyn bean) super'
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
-      SomeRecipe (Recipe {decos = Decos {decoCons}}) -> do
-        let decoCon = fromJust do Seq.lookup index decoCons
+      SomeRecipe (Recipe {decos}) -> do
+        let decoCon = decos Data.List.!! index
         let ConstructorReps {beanRep} = constructorReps decoCon
         -- Unlike before, we don't delete the beanRep before running the constructor.
         (super', bean) <- followConstructor decoCon final super

@@ -140,10 +140,9 @@ cauldronNonEmpty =
           Recipe
             { bean = pack effect makeSelfInvokingWeird,
               decos =
-                fromConstructors
-                  [ pack value do weirdDeco "inner",
-                    pack value do weirdDeco "outer"
-                  ]
+                [ pack value do weirdDeco "inner",
+                  pack value do weirdDeco "outer"
+                ]
             }
         & insert @(Initializer, Repository M, Weird M) do recipe do pack value do \a b c -> (a, b, c)
     ]
