@@ -107,7 +107,7 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: F -> Z -> (Initializer, Z)
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-coolWiring :: Fire IO -> Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring fire = do
   let cauldron :: Cauldron IO =
         mempty

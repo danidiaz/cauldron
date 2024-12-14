@@ -100,7 +100,7 @@ module Cauldron
     -- ** Tasting the results
     BoiledBeans,
     taste,
-    BadBeans (..),
+    RecipeError (..),
     PathToCauldron,
 
     -- ** Drawing deps
@@ -435,7 +435,7 @@ cook ::
   (Monad m) =>
   Fire m ->
   Cauldron m ->
-  Either BadBeans (DependencyGraph, m BoiledBeans)
+  Either RecipeError (DependencyGraph, m BoiledBeans)
 cook fire cauldron = do
   let result = cookTree (Node (fire, cauldron) [])
   result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
@@ -450,7 +450,7 @@ cookNonEmpty ::
   forall m.
   (Monad m) =>
   NonEmpty (Fire m, Cauldron m) ->
-  Either BadBeans (NonEmpty DependencyGraph, m (NonEmpty BoiledBeans))
+  Either RecipeError (NonEmpty DependencyGraph, m (NonEmpty BoiledBeans))
 cookNonEmpty nonemptyCauldronList = do
   let result = cookTree (nonEmptyToTree nonemptyCauldronList)
   result <&> \(ng, m) -> (unsafeTreeToNonEmpty ng, unsafeTreeToNonEmpty <$> m)
@@ -465,7 +465,7 @@ cookTree ::
   forall m.
   (Monad m) =>
   Tree (Fire m, Cauldron m) ->
-  Either BadBeans (Tree DependencyGraph, m (Tree BoiledBeans))
+  Either RecipeError (Tree DependencyGraph, m (Tree BoiledBeans))
 cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
   () <- first (uncurry MissingDependencies) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
@@ -711,7 +711,7 @@ taste' beans = do
   fromDynamic @bean dyn
 
 -- | Sometimes the 'cook'ing process goes wrong.
-data BadBeans
+data RecipeError
   = -- | The 'Cauldron' identified by 'PathToCauldron' has beans
     -- that depend on beans that can't be found either in the current 'Cauldron' or its ancestors.
     MissingDependencies PathToCauldron (Map TypeRep (Set TypeRep))

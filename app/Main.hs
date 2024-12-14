@@ -185,7 +185,7 @@ boringWiring = do
 -- graph we may want to draw.
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Fire IO -> Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring fire = do
   let cauldron :: Cauldron IO =
         mempty
