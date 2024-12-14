@@ -606,7 +606,11 @@ followPlanStep Cauldron {recipes} final super item =
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
         -- There is a test for this.
-        (super', bean) <- followConstructor beanConstructor final (deleteBean beanRep super)
+        let deleteBean' :: forall tx. Type.Reflection.TypeRep tx -> Beans -> Beans
+            deleteBean' tx = Type.Reflection.withTypeable tx (deleteBean @tx)
+        (super', bean) <- followConstructor beanConstructor final 
+            (case beanRep of
+              Type.Reflection.SomeTypeRep tr -> deleteBean' tr super)
         pure do insertBean bean super'
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
       SomeRecipe (Recipe {decos}) -> do

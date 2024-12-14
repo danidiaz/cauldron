@@ -152,9 +152,9 @@ insertBean :: forall bean. (Typeable bean) => bean -> Beans -> Beans
 insertBean bean Beans {beanMap} = 
   Beans { beanMap = Map.insert (typeRep (Proxy @bean)) (toDyn bean) beanMap}
 
-deleteBean :: SomeTypeRep -> Beans -> Beans
-deleteBean tr Beans {beanMap} = 
-  Beans { beanMap = Map.delete tr beanMap}
+deleteBean :: forall bean . (Typeable bean) => Beans -> Beans
+deleteBean Beans {beanMap} = 
+  Beans { beanMap = Map.delete (typeRep (Proxy @bean)) beanMap}
 
 lookupBean :: forall a. (Typeable a) => Beans -> Maybe a
 lookupBean = taste
