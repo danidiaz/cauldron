@@ -16,19 +16,23 @@
 
 -- {-# LANGUAGE TypeAbstractions #-}
 
-module Cauldron.Args
-  ( Args,
-    argReps,
-    regReps,
-    runArgs,
+module Cauldron.Constructor
+  ( Constructor,
+    constructor,
+    effectfulConstructor,
+    constructorWithRegs,
+    effectfulConstructorWithRegs,
+    runConstructor,
+    required,
+    provided,
+    Args,
     arg,
     reg,
+    Regs,
     Beans,
     taste,
     fromDynList,
     toDynMap,
-    Regs,
-    runRegs,
     SomeMonoidTypeRep (..),
   )
 where
@@ -69,6 +73,38 @@ import GHC.IsList
 import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
+
+newtype Constructor m a = Constructor (Args (m (Regs a)))
+  deriving (Functor)
+
+constructor :: (Applicative m) => Args bean -> Constructor m bean
+constructor x = Constructor $ fmap (pure . pure) x
+
+effectfulConstructor :: (Functor m) => Args (m bean) -> Constructor m bean
+effectfulConstructor x = Constructor $ fmap (fmap pure) x
+
+constructorWithRegs :: (Applicative m) => Args (Regs bean) -> Constructor m bean
+constructorWithRegs x = Constructor $ fmap pure x
+
+effectfulConstructorWithRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
+effectfulConstructorWithRegs x = Constructor x
+
+runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> Either TypeRep (m (Beans, bean))
+runConstructor beans (Constructor Args {regReps, runArgs}) =
+  case runArgs beans of
+    Left tr -> Left tr
+    Right action -> Right do
+      Regs regBeans bean <- action
+      let onlyStaticlyKnown =
+            Map.restrictKeys regBeans regReps
+              `Map.union` Map.fromSet someMonoidTypeRepMempty regReps -- remember that union is left-biased!!!!
+      pure (Beans $ Map.mapKeys someMonoidTypeRepToSomeTypeRep onlyStaticlyKnown, bean)
+
+required :: Constructor m a -> Set SomeTypeRep
+required (Constructor (Args {argReps})) = argReps
+
+provided :: Constructor m a -> Set SomeMonoidTypeRep
+provided (Constructor (Args {regReps})) = regReps
 
 data Args a = Args
   { argReps :: Set SomeTypeRep,
@@ -167,6 +203,12 @@ instance Ord SomeMonoidTypeRep where
   (SomeMonoidTypeRep tr1) `compare` (SomeMonoidTypeRep tr2) =
     (SomeTypeRep tr1) `compare` (SomeTypeRep tr2)
 
+someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
+someMonoidTypeRepMempty (SomeMonoidTypeRep @t _) = toDyn (mempty @t)
+
+someMonoidTypeRepToSomeTypeRep :: SomeMonoidTypeRep -> SomeTypeRep
+someMonoidTypeRepToSomeTypeRep (SomeMonoidTypeRep tr) = SomeTypeRep tr
+
 -- | Unrestricted building SHOULD NOT be public!
 data Regs a = Regs (Map SomeMonoidTypeRep Dynamic) a
   deriving (Functor)
@@ -188,6 +230,3 @@ combineMonoidRegs mtr d1 d2 = case (mtr, d1, d2) of
       Just HRefl <- tr `eqTypeRep` tr2 ->
         toDyn (v1 <> v2)
   _ -> error "impossible"
-
-runRegs :: Regs a -> (Map SomeMonoidTypeRep Dynamic, a)
-runRegs (Regs w a) = (w, a)
