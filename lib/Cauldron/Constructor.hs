@@ -29,6 +29,7 @@ module Cauldron.Constructor
     provided,
     Args,
     arg,
+    fillArgs,
     reg,
     Regs,
     Beans,
@@ -236,3 +237,16 @@ combineMonoidRegs mtr d1 d2 = case (mtr, d1, d2) of
       Just HRefl <- tr `eqTypeRep` tr2 ->
         toDyn (v1 <> v2)
   _ -> error "impossible"
+
+fillArgs ::
+  forall (args :: [Type]) r curried.
+  (All Typeable args,
+  (MulticurryableF args r curried (IsFunction curried))) =>
+  curried ->
+  Args r  
+fillArgs curried = 
+  let uncurried = multiuncurry curried
+      args = cpure_NP (Proxy @Typeable) arg 
+      sequencedArgs = sequence_NP args
+      argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args 
+   in uncurried <$> sequencedArgs <* Args { argReps, regReps = mempty, runArgs = \_ -> Right () } 
