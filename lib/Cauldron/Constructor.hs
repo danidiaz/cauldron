@@ -25,8 +25,8 @@ module Cauldron.Constructor
     effectfulConstructorWithRegs,
     runConstructor,
     hoistConstructor,
-    required,
-    provided,
+    getArgReps,
+    getRegReps,
     Args,
     arg,
     fillArgs,
@@ -93,29 +93,29 @@ effectfulConstructorWithRegs :: (Functor m) => Args (m (Regs bean)) -> Construct
 effectfulConstructorWithRegs x = Constructor x
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> Either TypeRep (m (Beans, bean))
-runConstructor beans (Constructor Args {regReps, runArgs}) =
+runConstructor beans (Constructor Args {_regReps, runArgs}) =
   case runArgs beans of
     Left tr -> Left tr
     Right action -> Right do
       Regs regBeans bean <- action
       let onlyStaticlyKnown =
-            Map.restrictKeys regBeans regReps
-              `Map.union` Map.fromSet someMonoidTypeRepMempty regReps -- remember that union is left-biased!!!!
+            Map.restrictKeys regBeans _regReps
+              `Map.union` Map.fromSet someMonoidTypeRepMempty _regReps -- remember that union is left-biased!!!!
       pure (Beans $ Map.mapKeys someMonoidTypeRepToSomeTypeRep onlyStaticlyKnown, bean)
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
 hoistConstructor f (Constructor theArgs) = Constructor do fmap f theArgs
 
-required :: Constructor m a -> Set SomeTypeRep
-required (Constructor (Args {argReps})) = argReps
+getArgReps :: Constructor m a -> Set SomeTypeRep
+getArgReps (Constructor (Args {_argReps})) = _argReps
 
-provided :: Constructor m a -> Set SomeMonoidTypeRep
-provided (Constructor (Args {regReps})) = regReps
+getRegReps :: Constructor m a -> Set SomeMonoidTypeRep
+getRegReps (Constructor (Args {_regReps})) = _regReps
 
 data Args a = Args
-  { argReps :: Set SomeTypeRep,
-    regReps :: Set SomeMonoidTypeRep,
+  { _argReps :: Set SomeTypeRep,
+    _regReps :: Set SomeMonoidTypeRep,
     runArgs :: [Beans] -> Either TypeRep a
   }
   deriving (Functor)
@@ -124,8 +124,8 @@ arg :: forall a. (Typeable a) => Args a
 arg =
   let tr = typeRep (Proxy @a)
    in Args
-        { argReps = Set.singleton tr,
-          regReps = Set.empty,
+        { _argReps = Set.singleton tr,
+          _regReps = Set.empty,
           runArgs = \bss ->
             case asum do taste <$> bss of
               Just v -> Right v
@@ -136,8 +136,8 @@ reg :: forall a. (Typeable a, Monoid a) => Args (a -> Regs ())
 reg =
   let tr = SomeMonoidTypeRep (Type.Reflection.typeRep @a)
    in Args
-        { argReps = Set.empty,
-          regReps = Set.singleton tr,
+        { _argReps = Set.empty,
+          _regReps = Set.singleton tr,
           runArgs = pure $ pure \a ->
             Regs (Map.singleton tr (toDyn a)) ()
         }
@@ -152,23 +152,23 @@ taste Beans {beanMap} =
 instance Applicative Args where
   pure a =
     Args
-      { argReps = Set.empty,
-        regReps = Set.empty,
+      { _argReps = Set.empty,
+        _regReps = Set.empty,
         runArgs = pure do pure a
       }
   Args
-    { argReps = argReps1,
-      regReps = regReps1,
+    { _argReps = _argReps1,
+      _regReps = _regReps1,
       runArgs = f
     }
     <*> Args
-      { argReps = argReps2,
-        regReps = regReps2,
+      { _argReps = _argReps2,
+        _regReps = _regReps2,
         runArgs = a
       } =
       Args
-        { argReps = argReps1 `Set.union` argReps2,
-          regReps = regReps1 `Set.union` regReps2,
+        { _argReps = _argReps1 `Set.union` _argReps2,
+          _regReps = _regReps1 `Set.union` _regReps2,
           runArgs = \beans -> f beans <*> a beans
         }
 
@@ -248,5 +248,5 @@ fillArgs curried =
   let uncurried = multiuncurry curried
       args = cpure_NP (Proxy @Typeable) arg 
       sequencedArgs = sequence_NP args
-      argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args 
-   in uncurried <$> sequencedArgs <* Args { argReps, regReps = mempty, runArgs = \_ -> Right () } 
+      _argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args 
+   in uncurried <$> sequencedArgs <* Args { _argReps, _regReps = mempty, runArgs = \_ -> Right () } 
