@@ -672,8 +672,7 @@ followConstructor ::
   Beans ->
   m (Beans, bean)
 followConstructor c final super = do
-  let Right action = runConstructor [super, final] c
-  (regs, bean) <- action
+  (regs, bean) <- runConstructor [super, final] c
   pure (Cauldron.Beans.unionBeansMonoidally (getRegReps c) super regs, bean)
 
 -- | Sometimes the 'cook'ing process goes wrong.

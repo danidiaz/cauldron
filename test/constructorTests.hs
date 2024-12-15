@@ -51,7 +51,7 @@ tests =
   testGroup
     "All"
     [ testCase "withRegs" do
-        Right (Identity (beans, C)) <- pure do runConstructor [[toDyn A, toDyn B]] constructorForC
+        Identity (beans, C) <- pure do runConstructor [[toDyn A, toDyn B]] constructorForC
         Just m <- pure do taste @[Text] beans
         assertEqual
           "monoid"

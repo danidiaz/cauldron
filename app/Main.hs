@@ -124,7 +124,7 @@ makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 --
 -- Dependency cycles of more than one bean are forbidden, however.
 makeG :: E -> F -> G -> G
-makeG _ _ !_ = G
+makeG _ _ _ = G
 
 -- | A decorator.
 --

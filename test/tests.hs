@@ -270,7 +270,7 @@ tests =
             "weirdOp 2"
           ]
           traces,
-      testCase "lonely beans get build" do
+      testCase "lonely beans get built" do
         (_, _) <- case cook' cauldronLonely of
           Left _ -> assertFailure "could not wire"
           Right (_, beansAction) -> runWriterT do
