@@ -224,10 +224,6 @@ hoistRecipe f (Recipe {bean, decos}) =
       decos = hoistConstructor f <$> decos
     }
 
--- | A 'Recipe' without decorators, having only the main bean.
-recipe :: Constructor m a -> Recipe m a
-recipe bean = Recipe {bean, decos = mempty}
-
 -- $decos
 --
 -- Decorators are 'Constructor's which, instead constructing the original
