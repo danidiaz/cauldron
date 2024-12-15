@@ -34,6 +34,7 @@ module Cauldron.Constructor
     Beans,
     insertBean,
     deleteBean,
+    restrictBeans,
     lookupBean,
     singletonBean,
     taste,
@@ -103,11 +104,12 @@ runConstructor beans (Constructor Args {_regReps, runArgs}) =
   case runArgs beans of
     Left tr -> Left tr
     Right action -> Right do
-      Regs regBeans bean <- action
+      Regs dynList bean <- action
       let onlyStaticlyKnown =
-            Map.restrictKeys regBeans _regReps
-              `Map.union` Map.fromSet someMonoidTypeRepMempty _regReps -- remember that union is left-biased!!!!
-      pure (Beans $ Map.mapKeys someMonoidTypeRepToSomeTypeRep onlyStaticlyKnown, bean)
+              do manyMemptys _regReps : fmap singletonBean dynList
+            & do foldl (unionBeansMonoidally _regReps) (mempty @Beans)
+            & do flip restrictBeans (Set.map someMonoidTypeRepToSomeTypeRep _regReps)
+      pure (onlyStaticlyKnown, bean)
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
@@ -145,7 +147,7 @@ reg =
         { _argReps = Set.empty,
           _regReps = Set.singleton tr,
           runArgs = pure $ pure \a ->
-            Regs (Map.singleton tr (toDyn a)) ()
+            Regs [ toDyn a ] ()
         }
 
 insertBean :: forall bean. (Typeable bean) => bean -> Beans -> Beans
@@ -155,6 +157,9 @@ insertBean bean Beans {beanMap} =
 deleteBean :: TypeRep -> Beans -> Beans
 deleteBean tr Beans {beanMap} = 
   Beans { beanMap = Map.delete tr beanMap}
+
+restrictBeans :: Beans -> Set TypeRep -> Beans
+restrictBeans Beans {beanMap} trs = Beans { beanMap = Map.restrictKeys beanMap trs }
 
 lookupBean :: forall a. (Typeable a) => Beans -> Maybe a
 lookupBean = taste
@@ -237,26 +242,26 @@ someMonoidTypeRepToSomeTypeRep :: SomeMonoidTypeRep -> SomeTypeRep
 someMonoidTypeRepToSomeTypeRep (SomeMonoidTypeRep tr) = SomeTypeRep tr
 
 -- | Unrestricted building SHOULD NOT be public!
-data Regs a = Regs (Map SomeMonoidTypeRep Dynamic) a
+data Regs a = Regs [Dynamic] a
   deriving (Functor)
 
 instance Applicative Regs where
-  pure a = Regs Map.empty a
+  pure a = Regs [] a
   Regs w1 f <*> Regs w2 a2 =
-    Regs (Map.unionWithKey combineMonoidRegs w1 w2) (f a2)
+    Regs (w1 ++ w2) (f a2)
 
 instance Monad Regs where
   (Regs w1 a) >>= k =
     let Regs w2 r = k a
-     in Regs (Map.unionWithKey combineMonoidRegs w1 w2) r
+     in Regs (w1 ++ w2) r
 
-combineMonoidRegs :: SomeMonoidTypeRep -> Dynamic -> Dynamic -> Dynamic
-combineMonoidRegs mtr d1 d2 = case (mtr, d1, d2) of
-  (SomeMonoidTypeRep tr, Dynamic tr1 v1, Dynamic tr2 v2)
-    | Just HRefl <- tr `eqTypeRep` tr1,
-      Just HRefl <- tr `eqTypeRep` tr2 ->
-        toDyn (v1 <> v2)
-  _ -> error "impossible"
+-- combineMonoidRegs :: SomeMonoidTypeRep -> Dynamic -> Dynamic -> Dynamic
+-- combineMonoidRegs mtr d1 d2 = case (mtr, d1, d2) of
+--   (SomeMonoidTypeRep tr, Dynamic tr1 v1, Dynamic tr2 v2)
+--     | Just HRefl <- tr `eqTypeRep` tr1,
+--       Just HRefl <- tr `eqTypeRep` tr2 ->
+--         toDyn (v1 <> v2)
+--   _ -> error "impossible"
 
 fillArgs ::
   forall (args :: [Type]) r curried.
@@ -285,3 +290,9 @@ unionBeansMonoidally reps (Beans beans1) (Beans beans2) =
             _ -> d2
    in Beans $ Map.unionWithKey combine beans1 beans2
 
+manyMemptys :: Set SomeMonoidTypeRep -> Beans
+manyMemptys reps =
+  reps 
+  & Data.Foldable.toList
+  <&> someMonoidTypeRepMempty
+  & fromDynList
