@@ -101,9 +101,9 @@ runConstructor beans (Constructor Args {_regReps, runArgs}) =
     Right action -> Right do
       Regs dynList bean <- action
       let onlyStaticlyKnown =
-              do manyMemptys _regReps : fmap Cauldron.Beans.singletonBean dynList
+              do manyMemptys _regReps : fmap Cauldron.Beans.singleton dynList
             & do foldl (Cauldron.Beans.unionBeansMonoidally _regReps) (mempty @Beans)
-            & do flip Cauldron.Beans.restrictBeans (Set.map someMonoidTypeRepToSomeTypeRep _regReps)
+            & do flip Cauldron.Beans.restrict (Set.map someMonoidTypeRepToSomeTypeRep _regReps)
       pure (onlyStaticlyKnown, bean)
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.

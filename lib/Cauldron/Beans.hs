@@ -17,11 +17,10 @@
 module Cauldron.Beans
   ( 
     Beans,
-    insertBean,
-    deleteBean,
-    restrictBeans,
-    lookupBean,
-    singletonBean,
+    insert,
+    delete,
+    restrict,
+    singleton,
     taste,
     fromDynList,
     toDynMap,
@@ -69,22 +68,19 @@ import Type.Reflection qualified
 import Data.Semigroup qualified
 import Data.Function ((&))
 
-insertBean :: forall bean. (Typeable bean) => bean -> Beans -> Beans
-insertBean bean Beans {beanMap} = 
+insert :: forall bean. (Typeable bean) => bean -> Beans -> Beans
+insert bean Beans {beanMap} = 
   Beans { beanMap = Map.insert (typeRep (Proxy @bean)) (toDyn bean) beanMap}
 
-deleteBean :: TypeRep -> Beans -> Beans
-deleteBean tr Beans {beanMap} = 
+delete :: TypeRep -> Beans -> Beans
+delete tr Beans {beanMap} = 
   Beans { beanMap = Map.delete tr beanMap}
 
-restrictBeans :: Beans -> Set TypeRep -> Beans
-restrictBeans Beans {beanMap} trs = Beans { beanMap = Map.restrictKeys beanMap trs }
+restrict :: Beans -> Set TypeRep -> Beans
+restrict Beans {beanMap} trs = Beans { beanMap = Map.restrictKeys beanMap trs }
 
-lookupBean :: forall a. (Typeable a) => Beans -> Maybe a
-lookupBean = taste
-
-singletonBean :: forall a. (Typeable a) => a -> Beans 
-singletonBean bean = Beans do Map.singleton (typeRep (Proxy @a)) (toDyn bean)
+singleton :: forall a. (Typeable a) => a -> Beans 
+singleton bean = Beans do Map.singleton (typeRep (Proxy @a)) (toDyn bean)
 
 taste :: forall a. (Typeable a) => Beans -> Maybe a
 taste Beans {beanMap} =

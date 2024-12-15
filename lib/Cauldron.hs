@@ -607,14 +607,14 @@ followPlanStep Cauldron {recipes} final super item =
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
         -- There is a test for this.
-        (super', bean) <- followConstructor beanConstructor final (Cauldron.Beans.deleteBean beanRep super)
-        pure do Cauldron.Beans.insertBean bean super'
+        (super', bean) <- followConstructor beanConstructor final (Cauldron.Beans.delete beanRep super)
+        pure do Cauldron.Beans.insert bean super'
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
       SomeRecipe (Recipe {decos}) -> do
         let decoCon = decos Data.List.!! index
         -- Unlike before, we don't delete the beanRep before running the constructor.
         (super', bean) <- followConstructor decoCon final super
-        pure do Cauldron.Beans.insertBean bean super'
+        pure do Cauldron.Beans.insert bean super'
     -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
     -- 'PrimaryBeanDeco' steps.
     PrimaryBean _ -> pure super
