@@ -52,7 +52,6 @@
 module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
-    emptyCauldron,
     insert,
     adjust,
     delete,
@@ -62,6 +61,9 @@ module Cauldron
     Recipe (..),
     recipe,
     hoistRecipe,
+    SomeRecipe,
+    someRecipe,
+    fromSomeRecipeList,
 
     -- * Cooking the beans
     cook,
@@ -142,6 +144,7 @@ import Type.Reflection qualified
 import Cauldron.Constructor
 import Data.Semigroup qualified
 import Data.Either (fromRight)
+import GHC.IsList
 
 import Data.Function ((&))
 
@@ -160,8 +163,10 @@ instance Semigroup (Cauldron m) where
 instance Monoid (Cauldron m) where
   mempty = Cauldron do Map.empty
 
-emptyCauldron :: Cauldron m
-emptyCauldron = mempty
+instance IsList (Cauldron m) where
+  type Item (Cauldron m) = SomeRecipe m
+  toList (Cauldron {recipes}) = Map.elems recipes
+  fromList = fromSomeRecipeList
 
 -- | Change the monad used by the beans in the 'Cauldron'.
 hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
@@ -169,6 +174,15 @@ hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$>
 
 data SomeRecipe m where
   SomeRecipe :: (Typeable bean) => Recipe m bean -> SomeRecipe m
+
+someRecipe :: (Typeable bean) => Recipe m bean -> SomeRecipe m
+someRecipe = SomeRecipe
+
+fromSomeRecipeList :: [SomeRecipe m] -> Cauldron m
+fromSomeRecipeList =
+  foldl 
+    do \c (SomeRecipe r) -> insert r c
+    do mempty
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
 hoistSomeRecipe f (SomeRecipe bean) = SomeRecipe do hoistRecipe f bean
