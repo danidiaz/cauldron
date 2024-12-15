@@ -1,9 +1,9 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE DuplicateRecordFields #-}
 
 module Main (main) where
 
@@ -74,16 +74,18 @@ makeWithWrapperWithMessage ref inMsg outMsg v handler = do
 
 managedCauldron :: IORef [Text] -> Cauldron Managed
 managedCauldron ref =
-  emptyCauldron
-    & insert @(Logger IO) do recipe do pack effect do managed (makeLogger ref)
-    & insert @(Weird IO)
-      Recipe
-        { bean = pack effect do \logger self -> managed (makeSelfInvokingWeird ref logger self),
-          decos =
-            [ pack value makeWeirdDecorator
-            ]
-        }
-    & insert @(Logger IO, Weird IO) do recipe do pack value do (,)
+  fromSomeRecipeList
+    [ someRecipe @(Logger IO) Recipe_ {bean = effectfulConstructor do fillArgs do managed (makeLogger ref)},
+      someRecipe @(Weird IO)
+        Recipe
+          { bean = effectfulConstructor do
+              fillArgs \logger self -> managed (makeSelfInvokingWeird ref logger self),
+            decos =
+              [ constructor do fillArgs makeWeirdDecorator
+              ]
+          },
+      someRecipe @(Logger IO, Weird IO) Recipe_ {bean = constructor do fillArgs (,)}
+    ]
 
 tests :: TestTree
 tests =

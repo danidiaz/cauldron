@@ -1,9 +1,10 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE DuplicateRecordFields #-}
 
 -- | The example in the executable, as a test.
 module Main (main) where
@@ -111,30 +112,62 @@ makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring fire = do
   let cauldron :: Cauldron IO =
-        mempty
-          & insert @A do recipe do pack value makeA
-          & insert @B do recipe do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
-          & insert @C do recipe do pack value makeC
-          & insert @D do recipe do pack value makeD
-          & insert @E do recipe do pack value makeE
-          & insert @F do recipe do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
-          & insert @G
-            Recipe
-              { bean = pack value do makeG,
-                decos =
-                  [ pack value do makeGDeco1
-                  ]
-              }
-          & insert @H do recipe do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
-          & insert @Z
-            Recipe
-              { bean = pack value do makeZ,
-                decos =
-                  [ pack value do makeZDeco1,
-                    pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
-                  ]
-              }
-          & insert @(Initializer, Inspector, Z) do recipe do pack value do \a b c -> (a, b, c)
+        fromSomeRecipeList
+          [ someRecipe @A Recipe_ {bean = constructor do pure makeA},
+            someRecipe @B
+              Recipe_
+                { bean = constructorWithRegs do
+                    ~(reg1, bean) <- pure makeB
+                    tell1 <- reg
+                    pure do
+                      tell1 reg1
+                      pure bean
+                },
+            someRecipe @C Recipe_ {bean = constructor do fillArgs makeC},
+            someRecipe @D Recipe_ {bean = constructor do fillArgs makeD},
+            someRecipe @E Recipe_ {bean = constructor do fillArgs makeE},
+            someRecipe @F
+              Recipe_
+                { bean = constructorWithRegs do
+                    ~(reg1, bean) <- fillArgs makeF
+                    tell1 <- reg
+                    pure do
+                      tell1 reg1
+                      pure bean
+                },
+            someRecipe @G
+              Recipe
+                { bean = constructor $ fillArgs makeG,
+                  decos =
+                    [ constructor $ fillArgs makeGDeco1
+                    ]
+                },
+            someRecipe @H
+              Recipe_
+                { bean = constructorWithRegs do
+                    ~(reg1, reg2, bean) <- fillArgs makeH
+                    tell1 <- reg
+                    tell2 <- reg
+                    pure do
+                      tell1 reg1
+                      tell2 reg2
+                      pure bean
+                },
+            someRecipe @Z
+              Recipe
+                { bean = constructor do fillArgs makeZ,
+                  decos =
+                    [ constructor do fillArgs makeZDeco1,
+                      constructorWithRegs do
+                        ~(reg1, bean) <- fillArgs makeZDeco2
+                        tell1 <- reg
+                        pure do
+                          tell1 reg1
+                          pure bean
+                    ]
+                },
+            someRecipe @(Initializer, Inspector, Z) Recipe_ {bean = constructor do fillArgs (,,)}
+          ]
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
 tests :: TestTree

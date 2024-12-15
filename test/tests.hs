@@ -1,9 +1,10 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE DuplicateRecordFields #-}
 
 module Main (main) where
 
@@ -18,7 +19,9 @@ import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (fromJust)
 import Data.Monoid
+import Data.Proxy
 import Data.Text (Text)
+import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -107,49 +110,109 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 
 cauldron :: Cauldron M
 cauldron =
-  mempty
-    & insert @(Logger M) do recipe do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeLogger
-    & insert @(Repository M) do recipe do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-    & insert @(Initializer, Repository M) do recipe do pack value do \a b -> (a, b)
+  fromSomeRecipeList
+    [ someRecipe @(Logger M)
+        Recipe_
+          { bean = effectfulConstructorWithRegs do
+              action <- pure makeLogger
+              tell1 <- reg
+              pure do
+                (reg1, bean) <- action
+                pure do
+                  tell1 reg1
+                  pure bean
+          },
+      someRecipe @(Repository M)
+        Recipe_
+          { bean = effectfulConstructorWithRegs do
+              action <- makeRepository <$> arg
+              tell1 <- reg
+              pure do
+                (reg1, bean) <- action
+                pure do
+                  tell1 reg1
+                  pure bean
+          },
+      someRecipe @(Initializer, Repository M) Recipe_ {bean = constructor do fillArgs (,)}
+    ]
 
 cauldronMissingDep :: Cauldron M
 cauldronMissingDep =
   cauldron
-    & delete @(Logger M)
+    & delete (typeRep (Proxy @(Logger M)))
 
 cauldronDoubleDutyBean :: Cauldron M
 cauldronDoubleDutyBean =
   cauldron
-    & insert @Initializer do recipe do pack value do do (Initializer (pure ()))
+    & insert @Initializer Recipe_ {bean = constructor do pure (Initializer (pure ()))}
 
 cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
-    & insert @(Logger M) do recipe do pack (Packer do fmap \(reg, bean) -> regs1 reg bean) do const @_ @(Repository M) makeLogger
+    & insert @(Logger M)
+      Recipe_
+        { bean = effectfulConstructorWithRegs do
+            action <- fillArgs \(_ :: Repository M) -> makeLogger
+            tell1 <- reg
+            pure do
+              (reg1, bean) <- action
+              pure do
+                tell1 reg1
+                pure bean
+        }
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty =
   Data.List.NonEmpty.fromList
-    [ mempty
-        & do
-          let packer = Packer do fmap (\(reg, bean) -> regs1 reg bean)
-          insert @(Logger M) do recipe do pack packer do makeLogger
-        & insert @(Weird M) do recipe do pack effect makeWeird,
-      mempty
-        & insert @(Repository M) do recipe do pack (Packer do fmap (\(reg, bean) -> regs1 reg bean)) do makeRepository
-        & insert @(Weird M)
-          Recipe
-            { bean = pack effect makeSelfInvokingWeird,
-              decos =
-                [ pack value do weirdDeco "inner",
-                  pack value do weirdDeco "outer"
-                ]
-            }
-        & insert @(Initializer, Repository M, Weird M) do recipe do pack value do \a b c -> (a, b, c)
+    [ fromSomeRecipeList
+        [ someRecipe @(Logger M)
+            Recipe_
+              { bean = effectfulConstructorWithRegs do
+                  action <- pure makeLogger
+                  tell1 <- reg
+                  pure do
+                    (reg1, bean) <- action
+                    pure do
+                      tell1 reg1
+                      pure bean
+              },
+          someRecipe @(Weird M)
+            Recipe_
+              { bean = effectfulConstructor do fillArgs makeWeird
+              }
+        ],
+      fromSomeRecipeList
+        [ someRecipe @(Repository M)
+            Recipe_
+              { bean = effectfulConstructorWithRegs do
+                  action <- fillArgs makeRepository
+                  tell1 <- reg
+                  pure do
+                    (reg1, bean) <- action
+                    pure do
+                      tell1 reg1
+                      pure bean
+              },
+          someRecipe @(Weird M)
+            Recipe
+              { bean = effectfulConstructor do fillArgs makeSelfInvokingWeird,
+                decos =
+                  [ constructor $ fillArgs $ weirdDeco "inner",
+                    constructor $ fillArgs $ weirdDeco "outer"
+                  ]
+              },
+          someRecipe @(Initializer, Repository M, Weird M)
+            Recipe_
+              { bean = constructor do fillArgs (,,)
+              }
+        ]
     ]
 
 cauldronLonely :: Cauldron M
-cauldronLonely = emptyCauldron & insert @(Lonely M) do recipe do pack0 value makeLonely
+cauldronLonely =
+  fromSomeRecipeList
+    [ someRecipe @(Lonely M) Recipe_ {bean = constructor do pure makeLonely}
+    ]
 
 tests :: TestTree
 tests =

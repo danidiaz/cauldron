@@ -191,7 +191,7 @@ coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, I
 coolWiring fire = do
   let cauldron :: Cauldron IO =
         fromSomeRecipeList
-          [ someRecipe @A Recipe_ {bean = constructor $ pure makeA},
+          [ someRecipe @A Recipe_ {bean = constructor do pure makeA},
             someRecipe @B
               Recipe_
                 { bean = constructorWithRegs do
@@ -201,12 +201,12 @@ coolWiring fire = do
                       tell1 reg1
                       pure bean
                 },
-            someRecipe @C Recipe_ {bean = constructor $ fillArgs makeC},
-            someRecipe @D Recipe_ {bean = constructor $ fillArgs makeD},
-            someRecipe @E Recipe_ {bean = constructor $ fillArgs makeE},
+            someRecipe @C Recipe_ {bean = constructor do fillArgs makeC},
+            someRecipe @D Recipe_ {bean = constructor do fillArgs makeD},
+            someRecipe @E Recipe_ {bean = constructor do fillArgs makeE},
             someRecipe @F
               Recipe_
-                { bean = constructorWithRegs $ do
+                { bean = constructorWithRegs do
                     ~(reg1, bean) <- fillArgs makeF
                     tell1 <- reg
                     pure do
@@ -222,7 +222,7 @@ coolWiring fire = do
                 },
             someRecipe @H
               Recipe_
-                { bean = constructorWithRegs $ do
+                { bean = constructorWithRegs do
                     ~(reg1, reg2, bean) <- fillArgs makeH
                     tell1 <- reg
                     tell2 <- reg
@@ -233,9 +233,9 @@ coolWiring fire = do
                 },
             someRecipe @Z
               Recipe
-                { bean = constructor $ fillArgs makeZ,
+                { bean = constructor do fillArgs makeZ,
                   decos =
-                    [ constructor $ fillArgs makeZDeco1,
+                    [ constructor do fillArgs makeZDeco1,
                       constructorWithRegs do
                         ~(reg1, bean) <- fillArgs makeZDeco2
                         tell1 <- reg
@@ -244,7 +244,7 @@ coolWiring fire = do
                           pure bean
                     ]
                 },
-            someRecipe @(Initializer, Inspector, Z) Recipe_ {bean = constructor $ fillArgs (,,)}
+            someRecipe @(Initializer, Inspector, Z) Recipe_ {bean = constructor do fillArgs (,,)}
           ]
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
