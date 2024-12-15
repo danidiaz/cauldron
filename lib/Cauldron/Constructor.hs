@@ -1,4 +1,3 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -36,6 +35,7 @@ module Cauldron.Constructor
     insertBean,
     deleteBean,
     lookupBean,
+    singletonBean,
     taste,
     fromDynList,
     toDynMap,
@@ -152,12 +152,15 @@ insertBean :: forall bean. (Typeable bean) => bean -> Beans -> Beans
 insertBean bean Beans {beanMap} = 
   Beans { beanMap = Map.insert (typeRep (Proxy @bean)) (toDyn bean) beanMap}
 
-deleteBean :: forall bean . (Typeable bean) => Beans -> Beans
-deleteBean Beans {beanMap} = 
-  Beans { beanMap = Map.delete (typeRep (Proxy @bean)) beanMap}
+deleteBean :: TypeRep -> Beans -> Beans
+deleteBean tr Beans {beanMap} = 
+  Beans { beanMap = Map.delete tr beanMap}
 
 lookupBean :: forall a. (Typeable a) => Beans -> Maybe a
 lookupBean = taste
+
+singletonBean :: forall a. (Typeable a) => a -> Beans 
+singletonBean bean = Beans do Map.singleton (typeRep (Proxy @a)) (toDyn bean)
 
 taste :: forall a. (Typeable a) => Beans -> Maybe a
 taste Beans {beanMap} =
