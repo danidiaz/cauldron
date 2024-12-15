@@ -59,7 +59,8 @@ module Cauldron
 
     -- * Recipes
     Recipe (..),
-    recipe,
+    Recipe_ (..),
+    ToRecipe (..),
     hoistRecipe,
     SomeRecipe,
     someRecipe,
@@ -88,7 +89,8 @@ module Cauldron
     removeDecos,
     collapsePrimaryBeans,
     toAdjacencyMap,
-    -- * Re-exported 
+
+    -- * Re-exported
     Constructor,
     constructor,
     effectfulConstructor,
@@ -109,13 +111,17 @@ import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
+import Cauldron.Beans qualified
+import Cauldron.Constructor
 import Control.Applicative
 import Control.Monad.Fix
 import Data.Bifunctor (first)
 import Data.ByteString qualified
 import Data.ByteString qualified as Data.List
 import Data.Dynamic
+import Data.Either (fromRight)
 import Data.Foldable qualified
+import Data.Function ((&))
 import Data.Functor (($>), (<&>))
 import Data.Functor.Compose
 import Data.Functor.Contravariant
@@ -129,6 +135,7 @@ import Data.Maybe (fromJust)
 import Data.Monoid (Endo (..))
 import Data.SOP (All, And, K (..))
 import Data.SOP.NP
+import Data.Semigroup qualified
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -139,16 +146,9 @@ import Data.Tree
 import Data.Type.Equality (testEquality)
 import Data.Typeable
 import GHC.Exts (IsList (..))
+import GHC.IsList
 import Multicurryable
 import Type.Reflection qualified
-import Cauldron.Constructor
-import Data.Semigroup qualified
-import Data.Either (fromRight)
-import GHC.IsList
-
-import Data.Function ((&))
-
-import Cauldron.Beans qualified
 
 -- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
 -- 'Constructor's might have effects.
@@ -175,12 +175,12 @@ hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$>
 data SomeRecipe m where
   SomeRecipe :: (Typeable bean) => Recipe m bean -> SomeRecipe m
 
-someRecipe :: forall bean m . (Typeable bean) => Recipe m bean -> SomeRecipe m
-someRecipe = SomeRecipe
+someRecipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe) => recipe m bean -> SomeRecipe m
+someRecipe recipe = SomeRecipe (toRecipe recipe)
 
 fromSomeRecipeList :: [SomeRecipe m] -> Cauldron m
 fromSomeRecipeList =
-  foldl 
+  foldl
     do \c (SomeRecipe r) -> insert r c
     do mempty
 
@@ -196,6 +196,25 @@ data Recipe m bean where
       decos :: [Constructor m bean]
     } ->
     Recipe m bean
+
+newtype Recipe_ m bean where
+  Recipe_ ::
+    { -- | How to build the bean itself.
+      bean :: Constructor m bean
+    } ->
+    Recipe_ m bean
+
+class ToRecipe c where
+  toRecipe :: c m bean -> Recipe m bean
+
+instance ToRecipe Recipe where
+  toRecipe = id
+
+instance ToRecipe Recipe_ where
+  toRecipe (Recipe_ {bean}) = Recipe {bean, decos = []}
+
+instance ToRecipe Constructor where
+  toRecipe c = Recipe {bean = c, decos = []}
 
 -- | Change the monad used by the bean\'s 'Constructor' and its 'Decos'.
 hoistRecipe :: (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
@@ -277,7 +296,6 @@ recipe bean = Recipe {bean, decos = mempty}
 -- mutable references that the bean will use internally. Sometimes the a
 -- constructor will allocate resources with bracket-like operations, and in that
 -- case a monad like 'Managed' might be needed instead.
-
 data ConstructorReps where
   ConstructorReps ::
     { beanRep :: TypeRep,
@@ -291,14 +309,14 @@ data ConstructorReps where
 -- Only one recipe is allowed for each different @bean@ type, so 'insert' for a
 -- @bean@ will overwrite previous recipes for that type.
 insert ::
-  forall (bean :: Type) m.
-  (Typeable bean) =>
-  Recipe m bean ->
+  forall (bean :: Type) m recipe.
+  (Typeable bean, ToRecipe recipe) =>
+  recipe m bean ->
   Cauldron m ->
   Cauldron m
 insert aRecipe Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
-  Cauldron {recipes = Map.insert rep (SomeRecipe aRecipe) recipes}
+  Cauldron {recipes = Map.insert rep (SomeRecipe (toRecipe aRecipe)) recipes}
 
 -- | Tweak an already existing 'Recipe' recipe.
 adjust ::
@@ -385,20 +403,20 @@ forbidDepCycles =
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 
 -- | This function DOESN'T return the bean rep itself in the argreps.
-constructorReps :: forall bean m . (Typeable bean) => Constructor m bean -> ConstructorReps
+constructorReps :: forall bean m. (Typeable bean) => Constructor m bean -> ConstructorReps
 constructorReps c =
   ConstructorReps
     { beanRep = typeRep (Proxy @bean),
       argReps = getArgReps c,
-      regReps = 
-        c 
-        & getRegReps
-        & Set.map (\mtr@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (Type.Reflection.SomeTypeRep tr) (toDyn (someMonoidTypeRepMempty mtr)))
-        & Map.fromArgSet 
+      regReps =
+        c
+          & getRegReps
+          & Set.map (\mtr@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (Type.Reflection.SomeTypeRep tr) (toDyn (someMonoidTypeRepMempty mtr)))
+          & Map.fromArgSet
     }
-    where
-      someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
-      someMonoidTypeRepMempty (SomeMonoidTypeRep @t _) = toDyn (mempty @t)
+  where
+    someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
+    someMonoidTypeRepMempty (SomeMonoidTypeRep @t _) = toDyn (mempty @t)
 
 type Plan = [BeanConstructionStep]
 

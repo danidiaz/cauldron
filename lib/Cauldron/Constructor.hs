@@ -31,6 +31,7 @@ module Cauldron.Constructor
     fillArgs,
     reg,
     Regs,
+
     -- * Re-exports
     Beans,
     taste,
@@ -43,12 +44,15 @@ import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
+import Cauldron.Beans (Beans, SomeMonoidTypeRep (..), fromDynList, taste)
+import Cauldron.Beans qualified
 import Control.Applicative
 import Control.Monad.Fix
 import Data.Bifunctor (first)
 import Data.ByteString qualified
 import Data.Dynamic
 import Data.Foldable qualified
+import Data.Function ((&))
 import Data.Functor (($>), (<&>))
 import Data.Functor.Compose
 import Data.Functor.Contravariant
@@ -61,6 +65,7 @@ import Data.Maybe (fromJust)
 import Data.Monoid (Endo (..))
 import Data.SOP (All, And, K (..))
 import Data.SOP.NP
+import Data.Semigroup qualified
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -75,10 +80,6 @@ import GHC.IsList
 import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
-import Data.Semigroup qualified
-import Data.Function ((&))
-import Cauldron.Beans (Beans, SomeMonoidTypeRep(..), taste, fromDynList)
-import Cauldron.Beans qualified
 
 newtype Constructor m a = Constructor (Args (m (Regs a)))
   deriving (Functor)
@@ -102,9 +103,9 @@ runConstructor beans (Constructor Args {_regReps, runArgs}) =
     Right action -> Right do
       Regs dynList bean <- action
       let onlyStaticlyKnown =
-              do manyMemptys _regReps : fmap Cauldron.Beans.singleton dynList
-            & do foldl (Cauldron.Beans.unionBeansMonoidally _regReps) (mempty @Beans)
-            & do flip Cauldron.Beans.restrict (Set.map someMonoidTypeRepToSomeTypeRep _regReps)
+            do manyMemptys _regReps : fmap Cauldron.Beans.singleton dynList
+              & do foldl (Cauldron.Beans.unionBeansMonoidally _regReps) (mempty @Beans)
+              & do flip Cauldron.Beans.restrict (Set.map someMonoidTypeRepToSomeTypeRep _regReps)
       pure (onlyStaticlyKnown, bean)
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
@@ -143,9 +144,8 @@ reg =
         { _argReps = Set.empty,
           _regReps = Set.singleton tr,
           runArgs = pure $ pure \a ->
-            Regs [ toDyn a ] ()
+            Regs [toDyn a] ()
         }
-
 
 instance Applicative Args where
   pure a =
@@ -170,7 +170,6 @@ instance Applicative Args where
           runArgs = \beans -> f beans <*> a beans
         }
 
-
 someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
 someMonoidTypeRepMempty (SomeMonoidTypeRep @t _) = toDyn (mempty @t)
 
@@ -193,20 +192,21 @@ instance Monad Regs where
 
 fillArgs ::
   forall (args :: [Type]) r curried.
-  (All Typeable args,
-  (MulticurryableF args r curried (IsFunction curried))) =>
+  ( All Typeable args,
+    (MulticurryableF args r curried (IsFunction curried))
+  ) =>
   curried ->
-  Args r  
-fillArgs curried = 
+  Args r
+fillArgs curried =
   let uncurried = multiuncurry curried
-      args = cpure_NP (Proxy @Typeable) arg 
+      args = cpure_NP (Proxy @Typeable) arg
       sequencedArgs = sequence_NP args
-      _argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args 
-   in uncurried <$> sequencedArgs <* Args { _argReps, _regReps = mempty, runArgs = \_ -> Right () } 
+      _argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args
+   in uncurried <$> sequencedArgs <* Args {_argReps, _regReps = mempty, runArgs = \_ -> Right ()}
 
 manyMemptys :: Set SomeMonoidTypeRep -> Beans
 manyMemptys reps =
-  reps 
-  & Data.Foldable.toList
-  <&> someMonoidTypeRepMempty
-  & fromDynList
+  reps
+    & Data.Foldable.toList
+    <&> someMonoidTypeRepMempty
+    & fromDynList

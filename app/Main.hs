@@ -1,6 +1,7 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 
 -- | We have a bunch of datatypes, and a single recipe (constructor) for each
 -- datatype. This means the wiring can be type-directed: we don't have to make a
@@ -188,52 +189,63 @@ boringWiring = do
 -- Note that we detect wiring errors *before* running the effectful constructors.
 coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring fire = do
-  let cauldron :: Cauldron IO = fromSomeRecipeList [
-        someRecipe @A $ recipe $ constructor $ pure makeA,
-        someRecipe @B $ recipe $ constructorWithRegs $ do
-          ~(reg1, bean) <- pure makeB
-          tell1 <- reg
-          pure do
-            tell1 reg1 
-            pure bean,
-        someRecipe @C $ recipe $ constructor $ fillArgs makeC,
-        someRecipe @D $ recipe $ constructor $ fillArgs makeD,
-        someRecipe @E $ recipe $ constructor $ fillArgs makeE,
-        someRecipe @F $ recipe $ constructorWithRegs $ do
-          ~(reg1, bean) <- fillArgs makeF
-          tell1 <- reg
-          pure do
-            tell1 reg1 
-            pure bean,
-        someRecipe @G $ Recipe {
-            bean = constructor $ fillArgs makeG,
-            decos = [
-                constructor $ fillArgs makeGDeco1
-            ]
-        },
-        someRecipe @H $ recipe $ constructorWithRegs $ do
-          ~(reg1,reg2,bean) <- fillArgs makeH
-          tell1 <- reg
-          tell2 <- reg
-          pure do
-            tell1 reg1
-            tell2 reg2
-            pure bean
-        ,
-        someRecipe @Z $ Recipe {
-          bean = constructor $ fillArgs makeZ,
-          decos = [
-            constructor $ fillArgs makeZDeco1,
-            constructorWithRegs do
-              ~(reg1, bean) <- fillArgs makeZDeco2
-              tell1 <- reg
-              pure do
-                tell1 reg1
-                pure bean
-            ]
-              },
-        someRecipe @(Initializer, Inspector, Z) $ recipe $ constructor $ fillArgs (,,)
-        ]
+  let cauldron :: Cauldron IO =
+        fromSomeRecipeList
+          [ someRecipe @A Recipe_ {bean = constructor $ pure makeA},
+            someRecipe @B
+              Recipe_
+                { bean = constructorWithRegs do
+                    ~(reg1, bean) <- pure makeB
+                    tell1 <- reg
+                    pure do
+                      tell1 reg1
+                      pure bean
+                },
+            someRecipe @C Recipe_ {bean = constructor $ fillArgs makeC},
+            someRecipe @D Recipe_ {bean = constructor $ fillArgs makeD},
+            someRecipe @E Recipe_ {bean = constructor $ fillArgs makeE},
+            someRecipe @F
+              Recipe_
+                { bean = constructorWithRegs $ do
+                    ~(reg1, bean) <- fillArgs makeF
+                    tell1 <- reg
+                    pure do
+                      tell1 reg1
+                      pure bean
+                },
+            someRecipe @G
+              Recipe
+                { bean = constructor $ fillArgs makeG,
+                  decos =
+                    [ constructor $ fillArgs makeGDeco1
+                    ]
+                },
+            someRecipe @H
+              Recipe_
+                { bean = constructorWithRegs $ do
+                    ~(reg1, reg2, bean) <- fillArgs makeH
+                    tell1 <- reg
+                    tell2 <- reg
+                    pure do
+                      tell1 reg1
+                      tell2 reg2
+                      pure bean
+                },
+            someRecipe @Z
+              Recipe
+                { bean = constructor $ fillArgs makeZ,
+                  decos =
+                    [ constructor $ fillArgs makeZDeco1,
+                      constructorWithRegs do
+                        ~(reg1, bean) <- fillArgs makeZDeco2
+                        tell1 <- reg
+                        pure do
+                          tell1 reg1
+                          pure bean
+                    ]
+                },
+            someRecipe @(Initializer, Inspector, Z) Recipe_ {bean = constructor $ fillArgs (,,)}
+          ]
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
 main :: IO ()

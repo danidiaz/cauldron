@@ -15,8 +15,7 @@
 {-# LANGUAGE NoFieldSelectors #-}
 
 module Cauldron.Beans
-  ( 
-    Beans,
+  ( Beans,
     insert,
     delete,
     restrict,
@@ -39,6 +38,7 @@ import Data.Bifunctor (first)
 import Data.ByteString qualified
 import Data.Dynamic
 import Data.Foldable qualified
+import Data.Function ((&))
 import Data.Functor (($>), (<&>))
 import Data.Functor.Compose
 import Data.Functor.Contravariant
@@ -51,6 +51,7 @@ import Data.Maybe (fromJust)
 import Data.Monoid (Endo (..))
 import Data.SOP (All, And, K (..))
 import Data.SOP.NP
+import Data.Semigroup qualified
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -65,21 +66,19 @@ import GHC.IsList
 import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
-import Data.Semigroup qualified
-import Data.Function ((&))
 
 insert :: forall bean. (Typeable bean) => bean -> Beans -> Beans
-insert bean Beans {beanMap} = 
-  Beans { beanMap = Map.insert (typeRep (Proxy @bean)) (toDyn bean) beanMap}
+insert bean Beans {beanMap} =
+  Beans {beanMap = Map.insert (typeRep (Proxy @bean)) (toDyn bean) beanMap}
 
 delete :: TypeRep -> Beans -> Beans
-delete tr Beans {beanMap} = 
-  Beans { beanMap = Map.delete tr beanMap}
+delete tr Beans {beanMap} =
+  Beans {beanMap = Map.delete tr beanMap}
 
 restrict :: Beans -> Set TypeRep -> Beans
-restrict Beans {beanMap} trs = Beans { beanMap = Map.restrictKeys beanMap trs }
+restrict Beans {beanMap} trs = Beans {beanMap = Map.restrictKeys beanMap trs}
 
-singleton :: forall a. (Typeable a) => a -> Beans 
+singleton :: forall a. (Typeable a) => a -> Beans
 singleton bean = Beans do Map.singleton (typeRep (Proxy @a)) (toDyn bean)
 
 taste :: forall a. (Typeable a) => Beans -> Maybe a
@@ -129,14 +128,15 @@ instance Ord SomeMonoidTypeRep where
 
 unionBeansMonoidally :: Set SomeMonoidTypeRep -> Beans -> Beans -> Beans
 unionBeansMonoidally reps (Beans beans1) (Beans beans2) =
-  let d = reps 
-        & Set.map (\v@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (SomeTypeRep tr) v)
-        & Map.fromArgSet
+  let d =
+        reps
+          & Set.map (\v@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (SomeTypeRep tr) v)
+          & Map.fromArgSet
       combine tr d1 d2 =
-          case (Map.lookup tr d, d1, d2) of
-            (Just (SomeMonoidTypeRep tr'), Dynamic tr1 v1, Dynamic tr2 v2)
-              | Just HRefl <- tr' `eqTypeRep` tr1,
-                Just HRefl <- tr' `eqTypeRep` tr2 ->
-                  toDyn (v1 <> v2)
-            _ -> d2
+        case (Map.lookup tr d, d1, d2) of
+          (Just (SomeMonoidTypeRep tr'), Dynamic tr1 v1, Dynamic tr2 v2)
+            | Just HRefl <- tr' `eqTypeRep` tr1,
+              Just HRefl <- tr' `eqTypeRep` tr2 ->
+                toDyn (v1 <> v2)
+          _ -> d2
    in Beans $ Map.unionWithKey combine beans1 beans2
