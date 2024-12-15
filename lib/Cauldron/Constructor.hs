@@ -103,7 +103,12 @@ runConstructor beans (Constructor Args {_regReps, runArgs}) =
     Right action -> Right do
       Regs dynList bean <- action
       let onlyStaticlyKnown =
-            do manyMemptys _regReps : fmap Cauldron.Beans.singleton dynList
+            ( manyMemptys _regReps : do
+                dyn <- dynList
+                -- This bit is subtle. I mistakenly used Cauldron.Beans.singleton here
+                -- and ended up with the Dynamic type as the *key*. It was hell to debug.
+                [fromDynList [dyn]]
+            )
               & do foldl (Cauldron.Beans.unionBeansMonoidally _regReps) (mempty @Beans)
               & do flip Cauldron.Beans.restrict (Set.map someMonoidTypeRepToSomeTypeRep _regReps)
       pure (onlyStaticlyKnown, bean)
