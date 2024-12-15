@@ -59,7 +59,6 @@ module Cauldron
 
     -- * Recipes
     Recipe (..),
-    Recipe_ (..),
     ToRecipe (..),
     hoistRecipe,
     SomeRecipe,
@@ -197,21 +196,11 @@ data Recipe m bean where
     } ->
     Recipe m bean
 
-newtype Recipe_ m bean where
-  Recipe_ ::
-    { -- | How to build the bean itself.
-      bean :: Constructor m bean
-    } ->
-    Recipe_ m bean
-
 class ToRecipe c where
   toRecipe :: c m bean -> Recipe m bean
 
 instance ToRecipe Recipe where
   toRecipe = id
-
-instance ToRecipe Recipe_ where
-  toRecipe (Recipe_ {bean}) = Recipe {bean, decos = []}
 
 instance ToRecipe Constructor where
   toRecipe c = Recipe {bean = c, decos = []}
