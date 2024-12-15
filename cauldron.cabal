@@ -77,3 +77,8 @@ test-suite tests-managed
     hs-source-dirs:   test
     main-is:          managedTests.hs
 
+test-suite tests-constructor
+    import:           common-tests
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          constructorTests.hs
