@@ -1,3 +1,4 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
@@ -22,7 +23,11 @@ module Cauldron.Constructor
     constructor,
     effectfulConstructor,
     constructorWithRegs,
+    constructorWithRegs1,
+    constructorWithRegs2,
     effectfulConstructorWithRegs,
+    effectfulConstructorWithRegs1,
+    effectfulConstructorWithRegs2,
     runConstructor,
     hoistConstructor,
     getArgReps,
@@ -95,8 +100,52 @@ effectfulConstructor x = Constructor $ fmap (fmap pure) x
 constructorWithRegs :: (Applicative m) => Args (Regs bean) -> Constructor m bean
 constructorWithRegs x = Constructor $ fmap pure x
 
+constructorWithRegs1 :: (Applicative m, Typeable reg1, Monoid reg1) => Args (reg1, bean) -> Constructor m bean
+constructorWithRegs1 args =
+  constructorWithRegs do
+    ~(reg1, bean) <- args
+    tell1 <- reg
+    pure do
+      tell1 reg1
+      pure bean
+
+constructorWithRegs2 :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (reg1, reg2, bean) -> Constructor m bean
+constructorWithRegs2 args =
+  constructorWithRegs do
+    ~(reg1, reg2, bean) <- args
+    tell1 <- reg
+    tell2 <- reg
+    pure do
+      tell1 reg1
+      tell2 reg2
+      pure bean
+
 effectfulConstructorWithRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
 effectfulConstructorWithRegs x = Constructor x
+
+effectfulConstructorWithRegs1 :: (Applicative m, Typeable reg1, Monoid reg1) => Args (m (reg1, bean)) -> Constructor m bean
+effectfulConstructorWithRegs1 args =
+  effectfulConstructorWithRegs do
+    action <- args
+    tell1 <- reg
+    pure do
+      ~(reg1, bean) <- action
+      pure do
+        tell1 reg1
+        pure bean
+
+effectfulConstructorWithRegs2 :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (m (reg1, reg2, bean)) -> Constructor m bean
+effectfulConstructorWithRegs2 args =
+  effectfulConstructorWithRegs do
+    action <- args
+    tell1 <- reg
+    tell2 <- reg
+    pure do
+      ~(reg1, reg2, bean) <- action
+      pure do
+        tell1 reg1
+        tell2 reg2
+        pure bean
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
 runConstructor beans (Constructor Args {_regReps, runArgs}) = do
