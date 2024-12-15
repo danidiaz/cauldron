@@ -47,6 +47,7 @@ library
     hs-source-dirs:   lib
     exposed-modules:  
         Cauldron
+        Cauldron.Beans
         Cauldron.Constructor
         Cauldron.Managed
 

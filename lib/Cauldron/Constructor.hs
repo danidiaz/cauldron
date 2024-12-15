@@ -32,15 +32,8 @@ module Cauldron.Constructor
     reg,
     Regs,
     Beans,
-    insertBean,
-    deleteBean,
-    restrictBeans,
-    lookupBean,
-    singletonBean,
     taste,
     fromDynList,
-    toDynMap,
-    unionBeansMonoidally,
     SomeMonoidTypeRep (..),
   )
 where
@@ -83,6 +76,8 @@ import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
 import Data.Semigroup qualified
 import Data.Function ((&))
+import Cauldron.Beans (Beans, SomeMonoidTypeRep(..), taste, fromDynList)
+import Cauldron.Beans qualified
 
 newtype Constructor m a = Constructor (Args (m (Regs a)))
   deriving (Functor)
@@ -106,9 +101,9 @@ runConstructor beans (Constructor Args {_regReps, runArgs}) =
     Right action -> Right do
       Regs dynList bean <- action
       let onlyStaticlyKnown =
-              do manyMemptys _regReps : fmap singletonBean dynList
-            & do foldl (unionBeansMonoidally _regReps) (mempty @Beans)
-            & do flip restrictBeans (Set.map someMonoidTypeRepToSomeTypeRep _regReps)
+              do manyMemptys _regReps : fmap Cauldron.Beans.singletonBean dynList
+            & do foldl (Cauldron.Beans.unionBeansMonoidally _regReps) (mempty @Beans)
+            & do flip Cauldron.Beans.restrictBeans (Set.map someMonoidTypeRepToSomeTypeRep _regReps)
       pure (onlyStaticlyKnown, bean)
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
@@ -150,29 +145,6 @@ reg =
             Regs [ toDyn a ] ()
         }
 
-insertBean :: forall bean. (Typeable bean) => bean -> Beans -> Beans
-insertBean bean Beans {beanMap} = 
-  Beans { beanMap = Map.insert (typeRep (Proxy @bean)) (toDyn bean) beanMap}
-
-deleteBean :: TypeRep -> Beans -> Beans
-deleteBean tr Beans {beanMap} = 
-  Beans { beanMap = Map.delete tr beanMap}
-
-restrictBeans :: Beans -> Set TypeRep -> Beans
-restrictBeans Beans {beanMap} trs = Beans { beanMap = Map.restrictKeys beanMap trs }
-
-lookupBean :: forall a. (Typeable a) => Beans -> Maybe a
-lookupBean = taste
-
-singletonBean :: forall a. (Typeable a) => a -> Beans 
-singletonBean bean = Beans do Map.singleton (typeRep (Proxy @a)) (toDyn bean)
-
-taste :: forall a. (Typeable a) => Beans -> Maybe a
-taste Beans {beanMap} =
-  let tr = Type.Reflection.typeRep @a
-   in case Map.lookup (SomeTypeRep tr) beanMap of
-        Just (Dynamic tr' v) | Just HRefl <- tr `eqTypeRep` tr' -> Just v
-        _ -> Nothing
 
 instance Applicative Args where
   pure a =
@@ -197,43 +169,6 @@ instance Applicative Args where
           runArgs = \beans -> f beans <*> a beans
         }
 
-newtype Beans = Beans {beanMap :: Map TypeRep Dynamic}
-
-instance Semigroup Beans where
-  Beans {beanMap = r1} <> Beans {beanMap = r2} = Beans do Map.unionWith (flip const) r1 r2
-
-instance Monoid Beans where
-  mempty = Beans mempty
-
-instance IsList Beans where
-  type Item Beans = Dynamic
-  toList (Beans {beanMap}) = Map.elems beanMap
-  fromList = fromDynList
-
-fromDynList :: [Dynamic] -> Beans
-fromDynList ds = Beans do Map.fromList do ds <&> \d -> (dynTypeRep d, d)
-
-toDynMap :: Beans -> Map TypeRep Dynamic
-toDynMap Beans {beanMap} = beanMap
-
---
-data SomeMonoidTypeRep where
-  SomeMonoidTypeRep ::
-    forall a.
-    (Typeable a, Monoid a) =>
-    Type.Reflection.TypeRep a ->
-    SomeMonoidTypeRep
-
-instance Show SomeMonoidTypeRep where
-  show (SomeMonoidTypeRep tr) = show tr
-
-instance Eq SomeMonoidTypeRep where
-  (SomeMonoidTypeRep tr1) == (SomeMonoidTypeRep tr2) =
-    (SomeTypeRep tr1) == (SomeTypeRep tr2)
-
-instance Ord SomeMonoidTypeRep where
-  (SomeMonoidTypeRep tr1) `compare` (SomeMonoidTypeRep tr2) =
-    (SomeTypeRep tr1) `compare` (SomeTypeRep tr2)
 
 someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
 someMonoidTypeRepMempty (SomeMonoidTypeRep @t _) = toDyn (mempty @t)
@@ -255,14 +190,6 @@ instance Monad Regs where
     let Regs w2 r = k a
      in Regs (w1 ++ w2) r
 
--- combineMonoidRegs :: SomeMonoidTypeRep -> Dynamic -> Dynamic -> Dynamic
--- combineMonoidRegs mtr d1 d2 = case (mtr, d1, d2) of
---   (SomeMonoidTypeRep tr, Dynamic tr1 v1, Dynamic tr2 v2)
---     | Just HRefl <- tr `eqTypeRep` tr1,
---       Just HRefl <- tr `eqTypeRep` tr2 ->
---         toDyn (v1 <> v2)
---   _ -> error "impossible"
-
 fillArgs ::
   forall (args :: [Type]) r curried.
   (All Typeable args,
@@ -275,20 +202,6 @@ fillArgs curried =
       sequencedArgs = sequence_NP args
       _argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args 
    in uncurried <$> sequencedArgs <* Args { _argReps, _regReps = mempty, runArgs = \_ -> Right () } 
-
-unionBeansMonoidally :: Set SomeMonoidTypeRep -> Beans -> Beans -> Beans
-unionBeansMonoidally reps (Beans beans1) (Beans beans2) =
-  let d = reps 
-        & Set.map (\v@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (SomeTypeRep tr) v)
-        & Map.fromArgSet
-      combine tr d1 d2 =
-          case (Map.lookup tr d, d1, d2) of
-            (Just (SomeMonoidTypeRep tr'), Dynamic tr1 v1, Dynamic tr2 v2)
-              | Just HRefl <- tr' `eqTypeRep` tr1,
-                Just HRefl <- tr' `eqTypeRep` tr2 ->
-                  toDyn (v1 <> v2)
-            _ -> d2
-   in Beans $ Map.unionWithKey combine beans1 beans2
 
 manyMemptys :: Set SomeMonoidTypeRep -> Beans
 manyMemptys reps =
