@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 
 module Cauldron.Managed
   ( -- * The Managed monad for handling resources
