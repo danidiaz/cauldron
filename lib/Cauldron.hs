@@ -175,7 +175,7 @@ hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$>
 data SomeRecipe m where
   SomeRecipe :: (Typeable bean) => Recipe m bean -> SomeRecipe m
 
-someRecipe :: (Typeable bean) => Recipe m bean -> SomeRecipe m
+someRecipe :: forall bean m . (Typeable bean) => Recipe m bean -> SomeRecipe m
 someRecipe = SomeRecipe
 
 fromSomeRecipeList :: [SomeRecipe m] -> Cauldron m
