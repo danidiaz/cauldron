@@ -31,6 +31,7 @@ module Cauldron.Constructor
     fillArgs,
     reg,
     Regs,
+    -- * Re-exports
     Beans,
     taste,
     fromDynList,

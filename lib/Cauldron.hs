@@ -87,7 +87,19 @@ module Cauldron
     collapsePrimaryBeans,
     toAdjacencyMap,
     -- * Re-exported 
-    module Cauldron.Constructor,
+    Constructor,
+    constructor,
+    effectfulConstructor,
+    constructorWithRegs,
+    effectfulConstructorWithRegs,
+    hoistConstructor,
+    Args,
+    arg,
+    fillArgs,
+    reg,
+    Regs,
+    Beans,
+    taste,
   )
 where
 
