@@ -59,7 +59,6 @@ module Cauldron
 
     -- * Recipes
     Recipe (..),
-    ToRecipe (..),
     hoistRecipe,
     SomeRecipe,
     someRecipe,
