@@ -19,25 +19,16 @@
 -- {-# LANGUAGE TypeAbstractions #-}
 
 module Cauldron.Constructor
-  ( Constructor,
-    constructor,
-    effectfulConstructor,
-    constructorWithRegs,
-    constructorWithRegs1,
-    constructorWithRegs2,
-    effectfulConstructorWithRegs,
-    effectfulConstructorWithRegs1,
-    effectfulConstructorWithRegs2,
-    runConstructor,
-    hoistConstructor,
+  ( 
     getArgReps,
     getRegReps,
     Args,
+    runArgs,
     arg,
     fillArgs,
     reg,
     Regs,
-
+    runRegs,
     -- * Re-exports
     Beans,
     taste,
@@ -88,93 +79,20 @@ import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
 
-newtype Constructor m a = Constructor (Args (m (Regs a)))
-  deriving stock (Functor)
 
-constructor :: (Applicative m) => Args bean -> Constructor m bean
-constructor x = Constructor $ fmap (pure . pure) x
+getArgReps :: Args a -> Set SomeTypeRep
+getArgReps (Args {_argReps}) = _argReps
 
-effectfulConstructor :: (Functor m) => Args (m bean) -> Constructor m bean
-effectfulConstructor x = Constructor $ fmap (fmap pure) x
+getRegReps :: Args a -> Set SomeMonoidTypeRep
+getRegReps (Args {_regReps}) = _regReps
 
-constructorWithRegs :: (Applicative m) => Args (Regs bean) -> Constructor m bean
-constructorWithRegs x = Constructor $ fmap pure x
-
-constructorWithRegs1 :: (Applicative m, Typeable reg1, Monoid reg1) => Args (reg1, bean) -> Constructor m bean
-constructorWithRegs1 args =
-  constructorWithRegs do
-    ~(reg1, bean) <- args
-    tell1 <- reg
-    pure do
-      tell1 reg1
-      pure bean
-
-constructorWithRegs2 :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (reg1, reg2, bean) -> Constructor m bean
-constructorWithRegs2 args =
-  constructorWithRegs do
-    ~(reg1, reg2, bean) <- args
-    tell1 <- reg
-    tell2 <- reg
-    pure do
-      tell1 reg1
-      tell2 reg2
-      pure bean
-
-effectfulConstructorWithRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
-effectfulConstructorWithRegs x = Constructor x
-
-effectfulConstructorWithRegs1 :: (Applicative m, Typeable reg1, Monoid reg1) => Args (m (reg1, bean)) -> Constructor m bean
-effectfulConstructorWithRegs1 args =
-  effectfulConstructorWithRegs do
-    action <- args
-    tell1 <- reg
-    pure do
-      ~(reg1, bean) <- action
-      pure do
-        tell1 reg1
-        pure bean
-
-effectfulConstructorWithRegs2 :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (m (reg1, reg2, bean)) -> Constructor m bean
-effectfulConstructorWithRegs2 args =
-  effectfulConstructorWithRegs do
-    action <- args
-    tell1 <- reg
-    tell2 <- reg
-    pure do
-      ~(reg1, reg2, bean) <- action
-      pure do
-        tell1 reg1
-        tell2 reg2
-        pure bean
-
-runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
-runConstructor beans (Constructor Args {_regReps, runArgs}) = do
-  Regs dynList bean <- runArgs beans
-  let onlyStaticlyKnown =
-        ( manyMemptys _regReps : do
-            dyn <- dynList
-            -- This bit is subtle. I mistakenly used Cauldron.Beans.singleton here
-            -- and ended up with the Dynamic type as the *key*. It was hell to debug.
-            [fromDynList [dyn]]
-        )
-          & do foldl (Cauldron.Beans.unionBeansMonoidally _regReps) (mempty @Beans)
-          & do flip Cauldron.Beans.restrict (Set.map someMonoidTypeRepToSomeTypeRep _regReps)
-  pure (onlyStaticlyKnown, bean)
-
--- | Change the monad in which the 'Constructor'\'s effects take place.
-hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
-hoistConstructor f (Constructor theArgs) = Constructor do fmap f theArgs
-
-getArgReps :: Constructor m a -> Set SomeTypeRep
-getArgReps (Constructor (Args {_argReps})) = _argReps
-
-getRegReps :: Constructor m a -> Set SomeMonoidTypeRep
-getRegReps (Constructor (Args {_regReps})) = _regReps
+runArgs :: Args a -> [Beans] -> a
+runArgs (Args _ _ _runArgs) = _runArgs
 
 data Args a = Args
   { _argReps :: Set SomeTypeRep,
     _regReps :: Set SomeMonoidTypeRep,
-    runArgs :: [Beans] -> a
+    _runArgs :: [Beans] -> a
   }
   deriving stock (Functor)
 
@@ -184,7 +102,7 @@ arg =
    in Args
         { _argReps = Set.singleton tr,
           _regReps = Set.empty,
-          runArgs = \bss ->
+          _runArgs = \bss ->
             case asum do taste <$> bss of
               Just v -> v
               Nothing -> throw (LazilyReadBeanMissing tr)
@@ -196,7 +114,7 @@ reg =
    in Args
         { _argReps = Set.empty,
           _regReps = Set.singleton tr,
-          runArgs = pure \a -> Regs [toDyn a] ()
+          _runArgs = pure \a -> Regs [toDyn a] ()
         }
 
 instance Applicative Args where
@@ -204,22 +122,22 @@ instance Applicative Args where
     Args
       { _argReps = Set.empty,
         _regReps = Set.empty,
-        runArgs = pure a
+        _runArgs = pure a
       }
   Args
     { _argReps = _argReps1,
       _regReps = _regReps1,
-      runArgs = f
+      _runArgs = f
     }
     <*> Args
       { _argReps = _argReps2,
         _regReps = _regReps2,
-        runArgs = a
+        _runArgs = a
       } =
       Args
         { _argReps = _argReps1 `Set.union` _argReps2,
           _regReps = _regReps1 `Set.union` _regReps2,
-          runArgs = \beans -> (f beans) (a beans)
+          _runArgs = \beans -> (f beans) (a beans)
         }
 
 someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
@@ -231,6 +149,19 @@ someMonoidTypeRepToSomeTypeRep (SomeMonoidTypeRep tr) = SomeTypeRep tr
 -- | Unrestricted building SHOULD NOT be public!
 data Regs a = Regs [Dynamic] a
   deriving stock (Functor)
+
+runRegs :: Regs a -> Set SomeMonoidTypeRep -> (Beans, a)
+runRegs (Regs dyns a) monoidReps = 
+  let onlyStaticlyKnown =
+        ( manyMemptys monoidReps : do
+            dyn <- dyns
+            -- This bit is subtle. I mistakenly used Cauldron.Beans.singleton here
+            -- and ended up with the Dynamic type as the *key*. It was hell to debug.
+            [fromDynList [dyn]]
+        )
+          & do foldl (Cauldron.Beans.unionBeansMonoidally monoidReps) (mempty @Beans)
+          & do flip Cauldron.Beans.restrict (Set.map someMonoidTypeRepToSomeTypeRep monoidReps)
+   in (onlyStaticlyKnown, a)
 
 instance Applicative Regs where
   pure a = Regs [] a
@@ -254,7 +185,7 @@ fillArgs curried =
       args = cpure_NP (Proxy @Typeable) arg
       sequencedArgs = sequence_NP args
       _argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args
-   in uncurried <$> sequencedArgs <* Args {_argReps, _regReps = mempty, runArgs = \_ -> Right ()}
+   in uncurried <$> sequencedArgs <* Args {_argReps, _regReps = mempty, _runArgs = \_ -> Right ()}
 
 manyMemptys :: Set SomeMonoidTypeRep -> Beans
 manyMemptys reps =
