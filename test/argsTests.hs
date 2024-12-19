@@ -51,7 +51,7 @@ tests =
   testGroup
     "All"
     [ testCase "withRegs" do
-        let (beans, C) = flip runRegs (getRegsReps argsForC) do runArgs argsForC [[toDyn A, toDyn B]]
+        let (beans, C) = runRegs (runArgs argsForC [[toDyn A, toDyn B]]) (getRegsReps argsForC)
         Just m <- pure do taste @[Text] beans
         assertEqual
           "monoid"
