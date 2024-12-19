@@ -112,29 +112,29 @@ coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, I
 coolWiring fire = do
   let cauldron :: Cauldron IO =
         fromSomeRecipeList
-          [ someRecipe @A $ constructor do pure makeA,
-            someRecipe @B $ constructorWithRegs1 do pure makeB,
-            someRecipe @C $ constructor do fillArgs makeC,
-            someRecipe @D $ constructor do fillArgs makeD,
-            someRecipe @E $ constructor do fillArgs makeE,
-            someRecipe @F $ constructorWithRegs1 do fillArgs makeF,
+          [ someRecipe @A $ val do pure makeA,
+            someRecipe @B $ val1Reg do pure makeB,
+            someRecipe @C $ val do fillArgs makeC,
+            someRecipe @D $ val do fillArgs makeD,
+            someRecipe @E $ val do fillArgs makeE,
+            someRecipe @F $ val1Reg do fillArgs makeF,
             someRecipe @G
               Recipe
-                { bean = constructor do fillArgs makeG,
+                { bean = val do fillArgs makeG,
                   decos =
-                    [ constructor do fillArgs makeGDeco1
+                    [ val do fillArgs makeGDeco1
                     ]
                 },
-            someRecipe @H $ constructorWithRegs2 do fillArgs makeH,
+            someRecipe @H $ val2Regs do fillArgs makeH,
             someRecipe @Z
               Recipe
-                { bean = constructor do fillArgs makeZ,
+                { bean = val do fillArgs makeZ,
                   decos =
-                    [ constructor do fillArgs makeZDeco1,
-                      constructorWithRegs1 do fillArgs makeZDeco2
+                    [ val do fillArgs makeZDeco1,
+                      val1Reg do fillArgs makeZDeco2
                     ]
                 },
-            someRecipe @(Initializer, Inspector, Z) $ constructor do fillArgs (,,)
+            someRecipe @(Initializer, Inspector, Z) $ val do fillArgs (,,)
           ]
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 

@@ -68,14 +68,14 @@ module Cauldron
 
     -- * Constructor
     Constructor,
-    constructor,
-    effConstructor,
-    constructorWithRegs1,
-    constructorWithRegs2,
-    constructorManyRegs,
-    effConstructorWithRegs1,
-    effConstructorWithRegs2,
-    effConstructorManyRegs,
+    val,
+    val1Reg,
+    val2Regs,
+    valManyRegs,
+    eff,
+    eff1Reg,
+    eff2Regs,
+    effManyRegs,
     hoistConstructor,
     getConstructorArgs,
     -- fromConstructorList,
@@ -769,27 +769,27 @@ unsafeTreeToNonEmpty = \case
 newtype Constructor m a = Constructor (Args (m (Regs a)))
   deriving stock (Functor)
 
-constructor :: (Applicative m) => Args bean -> Constructor m bean
-constructor x = Constructor $ fmap (pure . pure) x
+val :: (Applicative m) => Args bean -> Constructor m bean
+val x = Constructor $ fmap (pure . pure) x
 
-effConstructor :: (Functor m) => Args (m bean) -> Constructor m bean
-effConstructor x = Constructor $ fmap (fmap pure) x
+eff :: (Functor m) => Args (m bean) -> Constructor m bean
+eff x = Constructor $ fmap (fmap pure) x
 
-constructorManyRegs :: (Applicative m) => Args (Regs bean) -> Constructor m bean
-constructorManyRegs x = Constructor $ fmap pure x
+valManyRegs :: (Applicative m) => Args (Regs bean) -> Constructor m bean
+valManyRegs x = Constructor $ fmap pure x
 
-constructorWithRegs1 :: (Applicative m, Typeable reg1, Monoid reg1) => Args (reg1, bean) -> Constructor m bean
-constructorWithRegs1 args =
-  constructorManyRegs do
+val1Reg :: (Applicative m, Typeable reg1, Monoid reg1) => Args (reg1, bean) -> Constructor m bean
+val1Reg args =
+  valManyRegs do
     ~(reg1, bean) <- args
     tell1 <- reg
     pure do
       tell1 reg1
       pure bean
 
-constructorWithRegs2 :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (reg1, reg2, bean) -> Constructor m bean
-constructorWithRegs2 args =
-  constructorManyRegs do
+val2Regs :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (reg1, reg2, bean) -> Constructor m bean
+val2Regs args =
+  valManyRegs do
     ~(reg1, reg2, bean) <- args
     tell1 <- reg
     tell2 <- reg
@@ -798,12 +798,12 @@ constructorWithRegs2 args =
       tell2 reg2
       pure bean
 
-effConstructorManyRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
-effConstructorManyRegs x = Constructor x
+effManyRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
+effManyRegs x = Constructor x
 
-effConstructorWithRegs1 :: (Applicative m, Typeable reg1, Monoid reg1) => Args (m (reg1, bean)) -> Constructor m bean
-effConstructorWithRegs1 args =
-  effConstructorManyRegs do
+eff1Reg :: (Applicative m, Typeable reg1, Monoid reg1) => Args (m (reg1, bean)) -> Constructor m bean
+eff1Reg args =
+  effManyRegs do
     action <- args
     tell1 <- reg
     pure do
@@ -812,9 +812,9 @@ effConstructorWithRegs1 args =
         tell1 reg1
         pure bean
 
-effConstructorWithRegs2 :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (m (reg1, reg2, bean)) -> Constructor m bean
-effConstructorWithRegs2 args =
-  effConstructorManyRegs do
+eff2Regs :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (m (reg1, reg2, bean)) -> Constructor m bean
+eff2Regs args =
+  effManyRegs do
     action <- args
     tell1 <- reg
     tell2 <- reg

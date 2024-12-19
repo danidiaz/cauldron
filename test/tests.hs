@@ -110,9 +110,9 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 cauldron :: Cauldron M
 cauldron =
   fromSomeRecipeList
-    [ someRecipe @(Logger M) $ effConstructorWithRegs1 do pure makeLogger,
-      someRecipe @(Repository M) $ effConstructorWithRegs1 do makeRepository <$> arg,
-      someRecipe @(Initializer, Repository M) $ constructor do fillArgs (,)
+    [ someRecipe @(Logger M) $ eff1Reg do pure makeLogger,
+      someRecipe @(Repository M) $ eff1Reg do makeRepository <$> arg,
+      someRecipe @(Initializer, Repository M) $ val do fillArgs (,)
     ]
 
 cauldronMissingDep :: Cauldron M
@@ -123,13 +123,13 @@ cauldronMissingDep =
 cauldronDoubleDutyBean :: Cauldron M
 cauldronDoubleDutyBean =
   cauldron
-    & insert @Initializer (constructor do pure (Initializer (pure ())))
+    & insert @Initializer (val do pure (Initializer (pure ())))
 
 cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
     & insert @(Logger M)
-      ( effConstructorManyRegs do
+      ( effManyRegs do
           action <- fillArgs \(_ :: Repository M) -> makeLogger
           tell1 <- reg
           pure do
@@ -143,27 +143,27 @@ cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty =
   Data.List.NonEmpty.fromList
     [ fromSomeRecipeList
-        [ someRecipe @(Logger M) $ effConstructorWithRegs1 do pure makeLogger,
-          someRecipe @(Weird M) $ effConstructor do fillArgs makeWeird
+        [ someRecipe @(Logger M) $ eff1Reg do pure makeLogger,
+          someRecipe @(Weird M) $ eff do fillArgs makeWeird
         ],
       fromSomeRecipeList
-        [ someRecipe @(Repository M) $ effConstructorWithRegs1 do fillArgs makeRepository,
+        [ someRecipe @(Repository M) $ eff1Reg do fillArgs makeRepository,
           someRecipe @(Weird M)
             Recipe
-              { bean = effConstructor do fillArgs makeSelfInvokingWeird,
+              { bean = eff do fillArgs makeSelfInvokingWeird,
                 decos =
-                  [ constructor do fillArgs (weirdDeco "inner"),
-                    constructor do fillArgs (weirdDeco "outer")
+                  [ val do fillArgs (weirdDeco "inner"),
+                    val do fillArgs (weirdDeco "outer")
                   ]
               },
-          someRecipe @(Initializer, Repository M, Weird M) $ constructor do fillArgs (,,)
+          someRecipe @(Initializer, Repository M, Weird M) $ val do fillArgs (,,)
         ]
     ]
 
 cauldronLonely :: Cauldron M
 cauldronLonely =
   fromSomeRecipeList
-    [ someRecipe @(Lonely M) $ constructor do pure makeLonely
+    [ someRecipe @(Lonely M) $ val do pure makeLonely
     ]
 
 tests :: TestTree
