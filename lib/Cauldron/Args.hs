@@ -18,10 +18,9 @@
 
 -- {-# LANGUAGE TypeAbstractions #-}
 
-module Cauldron.Constructor
-  ( 
-    getArgReps,
-    getRegReps,
+module Cauldron.Args
+  ( getArgsReps,
+    getRegsReps,
     Args,
     runArgs,
     arg,
@@ -29,6 +28,7 @@ module Cauldron.Constructor
     reg,
     Regs,
     runRegs,
+
     -- * Re-exports
     Beans,
     taste,
@@ -79,12 +79,11 @@ import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
 
+getArgsReps :: Args a -> Set SomeTypeRep
+getArgsReps (Args {_argReps}) = _argReps
 
-getArgReps :: Args a -> Set SomeTypeRep
-getArgReps (Args {_argReps}) = _argReps
-
-getRegReps :: Args a -> Set SomeMonoidTypeRep
-getRegReps (Args {_regReps}) = _regReps
+getRegsReps :: Args a -> Set SomeMonoidTypeRep
+getRegsReps (Args {_regReps}) = _regReps
 
 runArgs :: Args a -> [Beans] -> a
 runArgs (Args _ _ _runArgs) = _runArgs
@@ -151,7 +150,7 @@ data Regs a = Regs [Dynamic] a
   deriving stock (Functor)
 
 runRegs :: Regs a -> Set SomeMonoidTypeRep -> (Beans, a)
-runRegs (Regs dyns a) monoidReps = 
+runRegs (Regs dyns a) monoidReps =
   let onlyStaticlyKnown =
         ( manyMemptys monoidReps : do
             dyn <- dyns

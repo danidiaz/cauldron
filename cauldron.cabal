@@ -48,7 +48,7 @@ library
     exposed-modules:  
         Cauldron
         Cauldron.Beans
-        Cauldron.Constructor
+        Cauldron.Args
         Cauldron.Managed
 
 executable cauldron-example-wiring
@@ -77,8 +77,8 @@ test-suite tests-managed
     hs-source-dirs:   test
     main-is:          managedTests.hs
 
-test-suite tests-constructor
+test-suite tests-args
     import:           common-tests
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
-    main-is:          constructorTests.hs
+    main-is:          argsTests.hs

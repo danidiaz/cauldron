@@ -10,7 +10,7 @@
 module Main (main) where
 
 import Cauldron
-import Cauldron.Constructor (runConstructor)
+import Cauldron.Args
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer
 import Data.Dynamic
@@ -38,8 +38,8 @@ data C = C
 makeC :: A -> B -> ([Text], C)
 makeC _ _ = (["monoid"], C)
 
-constructorForC :: Constructor Identity C
-constructorForC = constructorWithRegs do
+argsForC :: Args (Regs C)
+argsForC = do
   ~(reg1, bean) <- makeC <$> arg <*> arg
   tell1 <- reg
   pure do
@@ -51,7 +51,7 @@ tests =
   testGroup
     "All"
     [ testCase "withRegs" do
-        Identity (beans, C) <- pure do runConstructor [[toDyn A, toDyn B]] constructorForC
+        let (beans, C) = flip runRegs (getRegsReps argsForC) do runArgs argsForC [[toDyn A, toDyn B]]
         Just m <- pure do taste @[Text] beans
         assertEqual
           "monoid"

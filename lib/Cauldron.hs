@@ -117,7 +117,7 @@ import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
 import Cauldron.Beans qualified
-import Cauldron.Constructor
+import Cauldron.Args
 import Control.Applicative
 import Control.Monad.Fix
 import Data.Bifunctor (first)
@@ -398,10 +398,10 @@ constructorReps :: forall bean m. (Typeable bean) => Constructor m bean -> Const
 constructorReps (getConstructorArgs -> c) =
   ConstructorReps
     { beanRep = typeRep (Proxy @bean),
-      argReps = getArgReps c,
+      argReps = getArgsReps c,
       regReps =
         c
-          & getRegReps
+          & getRegsReps
           & Set.map (\mtr@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (Type.Reflection.SomeTypeRep tr) (toDyn (someMonoidTypeRepMempty mtr)))
           & Map.fromArgSet
     }
@@ -668,7 +668,7 @@ followConstructor ::
   m (Beans, bean)
 followConstructor c final super = do
   (regs, bean) <- runConstructor [super, final] c
-  pure (Cauldron.Beans.unionBeansMonoidally (getRegReps (getConstructorArgs c)) super regs, bean)
+  pure (Cauldron.Beans.unionBeansMonoidally (getRegsReps (getConstructorArgs c)) super regs, bean)
 
 -- | Sometimes the 'cook'ing process goes wrong.
 data RecipeError
@@ -825,7 +825,7 @@ effectfulConstructorWithRegs2 args =
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
 runConstructor beans (Constructor args) = do
   regs <- runArgs args beans 
-  pure (runRegs regs (getRegReps args))
+  pure (runRegs regs (getRegsReps args))
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
