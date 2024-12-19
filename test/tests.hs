@@ -110,22 +110,8 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 cauldron :: Cauldron M
 cauldron =
   fromSomeRecipeList
-    [ someRecipe @(Logger M) $ effectfulConstructorWithRegs do
-        action <- pure makeLogger
-        tell1 <- reg
-        pure do
-          (reg1, bean) <- action
-          pure do
-            tell1 reg1
-            pure bean,
-      someRecipe @(Repository M) $ effectfulConstructorWithRegs do
-        action <- makeRepository <$> arg
-        tell1 <- reg
-        pure do
-          (reg1, bean) <- action
-          pure do
-            tell1 reg1
-            pure bean,
+    [ someRecipe @(Logger M) $ effConstructorWithRegs1 do pure makeLogger,
+      someRecipe @(Repository M) $ effConstructorWithRegs1 do makeRepository <$> arg,
       someRecipe @(Initializer, Repository M) $ constructor do fillArgs (,)
     ]
 
@@ -143,7 +129,7 @@ cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
     & insert @(Logger M)
-      ( effectfulConstructorWithRegs do
+      ( effConstructorManyRegs do
           action <- fillArgs \(_ :: Repository M) -> makeLogger
           tell1 <- reg
           pure do
@@ -157,14 +143,14 @@ cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty =
   Data.List.NonEmpty.fromList
     [ fromSomeRecipeList
-        [ someRecipe @(Logger M) $ effectfulConstructorWithRegs1 do pure makeLogger,
-          someRecipe @(Weird M) $ effectfulConstructor do fillArgs makeWeird
+        [ someRecipe @(Logger M) $ effConstructorWithRegs1 do pure makeLogger,
+          someRecipe @(Weird M) $ effConstructor do fillArgs makeWeird
         ],
       fromSomeRecipeList
-        [ someRecipe @(Repository M) $ effectfulConstructorWithRegs1 do fillArgs makeRepository,
+        [ someRecipe @(Repository M) $ effConstructorWithRegs1 do fillArgs makeRepository,
           someRecipe @(Weird M)
             Recipe
-              { bean = effectfulConstructor do fillArgs makeSelfInvokingWeird,
+              { bean = effConstructor do fillArgs makeSelfInvokingWeird,
                 decos =
                   [ constructor do fillArgs (weirdDeco "inner"),
                     constructor do fillArgs (weirdDeco "outer")

@@ -12,9 +12,9 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UnliftedDatatypes #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE UnliftedDatatypes #-}
 
 -- | This is a library for performing dependency injection. It's an alternative
 -- to manually wiring your functions and passing all required parameters
@@ -66,6 +66,20 @@ module Cauldron
     someRecipe,
     fromSomeRecipeList,
 
+    -- * Constructor
+    Constructor,
+    constructor,
+    effConstructor,
+    constructorWithRegs1,
+    constructorWithRegs2,
+    constructorManyRegs,
+    effConstructorWithRegs1,
+    effConstructorWithRegs2,
+    effConstructorManyRegs,
+    hoistConstructor,
+    getConstructorArgs,
+    -- fromConstructorList,
+
     -- * Cooking the beans
     cook,
     cookNonEmpty,
@@ -90,17 +104,6 @@ module Cauldron
     collapsePrimaryBeans,
     toAdjacencyMap,
 
-    Constructor,
-    constructor,
-    effectfulConstructor,
-    constructorWithRegs,
-    constructorWithRegs1,
-    constructorWithRegs2,
-    effectfulConstructorWithRegs,
-    effectfulConstructorWithRegs1,
-    effectfulConstructorWithRegs2,
-    hoistConstructor,
-    getConstructorArgs,
     -- * Re-exported
     Args,
     arg,
@@ -116,8 +119,8 @@ import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
-import Cauldron.Beans qualified
 import Cauldron.Args
+import Cauldron.Beans qualified
 import Control.Applicative
 import Control.Monad.Fix
 import Data.Bifunctor (first)
@@ -769,15 +772,15 @@ newtype Constructor m a = Constructor (Args (m (Regs a)))
 constructor :: (Applicative m) => Args bean -> Constructor m bean
 constructor x = Constructor $ fmap (pure . pure) x
 
-effectfulConstructor :: (Functor m) => Args (m bean) -> Constructor m bean
-effectfulConstructor x = Constructor $ fmap (fmap pure) x
+effConstructor :: (Functor m) => Args (m bean) -> Constructor m bean
+effConstructor x = Constructor $ fmap (fmap pure) x
 
-constructorWithRegs :: (Applicative m) => Args (Regs bean) -> Constructor m bean
-constructorWithRegs x = Constructor $ fmap pure x
+constructorManyRegs :: (Applicative m) => Args (Regs bean) -> Constructor m bean
+constructorManyRegs x = Constructor $ fmap pure x
 
 constructorWithRegs1 :: (Applicative m, Typeable reg1, Monoid reg1) => Args (reg1, bean) -> Constructor m bean
 constructorWithRegs1 args =
-  constructorWithRegs do
+  constructorManyRegs do
     ~(reg1, bean) <- args
     tell1 <- reg
     pure do
@@ -786,7 +789,7 @@ constructorWithRegs1 args =
 
 constructorWithRegs2 :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (reg1, reg2, bean) -> Constructor m bean
 constructorWithRegs2 args =
-  constructorWithRegs do
+  constructorManyRegs do
     ~(reg1, reg2, bean) <- args
     tell1 <- reg
     tell2 <- reg
@@ -795,12 +798,12 @@ constructorWithRegs2 args =
       tell2 reg2
       pure bean
 
-effectfulConstructorWithRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
-effectfulConstructorWithRegs x = Constructor x
+effConstructorManyRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
+effConstructorManyRegs x = Constructor x
 
-effectfulConstructorWithRegs1 :: (Applicative m, Typeable reg1, Monoid reg1) => Args (m (reg1, bean)) -> Constructor m bean
-effectfulConstructorWithRegs1 args =
-  effectfulConstructorWithRegs do
+effConstructorWithRegs1 :: (Applicative m, Typeable reg1, Monoid reg1) => Args (m (reg1, bean)) -> Constructor m bean
+effConstructorWithRegs1 args =
+  effConstructorManyRegs do
     action <- args
     tell1 <- reg
     pure do
@@ -809,9 +812,9 @@ effectfulConstructorWithRegs1 args =
         tell1 reg1
         pure bean
 
-effectfulConstructorWithRegs2 :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (m (reg1, reg2, bean)) -> Constructor m bean
-effectfulConstructorWithRegs2 args =
-  effectfulConstructorWithRegs do
+effConstructorWithRegs2 :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (m (reg1, reg2, bean)) -> Constructor m bean
+effConstructorWithRegs2 args =
+  effConstructorManyRegs do
     action <- args
     tell1 <- reg
     tell2 <- reg
@@ -824,7 +827,7 @@ effectfulConstructorWithRegs2 args =
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
 runConstructor beans (Constructor args) = do
-  regs <- runArgs args beans 
+  regs <- runArgs args beans
   pure (runRegs regs (getRegsReps args))
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.

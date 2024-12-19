@@ -192,21 +192,11 @@ coolWiring fire = do
   let cauldron :: Cauldron IO =
         fromSomeRecipeList
           [ someRecipe @A $ constructor do pure makeA,
-            someRecipe @B $ constructorWithRegs do
-              ~(reg1, bean) <- pure makeB
-              tell1 <- reg
-              pure do
-                tell1 reg1
-                pure bean,
+            someRecipe @B $ constructorWithRegs1 do pure makeB,
             someRecipe @C $ constructor do fillArgs makeC,
             someRecipe @D $ constructor do fillArgs makeD,
             someRecipe @E $ constructor do fillArgs makeE,
-            someRecipe @F $ constructorWithRegs do
-              ~(reg1, bean) <- fillArgs makeF
-              tell1 <- reg
-              pure do
-                tell1 reg1
-                pure bean,
+            someRecipe @F $ constructorWithRegs1 do fillArgs makeF,
             someRecipe @G
               Recipe
                 { bean = constructor $ fillArgs makeG,
@@ -214,25 +204,13 @@ coolWiring fire = do
                     [ constructor $ fillArgs makeGDeco1
                     ]
                 },
-            someRecipe @H $ constructorWithRegs do
-              ~(reg1, reg2, bean) <- fillArgs makeH
-              tell1 <- reg
-              tell2 <- reg
-              pure do
-                tell1 reg1
-                tell2 reg2
-                pure bean,
+            someRecipe @H $ constructorWithRegs2 do fillArgs makeH,
             someRecipe @Z
               Recipe
                 { bean = constructor do fillArgs makeZ,
                   decos =
                     [ constructor do fillArgs makeZDeco1,
-                      constructorWithRegs do
-                        ~(reg1, bean) <- fillArgs makeZDeco2
-                        tell1 <- reg
-                        pure do
-                          tell1 reg1
-                          pure bean
+                      constructorWithRegs1 do fillArgs makeZDeco2
                     ]
                 },
             someRecipe @(Initializer, Inspector, Z) $ constructor do fillArgs (,,)
