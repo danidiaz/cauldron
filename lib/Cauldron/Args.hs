@@ -75,7 +75,7 @@ import Data.Type.Equality (testEquality)
 import Data.Typeable
 import GHC.Exts (IsList (..))
 import GHC.IsList
-import Multicurryable
+-- import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
 
@@ -172,19 +172,19 @@ instance Monad Regs where
     let Regs w2 r = k a
      in Regs (w1 ++ w2) r
 
-fillArgs ::
-  forall (args :: [Type]) r curried.
-  ( All Typeable args,
-    (MulticurryableF args r curried (IsFunction curried))
-  ) =>
-  curried ->
-  Args r
-fillArgs curried =
-  let uncurried = multiuncurry curried
-      args = cpure_NP (Proxy @Typeable) arg
-      sequencedArgs = sequence_NP args
-      _argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args
-   in uncurried <$> sequencedArgs <* Args {_argReps, _regReps = mempty, _runArgs = \_ -> Right ()}
+-- fillArgs ::
+--   forall (args :: [Type]) r curried.
+--   ( All Typeable args,
+--     (MulticurryableF args r curried (IsFunction curried))
+--   ) =>
+--   curried ->
+--   Args r
+-- fillArgs curried =
+--   let uncurried = multiuncurry curried
+--       args = cpure_NP (Proxy @Typeable) arg
+--       sequencedArgs = sequence_NP args
+--       _argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args
+--    in uncurried <$> sequencedArgs <* Args {_argReps, _regReps = mempty, _runArgs = \_ -> Right ()}
 
 manyMemptys :: Set SomeMonoidTypeRep -> Beans
 manyMemptys reps =
@@ -196,3 +196,27 @@ manyMemptys reps =
 newtype LazilyReadBeanMissing = LazilyReadBeanMissing TypeRep
   deriving stock (Show)
   deriving anyclass (Exception)
+
+wire :: Wireable curried tip => curried -> Args tip
+wire curried = wire_ do pure curried 
+
+class Wireable curried tip | curried -> tip where 
+  wire_ :: Args curried -> Args tip
+
+class Wireable' (where_ :: Where) curried tip | curried -> tip where 
+  wire_' :: Proxy where_ -> Args curried -> Args tip
+
+instance Wireable' AtTheTip a a where
+  wire_' _ r = r
+
+instance (Typeable b, Wireable' (IsFunction rest) rest tip) => Wireable' NotYetThere (b -> rest) tip where
+  wire_' _ af = wire_' (Proxy @(IsFunction rest)) do af <*> arg @b
+
+type IsFunction :: Type -> Where
+type family IsFunction f :: Where where
+  IsFunction (_ -> _) = 'NotYetThere 
+  IsFunction _ = 'AtTheTip
+
+data Where =
+        NotYetThere
+      | AtTheTip

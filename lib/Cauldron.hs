@@ -58,13 +58,13 @@ module Cauldron
     adjust,
     delete,
     hoistCauldron,
+    fromSomeRecipeList,
 
     -- * Recipes
     Recipe (..),
     hoistRecipe,
     SomeRecipe,
     someRecipe,
-    fromSomeRecipeList,
 
     -- * Constructor
     Constructor,
