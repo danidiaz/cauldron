@@ -29,7 +29,8 @@ module Cauldron.Args
     reg,
     Regs,
     runRegs,
-
+    Reg,
+    register,
     -- * Re-exports
     Beans,
     taste,
@@ -226,22 +227,19 @@ type family IsReg f :: Where where
   IsReg (Reg _ _) = 'NotYetThere 
   IsReg _ = 'AtTheTip
 
+register :: forall nested tip m. (Functor m, Registrable (IsReg nested) nested tip) => 
+  Args (m nested) -> Args (m (Regs tip))
+register amnested = register_ (Proxy @(IsReg nested)) do fmap (fmap pure) amnested
+
 class Registrable (where_ :: Where) nested tip | where_ nested -> tip where 
-  register_ :: Proxy where_ -> Args (Regs nested) -> Args (Regs tip)
-  registerInsideEff_ :: forall m . Functor m => Proxy where_ -> Args (m (Regs nested)) -> Args (m (Regs tip))
+  register_ :: forall m . Functor m => Proxy where_ -> Args (m (Regs nested)) -> Args (m (Regs tip))
 
 instance Registrable AtTheTip a a where
   register_ _ = id
-  registerInsideEff_ _ = id
 
 instance (Typeable b, Monoid b, Registrable (IsReg rest) rest tip) => Registrable NotYetThere (Reg b rest) tip where
   register_ _ af = 
     register_ (Proxy @(IsReg rest)) do
-      tell1 <- reg @b
-      regs <- af
-      pure (regs >>= \(Reg b rest) -> tell1 b *> pure rest)
-  registerInsideEff_ _ af = 
-    registerInsideEff_ (Proxy @(IsReg rest)) do
       tell1 <- reg @b
       action <- af
       pure (action <&> \regs -> regs >>= \(Reg b rest) -> tell1 b *> pure rest)
