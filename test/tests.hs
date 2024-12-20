@@ -129,15 +129,7 @@ cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
     & insert @(Logger M)
-      ( effManyRegs do
-          action <- wire \(_ :: Repository M) -> makeLogger
-          tell1 <- reg
-          pure do
-            (reg1, bean) <- action
-            pure do
-              tell1 reg1
-              pure bean
-      )
+      (eff1Reg do wire \(_ :: Repository M) -> makeLogger)
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty =
