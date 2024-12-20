@@ -227,14 +227,22 @@ type family IsReg f :: Where where
   IsReg _ = 'AtTheTip
 
 class Registrable (where_ :: Where) nested tip | where_ nested -> tip where 
-  register :: Proxy where_ -> Args (Regs nested) -> Args (Regs tip)
+  -- register_ :: Proxy where_ -> (Args (), Regs nested -> Regs tip)
+  register_ :: Proxy where_ -> Args (Regs nested) -> Args (Regs tip)
+  -- Args (Regs nested) -> Args (Regs tip)
 
 instance Registrable AtTheTip a a where
-  register _ r = r
+  register_ _ = id
 
 instance (Typeable b, Monoid b, Registrable (IsReg rest) rest tip) => Registrable NotYetThere (Reg b rest) tip where
-  register _ af = 
-    ((,) <$> reg @b <*> af) <&> (\(f, Regs b rest) -> f b *> rest)
+  register_ _ af = 
+    register_ (Proxy @(IsReg rest)) do
+      tell1 <- reg @b
+      regs <- af
+      pure (regs >>= \(Reg b rest) -> tell1 b *> pure rest)
+
+    -- (reg @b)
+    -- ((,) <$> reg @b <*> af) <&> (\(f, Regs b rest) -> f b *> rest)
 
 
     -- let af' = reg @b *> af
