@@ -75,16 +75,16 @@ makeWithWrapperWithMessage ref inMsg outMsg v handler = do
 managedCauldron :: IORef [Text] -> Cauldron Managed
 managedCauldron ref =
   fromSomeRecipeList
-    [ someRecipe @(Logger IO) $ eff do fillArgs do managed (makeLogger ref),
+    [ someRecipe @(Logger IO) $ eff do wire do managed (makeLogger ref),
       someRecipe @(Weird IO)
         Recipe
           { bean = eff do
-              fillArgs \logger self -> managed (makeSelfInvokingWeird ref logger self),
+              wire \logger self -> managed (makeSelfInvokingWeird ref logger self),
             decos =
-              [ val do fillArgs makeWeirdDecorator
+              [ val do wire makeWeirdDecorator
               ]
           },
-      someRecipe @(Logger IO, Weird IO) $ val do fillArgs (,)
+      someRecipe @(Logger IO, Weird IO) $ val do wire (,)
     ]
 
 tests :: TestTree

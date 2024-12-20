@@ -15,6 +15,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- {-# LANGUAGE TypeAbstractions #-}
 
@@ -24,7 +25,7 @@ module Cauldron.Args
     Args,
     runArgs,
     arg,
-    fillArgs,
+    wire,
     reg,
     Regs,
     runRegs,
@@ -172,14 +173,14 @@ instance Monad Regs where
     let Regs w2 r = k a
      in Regs (w1 ++ w2) r
 
--- fillArgs ::
+-- wire ::
 --   forall (args :: [Type]) r curried.
 --   ( All Typeable args,
 --     (MulticurryableF args r curried (IsFunction curried))
 --   ) =>
 --   curried ->
 --   Args r
--- fillArgs curried =
+-- wire curried =
 --   let uncurried = multiuncurry curried
 --       args = cpure_NP (Proxy @Typeable) arg
 --       sequencedArgs = sequence_NP args
@@ -197,20 +198,17 @@ newtype LazilyReadBeanMissing = LazilyReadBeanMissing TypeRep
   deriving stock (Show)
   deriving anyclass (Exception)
 
-wire :: Wireable curried tip => curried -> Args tip
-wire curried = wire_ do pure curried 
+wire :: forall curried tip. Wireable (IsFunction curried) curried tip => curried -> Args tip
+wire curried = wire_ (Proxy @(IsFunction curried)) do pure curried 
 
-class Wireable curried tip | curried -> tip where 
-  wire_ :: Args curried -> Args tip
+class Wireable (where_ :: Where) curried tip | where_ curried -> tip where 
+  wire_ :: Proxy where_ -> Args curried -> Args tip
 
-class Wireable' (where_ :: Where) curried tip | curried -> tip where 
-  wire_' :: Proxy where_ -> Args curried -> Args tip
+instance Wireable AtTheTip a a where
+  wire_ _ r = r
 
-instance Wireable' AtTheTip a a where
-  wire_' _ r = r
-
-instance (Typeable b, Wireable' (IsFunction rest) rest tip) => Wireable' NotYetThere (b -> rest) tip where
-  wire_' _ af = wire_' (Proxy @(IsFunction rest)) do af <*> arg @b
+instance (Typeable b, Wireable (IsFunction rest) rest tip) => Wireable NotYetThere (b -> rest) tip where
+  wire_ _ af = wire_ (Proxy @(IsFunction rest)) do af <*> arg @b
 
 type IsFunction :: Type -> Where
 type family IsFunction f :: Where where
@@ -220,3 +218,27 @@ type family IsFunction f :: Where where
 data Where =
         NotYetThere
       | AtTheTip
+
+data Reg a b = Reg a b
+
+type IsReg :: Type -> Where
+type family IsReg f :: Where where
+  IsReg (Reg _ _) = 'NotYetThere 
+  IsReg _ = 'AtTheTip
+
+class Registrable (where_ :: Where) nested tip | where_ nested -> tip where 
+  register :: Proxy where_ -> Args (Regs nested) -> Args (Regs tip)
+
+instance Registrable AtTheTip a a where
+  register _ r = r
+
+instance (Typeable b, Monoid b, Registrable (IsReg rest) rest tip) => Registrable NotYetThere (Reg b rest) tip where
+  register _ af = 
+    ((,) <$> reg @b <*> af) <&> (\(f, Regs b rest) -> f b *> rest)
+
+
+    -- let af' = reg @b *> af
+    --  in af' <&> regs >>= \Reg b rest -> tell
+    -- register (Proxy @(IsFunction rest)) do af <*> arg @b
+
+

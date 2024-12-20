@@ -107,7 +107,7 @@ module Cauldron
     -- * Re-exported
     Args,
     arg,
-    fillArgs,
+    wire,
     reg,
     Regs,
     Beans,

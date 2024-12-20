@@ -193,27 +193,27 @@ coolWiring fire = do
         fromSomeRecipeList
           [ someRecipe @A $ val do pure makeA,
             someRecipe @B $ val1Reg do pure makeB,
-            someRecipe @C $ val do fillArgs makeC,
-            someRecipe @D $ val do fillArgs makeD,
-            someRecipe @E $ val do fillArgs makeE,
-            someRecipe @F $ val1Reg do fillArgs makeF,
+            someRecipe @C $ val do wire makeC,
+            someRecipe @D $ val do wire makeD,
+            someRecipe @E $ val do wire makeE,
+            someRecipe @F $ val1Reg do wire makeF,
             someRecipe @G
               Recipe
-                { bean = val $ fillArgs makeG,
+                { bean = val $ wire makeG,
                   decos =
-                    [ val $ fillArgs makeGDeco1
+                    [ val $ wire makeGDeco1
                     ]
                 },
-            someRecipe @H $ val2Regs do fillArgs makeH,
+            someRecipe @H $ val2Regs do wire makeH,
             someRecipe @Z
               Recipe
-                { bean = val do fillArgs makeZ,
+                { bean = val do wire makeZ,
                   decos =
-                    [ val do fillArgs makeZDeco1,
-                      val1Reg do fillArgs makeZDeco2
+                    [ val do wire makeZDeco1,
+                      val1Reg do wire makeZDeco2
                     ]
                 },
-            someRecipe @(Initializer, Inspector, Z) $ val do fillArgs (,,)
+            someRecipe @(Initializer, Inspector, Z) $ val do wire (,,)
           ]
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 

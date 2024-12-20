@@ -112,7 +112,7 @@ cauldron =
   fromSomeRecipeList
     [ someRecipe @(Logger M) $ eff1Reg do pure makeLogger,
       someRecipe @(Repository M) $ eff1Reg do makeRepository <$> arg,
-      someRecipe @(Initializer, Repository M) $ val do fillArgs (,)
+      someRecipe @(Initializer, Repository M) $ val do wire (,)
     ]
 
 cauldronMissingDep :: Cauldron M
@@ -130,7 +130,7 @@ cauldronWithCycle =
   cauldron
     & insert @(Logger M)
       ( effManyRegs do
-          action <- fillArgs \(_ :: Repository M) -> makeLogger
+          action <- wire \(_ :: Repository M) -> makeLogger
           tell1 <- reg
           pure do
             (reg1, bean) <- action
@@ -144,19 +144,19 @@ cauldronNonEmpty =
   Data.List.NonEmpty.fromList
     [ fromSomeRecipeList
         [ someRecipe @(Logger M) $ eff1Reg do pure makeLogger,
-          someRecipe @(Weird M) $ eff do fillArgs makeWeird
+          someRecipe @(Weird M) $ eff do wire makeWeird
         ],
       fromSomeRecipeList
-        [ someRecipe @(Repository M) $ eff1Reg do fillArgs makeRepository,
+        [ someRecipe @(Repository M) $ eff1Reg do wire makeRepository,
           someRecipe @(Weird M)
             Recipe
-              { bean = eff do fillArgs makeSelfInvokingWeird,
+              { bean = eff do wire makeSelfInvokingWeird,
                 decos =
-                  [ val do fillArgs (weirdDeco "inner"),
-                    val do fillArgs (weirdDeco "outer")
+                  [ val do wire (weirdDeco "inner"),
+                    val do wire (weirdDeco "outer")
                   ]
               },
-          someRecipe @(Initializer, Repository M, Weird M) $ val do fillArgs (,,)
+          someRecipe @(Initializer, Repository M, Weird M) $ val do wire (,,)
         ]
     ]
 
