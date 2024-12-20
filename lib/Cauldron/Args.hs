@@ -15,7 +15,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE TypeFamilies #-}
 
 -- {-# LANGUAGE TypeAbstractions #-}
 
@@ -25,12 +24,14 @@ module Cauldron.Args
     Args,
     runArgs,
     arg,
-    Wireable(wire),
-    reg,
-    Regs,
+    Wireable (wire),
+    foretellReg,
+    RegWriter,
     runRegs,
     Reg,
-    Registrable(register),
+    Registrable (register),
+    nest1,
+    nest2,
     -- * Re-exports
     Beans,
     taste,
@@ -109,13 +110,13 @@ arg =
               Nothing -> throw (LazilyReadBeanMissing tr)
         }
 
-reg :: forall a. (Typeable a, Monoid a) => Args (a -> Regs ())
-reg =
+foretellReg :: forall a. (Typeable a, Monoid a) => Args (a -> RegWriter ())
+foretellReg =
   let tr = SomeMonoidTypeRep (Type.Reflection.typeRep @a)
    in Args
         { _argReps = Set.empty,
           _regReps = Set.singleton tr,
-          _runArgs = pure \a -> Regs [toDyn a] ()
+          _runArgs = pure \a -> RegWriter [toDyn a] ()
         }
 
 instance Applicative Args where
@@ -148,11 +149,11 @@ someMonoidTypeRepToSomeTypeRep :: SomeMonoidTypeRep -> SomeTypeRep
 someMonoidTypeRepToSomeTypeRep (SomeMonoidTypeRep tr) = SomeTypeRep tr
 
 -- | Unrestricted building SHOULD NOT be public!
-data Regs a = Regs [Dynamic] a
+data RegWriter a = RegWriter [Dynamic] a
   deriving stock (Functor)
 
-runRegs :: Regs a -> Set SomeMonoidTypeRep -> (Beans, a)
-runRegs (Regs dyns a) monoidReps =
+runRegs :: RegWriter a -> Set SomeMonoidTypeRep -> (Beans, a)
+runRegs (RegWriter dyns a) monoidReps =
   let onlyStaticlyKnown =
         ( manyMemptys monoidReps : do
             dyn <- dyns
@@ -164,15 +165,15 @@ runRegs (Regs dyns a) monoidReps =
           & do flip Cauldron.Beans.restrict (Set.map someMonoidTypeRepToSomeTypeRep monoidReps)
    in (onlyStaticlyKnown, a)
 
-instance Applicative Regs where
-  pure a = Regs [] a
-  Regs w1 f <*> Regs w2 a2 =
-    Regs (w1 ++ w2) (f a2)
+instance Applicative RegWriter where
+  pure a = RegWriter [] a
+  RegWriter w1 f <*> RegWriter w2 a2 =
+    RegWriter (w1 ++ w2) (f a2)
 
-instance Monad Regs where
-  (Regs w1 a) >>= k =
-    let Regs w2 r = k a
-     in Regs (w1 ++ w2) r
+instance Monad RegWriter where
+  (RegWriter w1 a) >>= k =
+    let RegWriter w2 r = k a
+     in RegWriter (w1 ++ w2) r
 
 manyMemptys :: Set SomeMonoidTypeRep -> Beans
 manyMemptys reps =
@@ -185,14 +186,13 @@ newtype LazilyReadBeanMissing = LazilyReadBeanMissing TypeRep
   deriving stock (Show)
   deriving anyclass (Exception)
 
-
 class Wireable curried tip | curried -> tip where
   wire :: curried -> Args tip
 
-instance Wireable_ (IsFunction curried) curried tip => Wireable curried tip where
-  wire curried = wire_ (Proxy @(IsFunction curried)) do pure curried 
+instance (Wireable_ (IsFunction curried) curried tip) => Wireable curried tip where
+  wire curried = wire_ (Proxy @(IsFunction curried)) do pure curried
 
-class Wireable_ (where_ :: Where) curried tip | where_ curried -> tip where 
+class Wireable_ (where_ :: Where) curried tip | where_ curried -> tip where
   wire_ :: Proxy where_ -> Args curried -> Args tip
 
 instance Wireable_ AtTheTip a a where
@@ -203,35 +203,41 @@ instance (Typeable b, Wireable_ (IsFunction rest) rest tip) => Wireable_ NotYetT
 
 type IsFunction :: Type -> Where
 type family IsFunction f :: Where where
-  IsFunction (_ -> _) = 'NotYetThere 
+  IsFunction (_ -> _) = 'NotYetThere
   IsFunction _ = 'AtTheTip
 
-data Where =
-        NotYetThere
-      | AtTheTip
+data Where
+  = NotYetThere
+  | AtTheTip
 
 data Reg a b = Reg a b
 
 type IsReg :: Type -> Where
 type family IsReg f :: Where where
-  IsReg (Reg _ _) = 'NotYetThere 
+  IsReg (Reg _ _) = 'NotYetThere
   IsReg _ = 'AtTheTip
 
-class Registrable nested tip | nested -> tip where 
-  register :: forall m . Functor m => Args (m nested) -> Args (m (Regs tip))
+class Registrable nested tip | nested -> tip where
+  register :: forall m. (Functor m) => Args (m nested) -> Args (m (RegWriter tip))
 
 instance (Registrable_ (IsReg nested) nested tip) => Registrable nested tip where
   register amnested = register_ (Proxy @(IsReg nested)) do fmap (fmap pure) amnested
 
-class Registrable_ (where_ :: Where) nested tip | where_ nested -> tip where 
-  register_ :: forall m . Functor m => Proxy where_ -> Args (m (Regs nested)) -> Args (m (Regs tip))
+class Registrable_ (where_ :: Where) nested tip | where_ nested -> tip where
+  register_ :: forall m. (Functor m) => Proxy where_ -> Args (m (RegWriter nested)) -> Args (m (RegWriter tip))
 
 instance Registrable_ AtTheTip a a where
   register_ _ = id
 
 instance (Typeable b, Monoid b, Registrable_ (IsReg rest) rest tip) => Registrable_ NotYetThere (Reg b rest) tip where
-  register_ _ af = 
+  register_ _ af =
     register_ (Proxy @(IsReg rest)) do
-      tell1 <- reg @b
+      tell1 <- foretellReg @b
       action <- af
       pure (action <&> \regs -> regs >>= \(Reg b rest) -> tell1 b *> pure rest)
+
+nest1 :: (reg1, a) -> Reg reg1 a
+nest1 (reg1, a) = Reg reg1 a 
+
+nest2 :: (reg1, reg2, a) -> Reg reg1 (Reg reg2 a)
+nest2 (reg1, reg2, a) = Reg reg1 (Reg reg2 a) 

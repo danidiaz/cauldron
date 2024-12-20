@@ -11,6 +11,7 @@ import Cauldron
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer
 import Data.Function ((&))
+import Data.Functor ((<&>))
 import Data.IORef
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified
@@ -110,8 +111,8 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 cauldron :: Cauldron M
 cauldron =
   fromSomeRecipeList
-    [ someRecipe @(Logger M) $ eff1Reg do pure makeLogger,
-      someRecipe @(Repository M) $ eff1Reg do makeRepository <$> arg,
+    [ someRecipe @(Logger M) $ eff do pure makeLogger <&> fmap nest1,
+      someRecipe @(Repository M) $ eff do wire makeRepository <&> fmap nest1,
       someRecipe @(Initializer, Repository M) $ val do wire (,)
     ]
 
@@ -129,17 +130,17 @@ cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
     & insert @(Logger M)
-      (eff1Reg do wire \(_ :: Repository M) -> makeLogger)
+      (eff do wire (\(_ :: Repository M) -> makeLogger) <&> fmap nest1)
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty =
   Data.List.NonEmpty.fromList
     [ fromSomeRecipeList
-        [ someRecipe @(Logger M) $ eff1Reg do pure makeLogger,
+        [ someRecipe @(Logger M) $ eff do pure makeLogger <&> fmap nest1,
           someRecipe @(Weird M) $ eff do wire makeWeird
         ],
       fromSomeRecipeList
-        [ someRecipe @(Repository M) $ eff1Reg do wire makeRepository,
+        [ someRecipe @(Repository M) $ eff do wire makeRepository <&> fmap nest1,
           someRecipe @(Weird M)
             Recipe
               { bean = eff do wire makeSelfInvokingWeird,

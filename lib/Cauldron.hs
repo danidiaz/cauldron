@@ -69,13 +69,15 @@ module Cauldron
     -- * Constructor
     Constructor,
     val,
-    val1Reg,
-    val2Regs,
-    valManyRegs,
+    val',
+    val0,
+    -- valManyRegs,
     eff,
-    eff1Reg,
-    eff2Regs,
-    effManyRegs,
+    eff',
+    eff0,
+    nest1,
+    nest2,
+    -- effManyRegs,
     hoistConstructor,
     getConstructorArgs,
     -- fromConstructorList,
@@ -106,10 +108,10 @@ module Cauldron
 
     -- * Re-exported
     Args,
-    arg,
     wire,
-    reg,
-    Regs,
+    register,
+    -- reg,
+    -- Regs,
     Beans,
     taste,
   )
@@ -157,6 +159,7 @@ import GHC.Exts (IsList (..), UnliftedType)
 import GHC.IsList
 import Multicurryable
 import Type.Reflection qualified
+import Data.Functor.Identity (Identity(..))
 
 -- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
 -- 'Constructor's might have effects.
@@ -766,64 +769,76 @@ unsafeTreeToNonEmpty = \case
 -- >>> import Data.Function ((&))
 -- >>> import Data.Monoid
 
-newtype Constructor m a = Constructor (Args (m (Regs a)))
+newtype Constructor m a = Constructor (Args (m (RegWriter a)))
   deriving stock (Functor)
 
-val :: (Applicative m) => Args bean -> Constructor m bean
-val x = Constructor $ fmap (pure . pure) x
+val :: (Applicative m, Registrable nested bean) => Args nested -> Constructor m bean
+val x = val' $ fmap runIdentity $ register $ fmap Identity x
 
-eff :: (Functor m) => Args (m bean) -> Constructor m bean
-eff x = Constructor $ fmap (fmap pure) x
+val' :: Applicative m => Args (RegWriter bean) -> Constructor m bean
+val' x = Constructor $ fmap pure x
 
-valManyRegs :: (Applicative m) => Args (Regs bean) -> Constructor m bean
-valManyRegs x = Constructor $ fmap pure x
+val0 :: Applicative m => Args bean -> Constructor m bean
+val0 x = Constructor $ fmap (pure . pure) x
 
-val1Reg :: (Applicative m, Typeable reg1, Monoid reg1) => Args (reg1, bean) -> Constructor m bean
-val1Reg args =
-  valManyRegs do
-    ~(reg1, bean) <- args
-    tell1 <- reg
-    pure do
-      tell1 reg1
-      pure bean
+eff :: (Monad m, Registrable nested bean) => Args (m nested) -> Constructor m bean
+eff x = eff' $ register x
 
-val2Regs :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (reg1, reg2, bean) -> Constructor m bean
-val2Regs args =
-  valManyRegs do
-    ~(reg1, reg2, bean) <- args
-    tell1 <- reg
-    tell2 <- reg
-    pure do
-      tell1 reg1
-      tell2 reg2
-      pure bean
+eff' :: Args (m (RegWriter bean)) -> Constructor m bean
+eff' = Constructor
 
-effManyRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
-effManyRegs x = Constructor x
+eff0 :: (Functor m) => Args (m bean) -> Constructor m bean
+eff0 x = Constructor $ fmap (fmap pure) x
 
-eff1Reg :: (Applicative m, Typeable reg1, Monoid reg1) => Args (m (reg1, bean)) -> Constructor m bean
-eff1Reg args =
-  effManyRegs do
-    action <- args
-    tell1 <- reg
-    pure do
-      ~(reg1, bean) <- action
-      pure do
-        tell1 reg1
-        pure bean
+-- valManyRegs :: (Applicative m) => Args (Regs bean) -> Constructor m bean
+-- valManyRegs x = Constructor $ fmap pure x
 
-eff2Regs :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (m (reg1, reg2, bean)) -> Constructor m bean
-eff2Regs args =
-  effManyRegs do
-    action <- args
-    tell1 <- reg
-    tell2 <- reg
-    pure do
-      ~(reg1, reg2, bean) <- action
-      pure do
-        tell1 reg1
-        tell2 reg2
-        pure bean
+-- val1Reg :: (Applicative m, Typeable reg1, Monoid reg1) => Args (reg1, bean) -> Constructor m bean
+-- val1Reg args =
+--   valManyRegs do
+--     ~(reg1, bean) <- args
+--     tell1 <- reg
+--     pure do
+--       tell1 reg1
+--       pure bean
+-- 
+-- val2Regs :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (reg1, reg2, bean) -> Constructor m bean
+-- val2Regs args =
+--   valManyRegs do
+--     ~(reg1, reg2, bean) <- args
+--     tell1 <- reg
+--     tell2 <- reg
+--     pure do
+--       tell1 reg1
+--       tell2 reg2
+--       pure bean
+-- 
+-- -- effManyRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
+-- -- effManyRegs x = Constructor x
+-- 
+-- eff1Reg :: (Applicative m, Typeable reg1, Monoid reg1) => Args (m (reg1, bean)) -> Constructor m bean
+-- eff1Reg args =
+--   effManyRegs do
+--     action <- args
+--     tell1 <- reg
+--     pure do
+--       ~(reg1, bean) <- action
+--       pure do
+--         tell1 reg1
+--         pure bean
+-- 
+-- eff2Regs :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (m (reg1, reg2, bean)) -> Constructor m bean
+-- eff2Regs args =
+--   effManyRegs do
+--     action <- args
+--     tell1 <- reg
+--     tell2 <- reg
+--     pure do
+--       ~(reg1, reg2, bean) <- action
+--       pure do
+--         tell1 reg1
+--         tell2 reg2
+--         pure bean
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
 runConstructor beans (Constructor args) = do
@@ -834,5 +849,5 @@ runConstructor beans (Constructor args) = do
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
 hoistConstructor f (Constructor theArgs) = Constructor do fmap f theArgs
 
-getConstructorArgs :: Constructor m bean -> Args (m (Regs bean))
+getConstructorArgs :: Constructor m bean -> Args (m (RegWriter bean))
 getConstructorArgs (Constructor theArgs) = theArgs

@@ -13,6 +13,7 @@ module Main where
 
 import Cauldron
 import Data.Function ((&))
+import Data.Functor ((<&>))
 import Data.Maybe (fromJust)
 
 {-
@@ -192,11 +193,11 @@ coolWiring fire = do
   let cauldron :: Cauldron IO =
         fromSomeRecipeList
           [ someRecipe @A $ val do pure makeA,
-            someRecipe @B $ val1Reg do pure makeB,
+            someRecipe @B $ val do pure makeB <&> nest1,
             someRecipe @C $ val do wire makeC,
             someRecipe @D $ val do wire makeD,
             someRecipe @E $ val do wire makeE,
-            someRecipe @F $ val1Reg do wire makeF,
+            someRecipe @F $ val do wire makeF <&> nest1,
             someRecipe @G
               Recipe
                 { bean = val $ wire makeG,
@@ -204,13 +205,13 @@ coolWiring fire = do
                     [ val $ wire makeGDeco1
                     ]
                 },
-            someRecipe @H $ val2Regs do wire makeH,
+            someRecipe @H $ val do wire makeH <&> nest2,
             someRecipe @Z
               Recipe
                 { bean = val do wire makeZ,
                   decos =
                     [ val do wire makeZDeco1,
-                      val1Reg do wire makeZDeco2
+                      val do wire makeZDeco2 <&> nest1
                     ]
                 },
             someRecipe @(Initializer, Inspector, Z) $ val do wire (,,)

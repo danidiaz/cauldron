@@ -38,10 +38,10 @@ data C = C
 makeC :: A -> B -> ([Text], C)
 makeC _ _ = (["monoid"], C)
 
-argsForC :: Args (Regs C)
+argsForC :: Args (RegWriter C)
 argsForC = do
   ~(reg1, bean) <- makeC <$> arg <*> arg
-  tell1 <- reg
+  tell1 <- foretellReg
   pure do
     tell1 reg1
     pure bean
