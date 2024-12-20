@@ -746,7 +746,7 @@ defaultStepToText =
         BarePrimaryBean rep -> p rep <> Data.Text.pack "#bare"
         PrimaryBeanDeco rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
         PrimaryBean rep -> p rep
-        SecondaryBean rep -> p rep <> Data.Text.pack "#sec"
+        SecondaryBean rep -> p rep <> Data.Text.pack "#reg"
 
 nonEmptyToTree :: NonEmpty a -> Tree a
 nonEmptyToTree = \case

@@ -25,12 +25,12 @@ module Cauldron.Args
     Args,
     runArgs,
     arg,
-    wire,
+    Wireable(wire),
     reg,
     Regs,
     runRegs,
     Reg,
-    register,
+    Registrable(register),
     -- * Re-exports
     Beans,
     taste,
@@ -174,20 +174,6 @@ instance Monad Regs where
     let Regs w2 r = k a
      in Regs (w1 ++ w2) r
 
--- wire ::
---   forall (args :: [Type]) r curried.
---   ( All Typeable args,
---     (MulticurryableF args r curried (IsFunction curried))
---   ) =>
---   curried ->
---   Args r
--- wire curried =
---   let uncurried = multiuncurry curried
---       args = cpure_NP (Proxy @Typeable) arg
---       sequencedArgs = sequence_NP args
---       _argReps = cfoldMap_NP (Proxy @Typeable) (Set.singleton . typeRep) args
---    in uncurried <$> sequencedArgs <* Args {_argReps, _regReps = mempty, _runArgs = \_ -> Right ()}
-
 manyMemptys :: Set SomeMonoidTypeRep -> Beans
 manyMemptys reps =
   reps
@@ -199,16 +185,20 @@ newtype LazilyReadBeanMissing = LazilyReadBeanMissing TypeRep
   deriving stock (Show)
   deriving anyclass (Exception)
 
-wire :: forall curried tip. Wireable (IsFunction curried) curried tip => curried -> Args tip
-wire curried = wire_ (Proxy @(IsFunction curried)) do pure curried 
 
-class Wireable (where_ :: Where) curried tip | where_ curried -> tip where 
+class Wireable curried tip | curried -> tip where
+  wire :: curried -> Args tip
+
+instance Wireable_ (IsFunction curried) curried tip => Wireable curried tip where
+  wire curried = wire_ (Proxy @(IsFunction curried)) do pure curried 
+
+class Wireable_ (where_ :: Where) curried tip | where_ curried -> tip where 
   wire_ :: Proxy where_ -> Args curried -> Args tip
 
-instance Wireable AtTheTip a a where
+instance Wireable_ AtTheTip a a where
   wire_ _ r = r
 
-instance (Typeable b, Wireable (IsFunction rest) rest tip) => Wireable NotYetThere (b -> rest) tip where
+instance (Typeable b, Wireable_ (IsFunction rest) rest tip) => Wireable_ NotYetThere (b -> rest) tip where
   wire_ _ af = wire_ (Proxy @(IsFunction rest)) do af <*> arg @b
 
 type IsFunction :: Type -> Where
@@ -227,17 +217,19 @@ type family IsReg f :: Where where
   IsReg (Reg _ _) = 'NotYetThere 
   IsReg _ = 'AtTheTip
 
-register :: forall nested tip m. (Functor m, Registrable (IsReg nested) nested tip) => 
-  Args (m nested) -> Args (m (Regs tip))
-register amnested = register_ (Proxy @(IsReg nested)) do fmap (fmap pure) amnested
+class Registrable nested tip | nested -> tip where 
+  register :: forall m . Functor m => Args (m nested) -> Args (m (Regs tip))
 
-class Registrable (where_ :: Where) nested tip | where_ nested -> tip where 
+instance (Registrable_ (IsReg nested) nested tip) => Registrable nested tip where
+  register amnested = register_ (Proxy @(IsReg nested)) do fmap (fmap pure) amnested
+
+class Registrable_ (where_ :: Where) nested tip | where_ nested -> tip where 
   register_ :: forall m . Functor m => Proxy where_ -> Args (m (Regs nested)) -> Args (m (Regs tip))
 
-instance Registrable AtTheTip a a where
+instance Registrable_ AtTheTip a a where
   register_ _ = id
 
-instance (Typeable b, Monoid b, Registrable (IsReg rest) rest tip) => Registrable NotYetThere (Reg b rest) tip where
+instance (Typeable b, Monoid b, Registrable_ (IsReg rest) rest tip) => Registrable_ NotYetThere (Reg b rest) tip where
   register_ _ af = 
     register_ (Proxy @(IsReg rest)) do
       tell1 <- reg @b
