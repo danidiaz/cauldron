@@ -519,7 +519,8 @@ checkMissingDeps ::
   Either (PathToCauldron, Map TypeRep (Set TypeRep)) ()
 checkMissingDeps accums treecipes = do
   let decoratedTreecipes = decorate ([], Map.empty, treecipes)
-      missing = (\(key, available, requested) -> first (key,) do checkMissingDepsCauldron accums (Map.keysSet available) requested) <$> decoratedTreecipes
+      missing = decoratedTreecipes <&> \(key, available, requested) -> 
+        first (key,) do checkMissingDepsCauldron accums (Map.keysSet available) requested
   sequence_ missing
   where
     decorate ::
