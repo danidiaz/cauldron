@@ -144,7 +144,7 @@ cauldronNonEmpty =
           recipe @(Weird M)
             Recipe
               { bean = eff do wire makeSelfInvokingWeird,
-                decos =
+                decos = fromDecoList
                   [ val do wire (weirdDeco "inner"),
                     val do wire (weirdDeco "outer")
                   ]

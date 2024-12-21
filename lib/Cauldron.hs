@@ -63,9 +63,11 @@ module Cauldron
     -- * Recipes
     Recipe (..),
     hoistRecipe,
+    fromDecoList,
     SomeRecipe,
     recipe,
-
+    (Data.Sequence.|>),
+    (Data.Sequence.<|),
     -- * Constructor
     Constructor,
     val,
@@ -158,6 +160,8 @@ import GHC.IsList
 import Multicurryable
 import Type.Reflection qualified
 import Data.Functor.Identity (Identity(..))
+import Data.Sequence (Seq)
+import Data.Sequence qualified
 
 -- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
 -- 'Constructor's might have effects.
@@ -202,9 +206,12 @@ data Recipe m bean where
     { -- | How to build the bean itself.
       bean :: Constructor m bean,
       -- | How to build the decorators that wrap the bean. There might be no decorators.
-      decos :: [Constructor m bean]
+      decos :: Seq (Constructor m bean)
     } ->
     Recipe m bean
+
+fromDecoList :: [Constructor m bean] -> Seq (Constructor m bean)
+fromDecoList = Data.Sequence.fromList
 
 class ToRecipe c where
   toRecipe :: c m bean -> Recipe m bean
@@ -213,7 +220,7 @@ instance ToRecipe Recipe where
   toRecipe = id
 
 instance ToRecipe Constructor where
-  toRecipe c = Recipe {bean = c, decos = []}
+  toRecipe c = Recipe {bean = c, decos = Data.Sequence.empty}
 
 -- | Change the monad used by the bean\'s 'Constructor' and its 'Decos'.
 hoistRecipe :: (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
@@ -549,7 +556,7 @@ checkMissingDepsCauldron accums available Cauldron {recipes} = do
       ( Set.fromList do
           let ConstructorReps {argReps = beanArgReps} = constructorReps bean
           Set.toList beanArgReps ++ do
-            decoCon <- decos
+            decoCon <- Data.Foldable.toList decos
             let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
             Set.toList decoArgReps
       )
@@ -650,7 +657,7 @@ followPlanStep Cauldron {recipes} final super item =
         pure do Cauldron.Beans.insert bean super'
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
       SomeRecipe (Recipe {decos}) -> do
-        let decoCon = decos Data.List.!! index
+        let decoCon = decos `Data.Sequence.index` index
         -- Unlike before, we don't delete the beanRep before running the constructor.
         (super', bean) <- followConstructor decoCon final super
         pure do Cauldron.Beans.insert bean super'
