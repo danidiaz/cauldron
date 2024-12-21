@@ -164,7 +164,7 @@ runRegs (Regs dyns a) monoidReps =
             [fromDynList [dyn]]
         )
           & do foldl (Cauldron.Beans.unionBeansMonoidally monoidReps) (mempty @Beans)
-          & do flip Cauldron.Beans.restrict (Set.map someMonoidTypeRepToSomeTypeRep monoidReps)
+          & do flip Cauldron.Beans.restrictKeys (Set.map someMonoidTypeRepToSomeTypeRep monoidReps)
    in (onlyStaticlyKnown, a)
 
 instance Applicative Regs where

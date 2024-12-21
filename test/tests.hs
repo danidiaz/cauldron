@@ -17,10 +17,10 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Set qualified
 import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.Proxy
+import Data.Set qualified
 import Data.Text (Text)
 import Data.Typeable (typeRep)
 import Test.Tasty

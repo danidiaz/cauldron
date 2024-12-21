@@ -19,7 +19,8 @@ module Cauldron.Beans
     empty,
     insert,
     delete,
-    restrict,
+    restrictKeys,
+    keysSet,
     singleton,
     taste,
     fromDynList,
@@ -79,8 +80,8 @@ delete :: TypeRep -> Beans -> Beans
 delete tr Beans {beanMap} =
   Beans {beanMap = Map.delete tr beanMap}
 
-restrict :: Beans -> Set TypeRep -> Beans
-restrict Beans {beanMap} trs = Beans {beanMap = Map.restrictKeys beanMap trs}
+restrictKeys :: Beans -> Set TypeRep -> Beans
+restrictKeys Beans {beanMap} trs = Beans {beanMap = Map.restrictKeys beanMap trs}
 
 singleton :: forall a. (Typeable a) => a -> Beans
 singleton bean = Beans do Map.singleton (typeRep (Proxy @a)) (toDyn bean)
@@ -144,3 +145,6 @@ unionBeansMonoidally reps (Beans beans1) (Beans beans2) =
                 toDyn (v1 <> v2)
           _ -> d2
    in Beans $ Map.unionWithKey combine beans1 beans2
+
+keysSet :: Beans -> Set TypeRep
+keysSet Beans {beanMap} = Map.keysSet beanMap
