@@ -112,22 +112,22 @@ makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring fire = do
   let cauldron :: Cauldron IO =
-        fromSomeRecipeList
-          [ someRecipe $ val do pure makeA,
-            someRecipe $ val do pure makeB,
-            someRecipe $ val do wire makeC,
-            someRecipe $ val do wire makeD,
-            someRecipe $ val do wire makeE,
-            someRecipe @F $ val do wire makeF,
-            someRecipe @G
+        fromRecipeList
+          [ recipe $ val do pure makeA,
+            recipe $ val do pure makeB,
+            recipe $ val do wire makeC,
+            recipe $ val do wire makeD,
+            recipe $ val do wire makeE,
+            recipe @F $ val do wire makeF,
+            recipe @G
               Recipe
                 { bean = val do wire makeG,
                   decos =
                     [ val do wire makeGDeco1
                     ]
                 },
-            someRecipe @H $ val do wire makeH,
-            someRecipe @Z
+            recipe @H $ val do wire makeH,
+            recipe @Z
               Recipe
                 { bean = val do wire makeZ,
                   decos =
@@ -135,7 +135,7 @@ coolWiring fire = do
                       val do wire makeZDeco2
                     ]
                 },
-            someRecipe @(Initializer, Inspector, Z) $ val0 do wire (,,)
+            recipe @(Initializer, Inspector, Z) $ val0 do wire (,,)
           ]
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 

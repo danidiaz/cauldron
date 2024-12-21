@@ -58,13 +58,13 @@ module Cauldron
     adjust,
     delete,
     hoistCauldron,
-    fromSomeRecipeList,
+    fromRecipeList,
 
     -- * Recipes
     Recipe (..),
     hoistRecipe,
     SomeRecipe,
-    someRecipe,
+    recipe,
 
     -- * Constructor
     Constructor,
@@ -175,7 +175,7 @@ instance Monoid (Cauldron m) where
 instance IsList (Cauldron m) where
   type Item (Cauldron m) = SomeRecipe m
   toList (Cauldron {recipes}) = Map.elems recipes
-  fromList = fromSomeRecipeList
+  fromList = fromRecipeList
 
 -- | Change the monad used by the beans in the 'Cauldron'.
 hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
@@ -184,11 +184,11 @@ hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$>
 data SomeRecipe m where
   SomeRecipe :: (Typeable bean) => Recipe m bean -> SomeRecipe m
 
-someRecipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe) => recipe m bean -> SomeRecipe m
-someRecipe recipe = SomeRecipe (toRecipe recipe)
+recipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe) => recipe m bean -> SomeRecipe m
+recipe theRecipe = SomeRecipe (toRecipe theRecipe)
 
-fromSomeRecipeList :: [SomeRecipe m] -> Cauldron m
-fromSomeRecipeList =
+fromRecipeList :: [SomeRecipe m] -> Cauldron m
+fromRecipeList =
   foldl
     do \c (SomeRecipe r) -> insert r c
     do mempty

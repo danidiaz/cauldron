@@ -191,22 +191,22 @@ boringWiring = do
 coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, Inspector, Z))
 coolWiring fire = do
   let cauldron :: Cauldron IO =
-        fromSomeRecipeList
-          [ someRecipe @A $ val do pure makeA,
-            someRecipe @B $ val do pure makeB,
-            someRecipe @C $ val do wire makeC,
-            someRecipe @D $ val do wire makeD,
-            someRecipe @E $ val do wire makeE,
-            someRecipe @F $ val do wire makeF,
-            someRecipe @G
+        fromRecipeList
+          [ recipe @A $ val do pure makeA,
+            recipe @B $ val do pure makeB,
+            recipe @C $ val do wire makeC,
+            recipe @D $ val do wire makeD,
+            recipe @E $ val do wire makeE,
+            recipe @F $ val do wire makeF,
+            recipe @G
               Recipe
                 { bean = val $ wire makeG,
                   decos =
                     [ val $ wire makeGDeco1
                     ]
                 },
-            someRecipe @H $ val do wire makeH,
-            someRecipe @Z
+            recipe @H $ val do wire makeH,
+            recipe @Z
               Recipe
                 { bean = val do wire makeZ,
                   decos =
@@ -214,7 +214,7 @@ coolWiring fire = do
                       val do wire makeZDeco2
                     ]
                 },
-            someRecipe @(Initializer, Inspector, Z) $ val0 do wire (,,)
+            recipe @(Initializer, Inspector, Z) $ val0 do wire (,,)
           ]
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 
