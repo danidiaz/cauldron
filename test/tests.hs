@@ -228,18 +228,18 @@ tests =
         pure (),
       testCase "cauldron missing dep" do
         case cook' cauldronMissingDep of
-          Left (MissingDependencies _ tr missingSet)
+          Left (MissingDependenciesError (MissingDependencies _ tr missingSet))
             | tr == typeRep (Proxy @(Repository M)) && missingSet == Data.Set.singleton (typeRep (Proxy @(Logger M))) -> pure ()
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do
         case cook' cauldronDoubleDutyBean of
-          Left (DoubleDutyBeans _) -> pure ()
+          Left (DoubleDutyBeansError _) -> pure ()
           _ -> assertFailure "double duty beans not detected"
         pure (),
       testCase "cauldron with cycle" do
         case cook' cauldronWithCycle of
-          Left (DependencyCycle _) -> pure ()
+          Left (DependencyCycleError _) -> pure ()
           _ -> assertFailure "dependency cycle not detected"
         pure ()
     ]

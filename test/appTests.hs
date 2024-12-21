@@ -152,7 +152,7 @@ tests =
         pure (),
       testCase "dep cycles forbidden" do
         case coolWiring forbidDepCycles of
-          Left (DependencyCycle _) -> pure ()
+          Left (DependencyCycleError _) -> pure ()
           Left _ -> assertFailure do "wrong kind of error detected"
           Right _ -> assertFailure do "self dependency not detected"
         pure ()

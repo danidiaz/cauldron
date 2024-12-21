@@ -98,6 +98,9 @@ module Cauldron
 
     -- ** Tasting the results
     RecipeError (..),
+    MissingDependencies (..),
+    DoubleDutyBeans (..),
+    DependencyCycle (..),
 
     -- ** Drawing deps
     DependencyGraph,
@@ -192,7 +195,7 @@ data SomeRecipe m where
 recipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe, HasCallStack) => recipe m bean -> SomeRecipe m
 recipe theRecipe = SomeRecipe callStack (toRecipe theRecipe)
 
-withRecipe :: forall m r. (forall bean. Typeable bean => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
+withRecipe :: forall m r. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
 withRecipe f (SomeRecipe stack theRecipe) = f stack theRecipe
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
@@ -202,7 +205,7 @@ fromRecipeList =
     do mempty
 
 toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
-toRecipeMap Cauldron {recipes} = recipes 
+toRecipeMap Cauldron {recipes} = recipes
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
 hoistSomeRecipe f (SomeRecipe stack bean) = SomeRecipe stack do hoistRecipe f bean
@@ -479,22 +482,25 @@ cookTree ::
   Tree (Fire m, Cauldron m) ->
   Either RecipeError (Tree DependencyGraph, m (Tree Beans))
 cookTree (treecipes) = do
-  accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
-  () <- first (\(a, b, c) -> MissingDependencies a b c) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
-  treeplan <- first DependencyCycle do buildPlans (Map.keysSet accumMap) treecipes
+  accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans (snd <$> treecipes)
+  () <- first MissingDependenciesError do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
+  treeplan <- first DependencyCycleError do buildPlans (Map.keysSet accumMap) treecipes
   Right
     ( treeplan <&> \(graph, _) -> DependencyGraph {graph},
       followPlan (fromDynList (Data.Foldable.toList accumMap)) (snd <$> treeplan)
     )
 
+newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
+  deriving stock (Show)
+
 checkNoDoubleDutyBeans ::
   Tree (Cauldron m) ->
-  Either (Map TypeRep (CallStack, CallStack)) (Map TypeRep Dynamic)
+  Either DoubleDutyBeans (Map TypeRep Dynamic)
 checkNoDoubleDutyBeans treecipes = do
   let (accumMap, beanSet) = cauldronTreeRegs treecipes
   let common = Map.intersectionWith (,) (fst <$> accumMap) beanSet
   if not (Map.null common)
-    then Left common
+    then Left $ DoubleDutyBeans common
     else Right $ snd <$> accumMap
 
 cauldronTreeRegs :: Tree (Cauldron m) -> (Map TypeRep (CallStack, Dynamic), Map TypeRep CallStack)
@@ -513,11 +519,14 @@ recipeRegs (SomeRecipe _ (Recipe {bean, decos})) = do
   extractRegReps bean
     <> foldMap extractRegReps decos
 
+data MissingDependencies = MissingDependencies CallStack TypeRep (Set TypeRep)
+  deriving stock (Show)
+
 checkMissingDeps ::
   -- | accums
   Set TypeRep ->
   Tree (Cauldron m) ->
-  Either (CallStack, TypeRep, Set TypeRep) ()
+  Either MissingDependencies ()
 checkMissingDeps accums treecipes = do
   let decoratedTreecipes = decorate (Map.empty, treecipes)
       missing =
@@ -544,13 +553,13 @@ checkMissingDepsCauldron ::
   -- | available at this level
   Set TypeRep ->
   Cauldron m ->
-  Either (CallStack, TypeRep, Set TypeRep) ()
+  Either MissingDependencies ()
 checkMissingDepsCauldron accums available cauldron =
   Data.Foldable.for_ (demandsByConstructorsInCauldron cauldron) \(stack, tr, demanded) ->
     let missing = Set.filter (`Set.notMember` (available `Set.union` accums)) demanded
      in if Set.null missing
           then Right ()
-          else Left (stack, tr, missing)
+          else Left $ MissingDependencies stack tr missing
 
 demandsByConstructorsInCauldron :: Cauldron m -> [(CallStack, TypeRep, Set TypeRep)]
 demandsByConstructorsInCauldron Cauldron {recipes} = do
@@ -563,14 +572,17 @@ demandsByConstructorsInCauldron Cauldron {recipes} = do
       let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
        in [(getConstructorCallStack decoCon, tr, decoArgReps)]
 
-buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either (NonEmpty (BeanConstructionStep, Maybe CallStack)) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
+newtype DependencyCycle = DependencyCycle (NonEmpty (BeanConstructionStep, Maybe CallStack))
+  deriving stock (Show)
+
+buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either DependencyCycle (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
 buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) -> do
   let (locations, fullDeps) = buildDepsCauldron secondary cauldron
   let deps = filter (not . shouldOmitDependency) fullDeps
   let graph = Graph.edges deps
   case Graph.topSort graph of
     Left recipeCycle ->
-      Left $ recipeCycle <&> \step -> (step, Map.lookup step locations)
+      Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
     Right (reverse -> plan) -> do
       let completeGraph = Graph.edges deps
       Right (completeGraph, (plan, fire, cauldron))
@@ -696,12 +708,12 @@ followConstructor c final super = do
 data RecipeError
   = -- | The 'Cauldron' identified by 'PathToCauldron' has beans
     -- that depend on beans that can't be found either in the current 'Cauldron' or its ancestors.
-    MissingDependencies CallStack TypeRep (Set TypeRep)
+    MissingDependenciesError MissingDependencies
   | -- | Beans that work both as primary beans and as secondary beans
     -- are disallowed.
-    DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
+    DoubleDutyBeansError DoubleDutyBeans
   | -- | Dependency cycles are disallowed by some 'Fire's.
-    DependencyCycle (NonEmpty (BeanConstructionStep, Maybe CallStack))
+    DependencyCycleError DependencyCycle
   deriving stock (Show)
 
 -- | An edge means that the source depends on the target.
@@ -825,7 +837,7 @@ getRecipeCallStack :: SomeRecipe m -> CallStack
 getRecipeCallStack (SomeRecipe stack _) = stack
 
 keysSet :: Cauldron m -> Set TypeRep
-keysSet Cauldron {recipes} =  Map.keysSet recipes
+keysSet Cauldron {recipes} = Map.keysSet recipes
 
 restrictKeys :: Cauldron m -> Set TypeRep -> Cauldron m
 restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recipes trs}
