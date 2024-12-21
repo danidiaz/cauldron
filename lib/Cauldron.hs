@@ -8,7 +8,6 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -193,7 +192,7 @@ data SomeRecipe m where
 recipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe, HasCallStack) => recipe m bean -> SomeRecipe m
 recipe theRecipe = SomeRecipe callStack (toRecipe theRecipe)
 
-withRecipe :: forall m r. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
+withRecipe :: forall m r. (forall bean. Typeable bean => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
 withRecipe f (SomeRecipe stack theRecipe) = f stack theRecipe
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
@@ -203,7 +202,7 @@ fromRecipeList =
     do mempty
 
 toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
-toRecipeMap Cauldron {recipes} = recipes
+toRecipeMap Cauldron {recipes} = recipes 
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
 hoistSomeRecipe f (SomeRecipe stack bean) = SomeRecipe stack do hoistRecipe f bean
@@ -510,7 +509,7 @@ cauldronRegs Cauldron {recipes} =
 -- | Returns the accumulators, not the main bean
 recipeRegs :: SomeRecipe m -> Map TypeRep (CallStack, Dynamic)
 recipeRegs (SomeRecipe _ (Recipe {bean, decos})) = do
-  let extractRegReps c = (getConstructorCallStack c,) <$> (.regReps) (constructorReps c)
+  let extractRegReps c = (getConstructorCallStack c,) <$> (\ConstructorReps {regReps} -> regReps) (constructorReps c)
   extractRegReps bean
     <> foldMap extractRegReps decos
 
@@ -826,7 +825,7 @@ getRecipeCallStack :: SomeRecipe m -> CallStack
 getRecipeCallStack (SomeRecipe stack _) = stack
 
 keysSet :: Cauldron m -> Set TypeRep
-keysSet Cauldron {recipes} = Map.keysSet recipes
+keysSet Cauldron {recipes} =  Map.keysSet recipes
 
 restrictKeys :: Cauldron m -> Set TypeRep -> Cauldron m
 restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recipes trs}
