@@ -122,18 +122,20 @@ coolWiring fire = do
             recipe @G
               Recipe
                 { bean = val do wire makeG,
-                  decos = fromDecoList 
-                    [ val do wire makeGDeco1
-                    ]
+                  decos =
+                    fromDecoList
+                      [ val do wire makeGDeco1
+                      ]
                 },
             recipe @H $ val do wire makeH,
             recipe @Z
               Recipe
                 { bean = val do wire makeZ,
-                  decos = fromDecoList
-                    [ val do wire makeZDeco1,
-                      val do wire makeZDeco2
-                    ]
+                  decos =
+                    fromDecoList
+                      [ val do wire makeZDeco1,
+                        val do wire makeZDeco2
+                      ]
                 },
             recipe @(Initializer, Inspector, Z) $ val0 do wire (,,)
           ]

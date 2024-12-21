@@ -80,9 +80,10 @@ managedCauldron ref =
         Recipe
           { bean = eff do
               wire \logger self -> managed (makeSelfInvokingWeird ref logger self),
-            decos = fromDecoList
-              [ val do wire makeWeirdDecorator
-              ]
+            decos =
+              fromDecoList
+                [ val do wire makeWeirdDecorator
+                ]
           },
       recipe @(Logger IO, Weird IO) $ val0 do wire (,)
     ]

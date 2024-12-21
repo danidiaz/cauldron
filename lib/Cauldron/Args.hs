@@ -31,6 +31,7 @@ module Cauldron.Args
     Registrable (register),
     -- nest1,
     -- nest2,
+
     -- * Re-exports
     Beans,
     taste,
@@ -66,7 +67,10 @@ import Data.Monoid (Endo (..))
 import Data.SOP (All, And, K (..))
 import Data.SOP.NP
 import Data.Semigroup qualified
+-- import Multicurryable
+
 import Data.Sequence (Seq)
+import Data.Sequence qualified
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -77,11 +81,8 @@ import Data.Type.Equality (testEquality)
 import Data.Typeable
 import GHC.Exts (IsList (..))
 import GHC.IsList
--- import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
-import Data.Sequence (Seq)
-import Data.Sequence qualified
 
 getArgsReps :: Args a -> Set SomeTypeRep
 getArgsReps (Args {_argReps}) = _argReps
@@ -117,7 +118,7 @@ foretellReg =
    in Args
         { _argReps = Set.empty,
           _regReps = Set.singleton tr,
-          _runArgs = pure \a -> Regs (Data.Sequence.singleton ( toDyn a )) ()
+          _runArgs = pure \a -> Regs (Data.Sequence.singleton (toDyn a)) ()
         }
 
 instance Applicative Args where
@@ -218,8 +219,8 @@ data WhereNested
 
 type IsReg :: Type -> WhereNested
 type family IsReg f :: WhereNested where
-  IsReg (_,_) = 'Tup2
-  IsReg (_,_,_) = 'Tup3
+  IsReg (_, _) = 'Tup2
+  IsReg (_, _, _) = 'Tup3
   IsReg _ = 'Innermost
 
 class Registrable nested tip | nested -> tip where

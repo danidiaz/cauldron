@@ -68,6 +68,7 @@ module Cauldron
     recipe,
     (Data.Sequence.|>),
     (Data.Sequence.<|),
+
     -- * Constructor
     Constructor,
     val,
@@ -135,6 +136,7 @@ import Data.Function ((&))
 import Data.Functor (($>), (<&>))
 import Data.Functor.Compose
 import Data.Functor.Contravariant
+import Data.Functor.Identity (Identity (..))
 import Data.Kind
 import Data.List qualified
 import Data.List.NonEmpty (NonEmpty)
@@ -146,6 +148,8 @@ import Data.Monoid (Endo (..))
 import Data.SOP (All, And, K (..))
 import Data.SOP.NP
 import Data.Semigroup qualified
+import Data.Sequence (Seq)
+import Data.Sequence qualified
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified
@@ -157,9 +161,6 @@ import GHC.Exts (IsList (..), UnliftedType)
 import GHC.IsList
 import Multicurryable
 import Type.Reflection qualified
-import Data.Functor.Identity (Identity(..))
-import Data.Sequence (Seq)
-import Data.Sequence qualified
 
 -- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
 -- 'Constructor's might have effects.
@@ -778,10 +779,10 @@ newtype Constructor m a = Constructor (Args (m (Regs a)))
 val :: (Applicative m, Registrable nested bean) => Args nested -> Constructor m bean
 val x = val' $ fmap runIdentity $ register $ fmap Identity x
 
-val' :: Applicative m => Args (Regs bean) -> Constructor m bean
+val' :: (Applicative m) => Args (Regs bean) -> Constructor m bean
 val' x = Constructor $ fmap pure x
 
-val0 :: Applicative m => Args bean -> Constructor m bean
+val0 :: (Applicative m) => Args bean -> Constructor m bean
 val0 x = Constructor $ fmap (pure . pure) x
 
 eff :: (Monad m, Registrable nested bean) => Args (m nested) -> Constructor m bean
@@ -804,7 +805,7 @@ eff0 x = Constructor $ fmap (fmap pure) x
 --     pure do
 --       tell1 reg1
 --       pure bean
--- 
+--
 -- val2Regs :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (reg1, reg2, bean) -> Constructor m bean
 -- val2Regs args =
 --   valManyRegs do
@@ -815,10 +816,10 @@ eff0 x = Constructor $ fmap (fmap pure) x
 --       tell1 reg1
 --       tell2 reg2
 --       pure bean
--- 
+--
 -- -- effManyRegs :: (Functor m) => Args (m (Regs bean)) -> Constructor m bean
 -- -- effManyRegs x = Constructor x
--- 
+--
 -- eff1Reg :: (Applicative m, Typeable reg1, Monoid reg1) => Args (m (reg1, bean)) -> Constructor m bean
 -- eff1Reg args =
 --   effManyRegs do
@@ -829,7 +830,7 @@ eff0 x = Constructor $ fmap (fmap pure) x
 --       pure do
 --         tell1 reg1
 --         pure bean
--- 
+--
 -- eff2Regs :: (Applicative m, Typeable reg1, Typeable reg2, Monoid reg1, Monoid reg2) => Args (m (reg1, reg2, bean)) -> Constructor m bean
 -- eff2Regs args =
 --   effManyRegs do
