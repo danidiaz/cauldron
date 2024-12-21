@@ -80,6 +80,8 @@ import GHC.IsList
 -- import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
+import Data.Sequence (Seq)
+import Data.Sequence qualified
 
 getArgsReps :: Args a -> Set SomeTypeRep
 getArgsReps (Args {_argReps}) = _argReps
@@ -115,7 +117,7 @@ foretellReg =
    in Args
         { _argReps = Set.empty,
           _regReps = Set.singleton tr,
-          _runArgs = pure \a -> Regs [toDyn a] ()
+          _runArgs = pure \a -> Regs (Data.Sequence.singleton ( toDyn a )) ()
         }
 
 instance Applicative Args where
@@ -148,14 +150,14 @@ someMonoidTypeRepToSomeTypeRep :: SomeMonoidTypeRep -> SomeTypeRep
 someMonoidTypeRepToSomeTypeRep (SomeMonoidTypeRep tr) = SomeTypeRep tr
 
 -- | Unrestricted building SHOULD NOT be public!
-data Regs a = Regs [Dynamic] a
+data Regs a = Regs (Seq Dynamic) a
   deriving stock (Functor)
 
 runRegs :: Regs a -> Set SomeMonoidTypeRep -> (Beans, a)
 runRegs (Regs dyns a) monoidReps =
   let onlyStaticlyKnown =
         ( manyMemptys monoidReps : do
-            dyn <- dyns
+            dyn <- Data.Foldable.toList dyns
             -- This bit is subtle. I mistakenly used Cauldron.Beans.singleton here
             -- and ended up with the Dynamic type as the *key*. It was hell to debug.
             [fromDynList [dyn]]
@@ -165,14 +167,14 @@ runRegs (Regs dyns a) monoidReps =
    in (onlyStaticlyKnown, a)
 
 instance Applicative Regs where
-  pure a = Regs [] a
+  pure a = Regs Data.Sequence.empty a
   Regs w1 f <*> Regs w2 a2 =
-    Regs (w1 ++ w2) (f a2)
+    Regs (w1 Data.Sequence.>< w2) (f a2)
 
 instance Monad Regs where
   (Regs w1 a) >>= k =
     let Regs w2 r = k a
-     in Regs (w1 ++ w2) r
+     in Regs (w1 Data.Sequence.>< w2) r
 
 manyMemptys :: Set SomeMonoidTypeRep -> Beans
 manyMemptys reps =

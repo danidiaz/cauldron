@@ -146,8 +146,6 @@ import Data.Monoid (Endo (..))
 import Data.SOP (All, And, K (..))
 import Data.SOP.NP
 import Data.Semigroup qualified
-import Data.Sequence (Seq)
-import Data.Sequence qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified
