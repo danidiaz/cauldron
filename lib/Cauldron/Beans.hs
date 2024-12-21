@@ -16,6 +16,7 @@
 
 module Cauldron.Beans
   ( Beans,
+    empty,
     insert,
     delete,
     restrict,
@@ -32,7 +33,7 @@ import Algebra.Graph.AdjacencyMap (AdjacencyMap)
 import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
-import Control.Applicative
+import Control.Applicative hiding (empty)
 import Control.Monad.Fix
 import Data.Bifunctor (first)
 import Data.ByteString qualified
@@ -66,6 +67,9 @@ import GHC.IsList
 import Multicurryable
 import Type.Reflection (SomeTypeRep (..), eqTypeRep)
 import Type.Reflection qualified
+
+empty :: Beans
+empty = Beans Map.empty
 
 insert :: forall bean. (Typeable bean) => bean -> Beans -> Beans
 insert bean Beans {beanMap} =

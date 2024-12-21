@@ -54,6 +54,7 @@
 module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
+    empty,
     insert,
     adjust,
     delete,
