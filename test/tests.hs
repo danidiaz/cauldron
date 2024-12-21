@@ -17,6 +17,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Set qualified
 import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.Proxy
@@ -227,9 +228,8 @@ tests =
         pure (),
       testCase "cauldron missing dep" do
         case cook' cauldronMissingDep of
-          Left (MissingDependencies [] missingMap)
-            | Map.size missingMap == 1 -> pure ()
-            | otherwise -> assertFailure "missing dependency error has too many entries"
+          Left (MissingDependencies _ tr missingSet)
+            | tr == typeRep (Proxy @(Repository M)) && missingSet == Data.Set.singleton (typeRep (Proxy @(Logger M))) -> pure ()
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do

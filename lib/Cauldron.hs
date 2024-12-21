@@ -96,7 +96,6 @@ module Cauldron
 
     -- ** Tasting the results
     RecipeError (..),
-    PathToCauldron,
 
     -- ** Drawing deps
     DependencyGraph,
@@ -188,19 +187,19 @@ hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
 hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$> recipes}
 
 data SomeRecipe m where
-  SomeRecipe :: (Typeable bean) => Recipe m bean -> SomeRecipe m
+  SomeRecipe :: (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe m
 
-recipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe) => recipe m bean -> SomeRecipe m
-recipe theRecipe = SomeRecipe (toRecipe theRecipe)
+recipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe, HasCallStack) => recipe m bean -> SomeRecipe m
+recipe theRecipe = SomeRecipe callStack (toRecipe theRecipe)
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
 fromRecipeList =
   foldl
-    do \c (SomeRecipe r) -> insert r c
+    do \c (SomeRecipe _ r) -> insert r c
     do mempty
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
-hoistSomeRecipe f (SomeRecipe bean) = SomeRecipe do hoistRecipe f bean
+hoistSomeRecipe f (SomeRecipe stack bean) = SomeRecipe stack do hoistRecipe f bean
 
 -- | A bean recipe, to be inserted into a 'Cauldron'.
 data Recipe m bean where
@@ -314,13 +313,13 @@ data ConstructorReps where
 -- @bean@ will overwrite previous recipes for that type.
 insert ::
   forall (bean :: Type) m recipe.
-  (Typeable bean, ToRecipe recipe) =>
+  (Typeable bean, ToRecipe recipe, HasCallStack) =>
   recipe m bean ->
   Cauldron m ->
   Cauldron m
 insert aRecipe Cauldron {recipes} = do
   let rep = typeRep (Proxy @bean)
-  Cauldron {recipes = Map.insert rep (SomeRecipe (toRecipe aRecipe)) recipes}
+  Cauldron {recipes = Map.insert rep (SomeRecipe callStack (toRecipe aRecipe)) recipes}
 
 -- | Tweak an already existing 'Recipe' recipe.
 adjust ::
@@ -335,10 +334,10 @@ adjust f (Cauldron {recipes}) = do
     { recipes =
         Map.adjust
           do
-            \(SomeRecipe (r :: Recipe m a)) ->
+            \(SomeRecipe stack (r :: Recipe m a)) ->
               case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
                 Nothing -> error "should never happen"
-                Just Refl -> SomeRecipe (f r)
+                Just Refl -> SomeRecipe stack (f r)
           rep
           recipes
     }
@@ -475,7 +474,7 @@ cookTree ::
   Either RecipeError (Tree DependencyGraph, m (Tree Beans))
 cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeans do checkNoDoubleDutyBeans (snd <$> treecipes)
-  () <- first (uncurry MissingDependencies) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
+  () <- first (\(a,b,c) -> MissingDependencies a b c) do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycle do buildPlans (Map.keysSet accumMap) treecipes
   Right
     ( treeplan <&> \(graph, _) -> DependencyGraph {graph},
@@ -484,31 +483,27 @@ cookTree (treecipes) = do
 
 checkNoDoubleDutyBeans ::
   Tree (Cauldron m) ->
-  Either (Set TypeRep) (Map TypeRep Dynamic)
+  Either (Map TypeRep (CallStack, CallStack)) (Map TypeRep Dynamic)
 checkNoDoubleDutyBeans treecipes = do
   let (accumMap, beanSet) = cauldronTreeRegs treecipes
-  let common = Set.intersection (Map.keysSet accumMap) beanSet
-  if not (Set.null common)
+  let common = Map.intersectionWith (,) (fst <$> accumMap) beanSet
+  if not (Map.null common)
     then Left common
-    else Right accumMap
+    else Right $ snd <$> accumMap
 
--- | Will always be @[]@ when using 'cook'; identifies a 'Cauldron' in a hierarchy of 'Cauldron's when
--- using 'cookNonEmpty' or 'cookTree'.
-type PathToCauldron = [Int]
-
-cauldronTreeRegs :: Tree (Cauldron m) -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronTreeRegs :: Tree (Cauldron m) -> (Map TypeRep (CallStack,Dynamic), Map TypeRep CallStack)
 cauldronTreeRegs = foldMap cauldronRegs
 
-cauldronRegs :: Cauldron m -> (Map TypeRep Dynamic, Set TypeRep)
+cauldronRegs :: Cauldron m -> (Map TypeRep (CallStack, Dynamic), Map TypeRep CallStack)
 cauldronRegs Cauldron {recipes} =
   Map.foldMapWithKey
-    do \rep aRecipe -> (recipeRegs aRecipe, Set.singleton rep)
+    do \rep aRecipe -> (recipeRegs aRecipe, Map.singleton rep (getRecipeCallStack aRecipe))
     recipes
 
 -- | Returns the accumulators, not the main bean
-recipeRegs :: SomeRecipe m -> Map TypeRep Dynamic
-recipeRegs (SomeRecipe (Recipe {bean, decos})) = do
-  let extractRegReps = (.regReps) . constructorReps
+recipeRegs :: SomeRecipe m -> Map TypeRep (CallStack,Dynamic)
+recipeRegs (SomeRecipe _ (Recipe {bean, decos})) = do
+  let extractRegReps c = (getConstructorCallStack c,) <$> (.regReps) (constructorReps c)
   extractRegReps bean
     <> foldMap extractRegReps decos
 
@@ -516,26 +511,25 @@ checkMissingDeps ::
   -- | accums
   Set TypeRep ->
   Tree (Cauldron m) ->
-  Either (PathToCauldron, Map TypeRep (Set TypeRep)) ()
+  Either (CallStack, TypeRep, Set TypeRep) ()
 checkMissingDeps accums treecipes = do
-  let decoratedTreecipes = decorate ([], Map.empty, treecipes)
-      missing = decoratedTreecipes <&> \(key, available, requested) -> 
-        first (key,) do checkMissingDepsCauldron accums (Map.keysSet available) requested
+  let decoratedTreecipes = decorate (Map.empty, treecipes)
+      missing = decoratedTreecipes <&> \(available, requested) -> 
+        do checkMissingDepsCauldron accums (Map.keysSet available) requested
   sequence_ missing
   where
     decorate ::
-      (PathToCauldron, Map TypeRep PathToCauldron, Tree (Cauldron m)) ->
-      Tree (PathToCauldron, Map TypeRep PathToCauldron, Cauldron m)
+      (Map TypeRep (SomeRecipe m), Tree (Cauldron m)) ->
+      Tree (Map TypeRep (SomeRecipe m), Cauldron m)
     decorate = unfoldTree
       do
-        \(key, acc, Node (current@Cauldron {recipes}) rest) ->
+        \(acc, Node (current@Cauldron {recipes}) rest) ->
           let -- current level has priority
-              newAcc = (recipes $> key) `Map.union` acc
+              newAcc = recipes `Map.union` acc
               newSeeds = do
-                (i, z) <- zip [0 ..] rest
-                let newKey = key ++ [i]
-                [(newKey, newAcc, z)]
-           in ((key, newAcc, current), newSeeds)
+                z <- rest 
+                [(newAcc, z)]
+           in ((newAcc, current), newSeeds)
 
 checkMissingDepsCauldron ::
   -- | accums
@@ -543,27 +537,45 @@ checkMissingDepsCauldron ::
   -- | available at this level
   Set TypeRep ->
   Cauldron m ->
-  Either (Map TypeRep (Set TypeRep)) ()
-checkMissingDepsCauldron accums available Cauldron {recipes} = do
-  let missingMap = (`Map.mapMaybe` recipes) \someBean -> do
-        let missing = Set.filter (`Set.notMember` available) do demanded someBean
-        if Set.null missing
-          then Nothing
-          else Just missing
-  if not (Map.null missingMap)
-    then Left missingMap
-    else Right ()
-  where
-    demanded :: SomeRecipe m -> Set TypeRep
-    demanded (SomeRecipe Recipe {bean, decos}) =
-      ( Set.fromList do
-          let ConstructorReps {argReps = beanArgReps} = constructorReps bean
-          Set.toList beanArgReps ++ do
-            decoCon <- Data.Foldable.toList decos
-            let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
-            Set.toList decoArgReps
-      )
-        `Set.difference` accums
+  Either (CallStack, TypeRep, Set TypeRep) ()
+checkMissingDepsCauldron accums available cauldron =
+  Data.Foldable.for_ (demandsByConstructorsInCauldron cauldron) \(stack, tr, demanded) ->
+        let missing = Set.filter (`Set.notMember` (available `Set.union` accums)) demanded
+        in if Set.null missing
+            then Right ()
+            else Left (stack, tr, missing)
+
+--  for cu
+--  let missingMap = (`Map.mapMaybe` recipes) \someBean -> do
+--        let missing = Set.filter (`Set.notMember` available) do demanded someBean
+--        if Set.null missing
+--          then Nothing
+--          else Just missing
+--  if not (Map.null missingMap)
+--    then Left missingMap
+--    else Right ()
+--  where
+--    demanded :: SomeRecipe m -> Set TypeRep
+--    demanded (SomeRecipe Recipe {bean, decos}) =
+--      ( Set.fromList do
+--          let ConstructorReps {argReps = beanArgReps} = constructorReps bean
+--          Set.toList beanArgReps ++ do
+--            decoCon <- Data.Foldable.toList decos
+--            let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
+--            Set.toList decoArgReps
+--      )
+--        `Set.difference` accums
+
+demandsByConstructorsInCauldron :: Cauldron m -> [(CallStack, TypeRep, Set TypeRep)]
+demandsByConstructorsInCauldron Cauldron {recipes}= do
+  (tr, SomeRecipe _ (Recipe {bean,decos})) <- Map.toList recipes 
+  (let ConstructorReps {argReps = beanArgReps} = constructorReps bean
+    in [(getConstructorCallStack bean, tr,  beanArgReps)])
+    ++ do
+        decoCon <- Data.Foldable.toList decos
+        let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
+         in [(getConstructorCallStack decoCon, tr, decoArgReps)]
+
 
 buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either (NonEmpty BeanConstructionStep) (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
 buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) -> do
@@ -587,6 +599,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
     recipes
     \beanRep
      ( SomeRecipe
+         _
          ( Recipe
              { bean = bean :: Constructor m bean,
                decos = decoCons
@@ -650,7 +663,7 @@ followPlanStep ::
 followPlanStep Cauldron {recipes} final super item =
   case item of
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipes of
-      SomeRecipe (Recipe {bean = beanConstructor}) -> do
+      SomeRecipe _ (Recipe {bean = beanConstructor}) -> do
         let ConstructorReps {beanRep} = constructorReps beanConstructor
         -- We delete the beanRep before running the bean,
         -- because if we have a self-dependency, we don't want to use the bean
@@ -659,7 +672,7 @@ followPlanStep Cauldron {recipes} final super item =
         (super', bean) <- followConstructor beanConstructor final (Cauldron.Beans.delete beanRep super)
         pure do Cauldron.Beans.insert bean super'
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
-      SomeRecipe (Recipe {decos}) -> do
+      SomeRecipe _ (Recipe {decos}) -> do
         let decoCon = decos `Data.Sequence.index` index
         -- Unlike before, we don't delete the beanRep before running the constructor.
         (super', bean) <- followConstructor decoCon final super
@@ -688,10 +701,10 @@ followConstructor c final super = do
 data RecipeError
   = -- | The 'Cauldron' identified by 'PathToCauldron' has beans
     -- that depend on beans that can't be found either in the current 'Cauldron' or its ancestors.
-    MissingDependencies PathToCauldron (Map TypeRep (Set TypeRep))
+    MissingDependencies CallStack TypeRep (Set TypeRep)
   | -- | Beans that work both as primary beans and as secondary beans
     -- are disallowed.
-    DoubleDutyBeans (Set TypeRep)
+    DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
   | -- | Dependency cycles are disallowed by some 'Fire's.
     DependencyCycle (NonEmpty BeanConstructionStep)
   deriving stock (Show)
@@ -859,3 +872,9 @@ hoistConstructor f (Constructor theStack theArgs) = Constructor theStack do fmap
 
 getConstructorArgs :: Constructor m bean -> Args (m (Regs bean))
 getConstructorArgs (Constructor _ theArgs) = theArgs
+
+getConstructorCallStack :: Constructor m bean -> CallStack
+getConstructorCallStack (Constructor stack _) = stack
+
+getRecipeCallStack :: SomeRecipe m -> CallStack
+getRecipeCallStack (SomeRecipe stack _) = stack
