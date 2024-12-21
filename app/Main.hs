@@ -193,11 +193,11 @@ coolWiring fire = do
   let cauldron :: Cauldron IO =
         fromSomeRecipeList
           [ someRecipe @A $ val do pure makeA,
-            someRecipe @B $ val do pure makeB <&> nest1,
+            someRecipe @B $ val do pure makeB,
             someRecipe @C $ val do wire makeC,
             someRecipe @D $ val do wire makeD,
             someRecipe @E $ val do wire makeE,
-            someRecipe @F $ val do wire makeF <&> nest1,
+            someRecipe @F $ val do wire makeF,
             someRecipe @G
               Recipe
                 { bean = val $ wire makeG,
@@ -205,16 +205,16 @@ coolWiring fire = do
                     [ val $ wire makeGDeco1
                     ]
                 },
-            someRecipe @H $ val do wire makeH <&> nest2,
+            someRecipe @H $ val do wire makeH,
             someRecipe @Z
               Recipe
                 { bean = val do wire makeZ,
                   decos =
                     [ val do wire makeZDeco1,
-                      val do wire makeZDeco2 <&> nest1
+                      val do wire makeZDeco2
                     ]
                 },
-            someRecipe @(Initializer, Inspector, Z) $ val do wire (,,)
+            someRecipe @(Initializer, Inspector, Z) $ val0 do wire (,,)
           ]
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 

@@ -75,8 +75,6 @@ module Cauldron
     eff,
     eff',
     eff0,
-    nest1,
-    nest2,
     -- effManyRegs,
     hoistConstructor,
     getConstructorArgs,
@@ -769,13 +767,13 @@ unsafeTreeToNonEmpty = \case
 -- >>> import Data.Function ((&))
 -- >>> import Data.Monoid
 
-newtype Constructor m a = Constructor (Args (m (RegWriter a)))
+newtype Constructor m a = Constructor (Args (m (Regs a)))
   deriving stock (Functor)
 
 val :: (Applicative m, Registrable nested bean) => Args nested -> Constructor m bean
 val x = val' $ fmap runIdentity $ register $ fmap Identity x
 
-val' :: Applicative m => Args (RegWriter bean) -> Constructor m bean
+val' :: Applicative m => Args (Regs bean) -> Constructor m bean
 val' x = Constructor $ fmap pure x
 
 val0 :: Applicative m => Args bean -> Constructor m bean
@@ -784,7 +782,7 @@ val0 x = Constructor $ fmap (pure . pure) x
 eff :: (Monad m, Registrable nested bean) => Args (m nested) -> Constructor m bean
 eff x = eff' $ register x
 
-eff' :: Args (m (RegWriter bean)) -> Constructor m bean
+eff' :: Args (m (Regs bean)) -> Constructor m bean
 eff' = Constructor
 
 eff0 :: (Functor m) => Args (m bean) -> Constructor m bean
@@ -849,5 +847,5 @@ runConstructor beans (Constructor args) = do
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
 hoistConstructor f (Constructor theArgs) = Constructor do fmap f theArgs
 
-getConstructorArgs :: Constructor m bean -> Args (m (RegWriter bean))
+getConstructorArgs :: Constructor m bean -> Args (m (Regs bean))
 getConstructorArgs (Constructor theArgs) = theArgs

@@ -26,12 +26,11 @@ module Cauldron.Args
     arg,
     Wireable (wire),
     foretellReg,
-    RegWriter,
+    Regs,
     runRegs,
-    Reg,
     Registrable (register),
-    nest1,
-    nest2,
+    -- nest1,
+    -- nest2,
     -- * Re-exports
     Beans,
     taste,
@@ -110,13 +109,13 @@ arg =
               Nothing -> throw (LazilyReadBeanMissing tr)
         }
 
-foretellReg :: forall a. (Typeable a, Monoid a) => Args (a -> RegWriter ())
+foretellReg :: forall a. (Typeable a, Monoid a) => Args (a -> Regs ())
 foretellReg =
   let tr = SomeMonoidTypeRep (Type.Reflection.typeRep @a)
    in Args
         { _argReps = Set.empty,
           _regReps = Set.singleton tr,
-          _runArgs = pure \a -> RegWriter [toDyn a] ()
+          _runArgs = pure \a -> Regs [toDyn a] ()
         }
 
 instance Applicative Args where
@@ -149,11 +148,11 @@ someMonoidTypeRepToSomeTypeRep :: SomeMonoidTypeRep -> SomeTypeRep
 someMonoidTypeRepToSomeTypeRep (SomeMonoidTypeRep tr) = SomeTypeRep tr
 
 -- | Unrestricted building SHOULD NOT be public!
-data RegWriter a = RegWriter [Dynamic] a
+data Regs a = Regs [Dynamic] a
   deriving stock (Functor)
 
-runRegs :: RegWriter a -> Set SomeMonoidTypeRep -> (Beans, a)
-runRegs (RegWriter dyns a) monoidReps =
+runRegs :: Regs a -> Set SomeMonoidTypeRep -> (Beans, a)
+runRegs (Regs dyns a) monoidReps =
   let onlyStaticlyKnown =
         ( manyMemptys monoidReps : do
             dyn <- dyns
@@ -165,15 +164,15 @@ runRegs (RegWriter dyns a) monoidReps =
           & do flip Cauldron.Beans.restrict (Set.map someMonoidTypeRepToSomeTypeRep monoidReps)
    in (onlyStaticlyKnown, a)
 
-instance Applicative RegWriter where
-  pure a = RegWriter [] a
-  RegWriter w1 f <*> RegWriter w2 a2 =
-    RegWriter (w1 ++ w2) (f a2)
+instance Applicative Regs where
+  pure a = Regs [] a
+  Regs w1 f <*> Regs w2 a2 =
+    Regs (w1 ++ w2) (f a2)
 
-instance Monad RegWriter where
-  (RegWriter w1 a) >>= k =
-    let RegWriter w2 r = k a
-     in RegWriter (w1 ++ w2) r
+instance Monad Regs where
+  (Regs w1 a) >>= k =
+    let Regs w2 r = k a
+     in Regs (w1 ++ w2) r
 
 manyMemptys :: Set SomeMonoidTypeRep -> Beans
 manyMemptys reps =
@@ -210,34 +209,40 @@ data Where
   = NotYetThere
   | AtTheTip
 
-data Reg a b = Reg a b
+data WhereNested
+  = Tup2
+  | Tup3
+  | Innermost
 
-type IsReg :: Type -> Where
-type family IsReg f :: Where where
-  IsReg (Reg _ _) = 'NotYetThere
-  IsReg _ = 'AtTheTip
+type IsReg :: Type -> WhereNested
+type family IsReg f :: WhereNested where
+  IsReg (_,_) = 'Tup2
+  IsReg (_,_,_) = 'Tup3
+  IsReg _ = 'Innermost
 
 class Registrable nested tip | nested -> tip where
-  register :: forall m. (Functor m) => Args (m nested) -> Args (m (RegWriter tip))
+  register :: forall m. (Functor m) => Args (m nested) -> Args (m (Regs tip))
 
 instance (Registrable_ (IsReg nested) nested tip) => Registrable nested tip where
   register amnested = register_ (Proxy @(IsReg nested)) do fmap (fmap pure) amnested
 
-class Registrable_ (where_ :: Where) nested tip | where_ nested -> tip where
-  register_ :: forall m. (Functor m) => Proxy where_ -> Args (m (RegWriter nested)) -> Args (m (RegWriter tip))
+class Registrable_ (where_ :: WhereNested) nested tip | where_ nested -> tip where
+  register_ :: forall m. (Functor m) => Proxy where_ -> Args (m (Regs nested)) -> Args (m (Regs tip))
 
-instance Registrable_ AtTheTip a a where
+instance Registrable_ Innermost a a where
   register_ _ = id
 
-instance (Typeable b, Monoid b, Registrable_ (IsReg rest) rest tip) => Registrable_ NotYetThere (Reg b rest) tip where
+instance (Typeable b, Monoid b, Registrable_ (IsReg rest) rest tip) => Registrable_ Tup2 (b, rest) tip where
   register_ _ af =
     register_ (Proxy @(IsReg rest)) do
       tell1 <- foretellReg @b
       action <- af
-      pure (action <&> \regs -> regs >>= \(Reg b rest) -> tell1 b *> pure rest)
+      pure (action <&> \regs -> regs >>= \(b, rest) -> tell1 b *> pure rest)
 
-nest1 :: (reg1, a) -> Reg reg1 a
-nest1 (reg1, a) = Reg reg1 a 
-
-nest2 :: (reg1, reg2, a) -> Reg reg1 (Reg reg2 a)
-nest2 (reg1, reg2, a) = Reg reg1 (Reg reg2 a) 
+instance (Typeable b, Monoid b, Typeable c, Monoid c, Registrable_ (IsReg rest) rest tip) => Registrable_ Tup3 (b, c, rest) tip where
+  register_ _ af =
+    register_ (Proxy @(IsReg rest)) do
+      tell1 <- foretellReg @b
+      tell2 <- foretellReg @c
+      action <- af
+      pure (action <&> \regs -> regs >>= \(b, c, rest) -> tell1 b *> tell2 c *> pure rest)

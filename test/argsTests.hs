@@ -38,7 +38,7 @@ data C = C
 makeC :: A -> B -> ([Text], C)
 makeC _ _ = (["monoid"], C)
 
-argsForC :: Args (RegWriter C)
+argsForC :: Args (Regs C)
 argsForC = do
   ~(reg1, bean) <- makeC <$> arg <*> arg
   tell1 <- foretellReg

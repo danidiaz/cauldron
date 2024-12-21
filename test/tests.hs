@@ -111,9 +111,9 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 cauldron :: Cauldron M
 cauldron =
   fromSomeRecipeList
-    [ someRecipe @(Logger M) $ eff do pure makeLogger <&> fmap nest1,
-      someRecipe @(Repository M) $ eff do wire makeRepository <&> fmap nest1,
-      someRecipe @(Initializer, Repository M) $ val do wire (,)
+    [ someRecipe @(Logger M) $ eff do pure makeLogger,
+      someRecipe @(Repository M) $ eff do wire makeRepository,
+      someRecipe @(Initializer, Repository M) $ val0 do wire (,)
     ]
 
 cauldronMissingDep :: Cauldron M
@@ -130,17 +130,17 @@ cauldronWithCycle :: Cauldron M
 cauldronWithCycle =
   cauldron
     & insert @(Logger M)
-      (eff do wire (\(_ :: Repository M) -> makeLogger) <&> fmap nest1)
+      (eff do wire \(_ :: Repository M) -> makeLogger)
 
 cauldronNonEmpty :: NonEmpty (Cauldron M)
 cauldronNonEmpty =
   Data.List.NonEmpty.fromList
     [ fromSomeRecipeList
-        [ someRecipe @(Logger M) $ eff do pure makeLogger <&> fmap nest1,
+        [ someRecipe @(Logger M) $ eff do pure makeLogger,
           someRecipe @(Weird M) $ eff do wire makeWeird
         ],
       fromSomeRecipeList
-        [ someRecipe @(Repository M) $ eff do wire makeRepository <&> fmap nest1,
+        [ someRecipe @(Repository M) $ eff do wire makeRepository,
           someRecipe @(Weird M)
             Recipe
               { bean = eff do wire makeSelfInvokingWeird,
@@ -149,7 +149,7 @@ cauldronNonEmpty =
                     val do wire (weirdDeco "outer")
                   ]
               },
-          someRecipe @(Initializer, Repository M, Weird M) $ val do wire (,,)
+          someRecipe @(Initializer, Repository M, Weird M) $ val0 do wire (,,)
         ]
     ]
 
