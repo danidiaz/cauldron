@@ -39,48 +39,23 @@ module Cauldron.Args
   )
 where
 
-import Algebra.Graph.AdjacencyMap (AdjacencyMap)
-import Algebra.Graph.AdjacencyMap qualified as Graph
-import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
-import Algebra.Graph.Export.Dot qualified as Dot
 import Cauldron.Beans (Beans, SomeMonoidTypeRep (..), fromDynList, taste)
 import Cauldron.Beans qualified
 import Control.Applicative
 import Control.Exception (Exception, throw)
-import Control.Monad.Fix
-import Data.Bifunctor (first)
-import Data.ByteString qualified
 import Data.Dynamic
 import Data.Foldable qualified
 import Data.Function ((&))
-import Data.Functor (($>), (<&>))
-import Data.Functor.Compose
-import Data.Functor.Contravariant
+import Data.Functor ((<&>))
 import Data.Kind
-import Data.List.NonEmpty (NonEmpty)
-import Data.List.NonEmpty qualified
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
-import Data.Maybe (fromJust)
-import Data.Monoid (Endo (..))
-import Data.SOP (All, And, K (..))
-import Data.SOP.NP
-import Data.Semigroup qualified
 -- import Multicurryable
 
 import Data.Sequence (Seq)
 import Data.Sequence qualified
-import Data.Sequence qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Text qualified
-import Data.Text.Encoding qualified
-import Data.Tree
-import Data.Type.Equality (testEquality)
 import Data.Typeable
-import GHC.Exts (IsList (..))
-import GHC.IsList
-import Type.Reflection (SomeTypeRep (..), eqTypeRep)
+import Type.Reflection (SomeTypeRep (..))
 import Type.Reflection qualified
 
 getArgsReps :: Args a -> Set SomeTypeRep

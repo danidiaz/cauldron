@@ -131,25 +131,17 @@ import Control.Applicative
 import Control.Monad.Fix
 import Data.Bifunctor (first)
 import Data.ByteString qualified
-import Data.ByteString qualified as Data.List
 import Data.Dynamic
-import Data.Either (fromRight)
 import Data.Foldable qualified
 import Data.Function ((&))
-import Data.Functor (($>), (<&>))
-import Data.Functor.Compose
-import Data.Functor.Contravariant
+import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (..))
 import Data.Kind
-import Data.List qualified
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
-import Data.Monoid (Endo (..))
-import Data.SOP (All, And, K (..))
-import Data.SOP.NP
 import Data.Semigroup qualified
 import Data.Sequence (Seq)
 import Data.Sequence qualified
@@ -161,10 +153,8 @@ import Data.Tree
 import Data.Type.Equality (testEquality)
 import Data.Typeable
 import GHC.Exception (CallStack)
-import GHC.Exts (IsList (..), UnliftedType)
 import GHC.IsList
 import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
-import Multicurryable
 import Type.Reflection qualified
 
 -- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
