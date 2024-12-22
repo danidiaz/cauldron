@@ -730,31 +730,30 @@ prettyRecipeErrorLines :: RecipeError -> [String]
 prettyRecipeErrorLines = \case
   MissingDependenciesError
     (MissingDependencies constructorCallStack constructorResultRep missingDependenciesReps) ->
-      [ "A constructor for a value of type " ++ show constructorResultRep ++
-        " is missing the following dependencies:"
+      [ "A constructor for a value of type "
+          ++ show constructorResultRep
+          ++ " is missing the following dependencies:"
       ]
         ++ do
           rep <- Data.Foldable.toList missingDependenciesReps
           ["- " ++ show rep]
-        ++ [ "at:"
-           ]
         ++ (("\t" ++) <$> prettyCallStackLines constructorCallStack)
   DoubleDutyBeansError (DoubleDutyBeans doubleDutyMap) ->
     [ "The following beans work both as primary beans and secondary beans:"
     ]
       ++ ( flip Map.foldMapWithKey doubleDutyMap \rep (secCS, primCS) ->
-             [ "\t-" ++ show rep ++ "is a secondary bean here:"
+             [ "- " ++ show rep ++ " is a secondary bean here:"
              ]
-               ++ (("\t\t" ++) <$> prettyCallStackLines secCS)
-               ++ [ "\t  and a primary bean here:"
+               ++ (("\t" ++) <$> prettyCallStackLines secCS)
+               ++ [ "  and a primary bean here:"
                   ]
-               ++ (("\t\t" ++) <$> prettyCallStackLines primCS)
+               ++ (("\t" ++) <$> prettyCallStackLines primCS)
          )
   DependencyCycleError (DependencyCycle theCycle) ->
-    [ "Forbidded dependency cycle between bean construction steps:"
+    [ "Forbidden dependency cycle between bean construction steps:"
     ]
       ++ ( flip foldMap theCycle \(step, mstack) ->
-             [ "\t- " ++ case step of
+             [ "- " ++ case step of
                  BarePrimaryBean rep -> "Bare bean " ++ show rep
                  PrimaryBeanDeco rep i -> "Decorator " ++ show i ++ " for bean " ++ show rep
                  PrimaryBean rep -> "Complete bean " ++ show rep
@@ -762,7 +761,7 @@ prettyRecipeErrorLines = \case
              ]
                ++ case mstack of
                  Nothing -> []
-                 Just stack -> ["\t  at:"] ++ (("\t\t" ++) <$> prettyCallStackLines stack)
+                 Just stack -> (("\t" ++) <$> prettyCallStackLines stack)
          )
 
 -- | An edge means that the source depends on the target.
@@ -850,7 +849,7 @@ unsafeTreeToNonEmpty = \case
 data Constructor m a = Constructor CallStack (Args (m (Regs a)))
   deriving stock (Functor)
 
-val :: (Applicative m, Registrable nested bean) => Args nested -> Constructor m bean
+val :: (Applicative m, Registrable nested bean, HasCallStack) => Args nested -> Constructor m bean
 val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity x)
 
 val' :: (Applicative m, HasCallStack) => Args (Regs bean) -> Constructor m bean
