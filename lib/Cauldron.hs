@@ -65,6 +65,7 @@ module Cauldron
 
     -- * Recipes
     Recipe (..),
+    ToRecipe,
     hoistRecipe,
     fromDecoList,
     (Data.Sequence.|>),
@@ -113,10 +114,11 @@ module Cauldron
     toAdjacencyMap,
 
     -- * Re-exported
-    Args,
+
+    -- Args,
     wire,
     register,
-    Beans,
+    -- Beans,
     taste,
   )
 where
@@ -127,7 +129,6 @@ import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
 import Cauldron.Args
 import Cauldron.Beans qualified
-import Control.Applicative
 import Control.Monad.Fix
 import Data.Bifunctor (first)
 import Data.ByteString qualified
@@ -161,6 +162,9 @@ import Type.Reflection qualified
 -- 'Constructor's might have effects.
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeRecipe m)} -> Cauldron m
+
+empty :: Cauldron m
+empty = Cauldron {recipes = Map.empty}
 
 -- | Union of two 'Cauldron's, right-biased: prefers values from the /right/ cauldron when
 -- both contain the same bean. (Note that 'Data.Map.Map' is left-biased.)
@@ -710,6 +714,7 @@ data RecipeError
 --
 -- The dependencies of each bean are given separatedly from its decorators.
 newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap BeanConstructionStep}
+  deriving newtype (Show)
 
 -- | Conversion to a graph type
 -- from the
