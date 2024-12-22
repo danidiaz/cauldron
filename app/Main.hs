@@ -12,8 +12,6 @@
 module Main where
 
 import Cauldron
-import Data.Function ((&))
-import Data.Functor ((<&>))
 import Data.Maybe (fromJust)
 
 {-
@@ -230,7 +228,7 @@ main = do
     runInitializer
   case coolWiring allowSelfDeps of
     Left badBeans -> do
-      print badBeans
+      putStrLn $ prettyRecipeError badBeans
     Right (depGraph, action) -> do
       exportToDot defaultStepToText "beans.dot" depGraph
       exportToDot defaultStepToText "beans-no-agg.dot" do removeSecondaryBeans do depGraph

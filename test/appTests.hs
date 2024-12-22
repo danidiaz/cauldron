@@ -9,8 +9,6 @@
 module Main (main) where
 
 import Cauldron
-import Data.Function ((&))
-import Data.Functor ((<&>))
 import Data.Maybe (fromJust)
 import Test.Tasty
 import Test.Tasty.HUnit

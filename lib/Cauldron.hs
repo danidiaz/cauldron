@@ -102,6 +102,8 @@ module Cauldron
     MissingDependencies (..),
     DoubleDutyBeans (..),
     DependencyCycle (..),
+    prettyRecipeError,
+    prettyRecipeErrorLines,
 
     -- ** Drawing deps
     DependencyGraph,
@@ -138,6 +140,7 @@ import Data.Function ((&))
 import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (..))
 import Data.Kind
+import Data.List qualified
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified
 import Data.Map.Strict (Map)
@@ -153,7 +156,7 @@ import Data.Text.Encoding qualified
 import Data.Tree
 import Data.Type.Equality (testEquality)
 import Data.Typeable
-import GHC.Exception (CallStack)
+import GHC.Exception (CallStack, prettyCallStackLines)
 import GHC.IsList
 import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
 import Type.Reflection qualified
@@ -719,6 +722,48 @@ data RecipeError
   | -- | Dependency cycles are disallowed by some 'Fire's.
     DependencyCycleError DependencyCycle
   deriving stock (Show)
+
+prettyRecipeError :: RecipeError -> String
+prettyRecipeError = Data.List.intercalate "\n" . prettyRecipeErrorLines
+
+prettyRecipeErrorLines :: RecipeError -> [String]
+prettyRecipeErrorLines = \case
+  MissingDependenciesError
+    (MissingDependencies constructorCallStack constructorResultRep missingDependenciesReps) ->
+      [ "A constructor for a value of type" ++ show constructorResultRep,
+        "is missing the following dependencies:"
+      ]
+        ++ do
+          rep <- Data.Foldable.toList missingDependenciesReps
+          ["\t- " ++ show rep]
+        ++ [ "\t  at:"
+           ]
+        ++ (("\t" ++) <$> prettyCallStackLines constructorCallStack)
+  DoubleDutyBeansError (DoubleDutyBeans doubleDutyMap) ->
+    [ "The following beans work both as primary beans and secondary beans:"
+    ]
+      ++ ( flip Map.foldMapWithKey doubleDutyMap \rep (secCS, primCS) ->
+             [ "\t-" ++ show rep ++ "is a secondary bean here:"
+             ]
+               ++ (("\t\t" ++) <$> prettyCallStackLines secCS)
+               ++ [ "\t  and a primary bean here:"
+                  ]
+               ++ (("\t\t" ++) <$> prettyCallStackLines primCS)
+         )
+  DependencyCycleError (DependencyCycle theCycle) ->
+    [ "Forbidded dependency cycle between bean construction steps:"
+    ]
+      ++ ( flip foldMap theCycle \(step, mstack) ->
+             [ "\t- " ++ case step of
+                 BarePrimaryBean rep -> "Bare bean " ++ show rep
+                 PrimaryBeanDeco rep i -> "Decorator " ++ show i ++ " for bean " ++ show rep
+                 PrimaryBean rep -> "Complete bean " ++ show rep
+                 SecondaryBean rep -> "Secondary bean " ++ show rep
+             ]
+               ++ case mstack of
+                 Nothing -> []
+                 Just stack -> ["\t  at:"] ++ (("\t\t" ++) <$> prettyCallStackLines stack)
+         )
 
 -- | An edge means that the source depends on the target.
 --
