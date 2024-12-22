@@ -12,7 +12,7 @@ build-type:         Simple
 extra-doc-files:    CHANGELOG.md
 -- extra-source-files:
 category: Dependency Injection
-tested-with: GHC ==9.8.1 || ==9.6.3
+tested-with: GHC ==9.8.2
 source-repository    head
     type:     git
     location: https://github.com/danidiaz/cauldron.git
