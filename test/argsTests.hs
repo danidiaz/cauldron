@@ -11,6 +11,7 @@ module Main (main) where
 
 import Cauldron
 import Cauldron.Args
+import Control.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer
 import Data.Dynamic
@@ -46,6 +47,16 @@ argsForC = do
     tell1 reg1
     pure bean
 
+data L1 = L1
+
+data L2 = L2
+
+makeL2 :: L1 -> L2
+makeL2 !L1 = L2
+
+throwyArgs :: Args L2
+throwyArgs = makeL2 <$> arg
+
 tests :: TestTree
 tests =
   testGroup
@@ -56,7 +67,12 @@ tests =
         assertEqual
           "monoid"
           ["monoid"]
-          m
+          m,
+      testCase "throwy" do
+        r <- try $ evaluate $ runArgs throwyArgs []
+        case r of
+          Left (LazilyReadBeanMissing tr) | tr == (typeRep (Proxy @L1)) -> pure ()
+          _ -> assertFailure "expected exception did not happen"
     ]
 
 main :: IO ()

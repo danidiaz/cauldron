@@ -23,14 +23,13 @@ module Cauldron.Args
     getRegsReps,
     Args,
     runArgs,
+    LazilyReadBeanMissing (..),
     arg,
     Wireable (wire),
     foretellReg,
     Regs,
     runRegs,
     Registrable (register),
-    -- nest1,
-    -- nest2,
 
     -- * Re-exports
     Beans,
