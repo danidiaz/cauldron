@@ -40,11 +40,11 @@
 -- >>> :{
 -- do
 --   let cauldron :: Cauldron IO
---       cauldron =
---         emptyCauldron
---         & insert @A do recipe do pack value makeA
---         & insert @B do recipe do pack value makeB
---         & insert @C do recipe do pack effect makeC
+--       cauldron = [
+--           recipe @A $ val do wire makeA, 
+--           recipe @B $ val do wire makeB,
+--           recipe @C $ eff do wire makeC,
+--         ]
 --       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
 --   beans <- action
 --   pure do taste @C beans
@@ -272,16 +272,15 @@ hoistRecipe f (Recipe {bean, decos}) =
 -- >>> :{
 -- do
 --   let cauldron :: Cauldron IO
---       cauldron =
---         emptyCauldron
---         & insert @Foo
---           Recipe {
---             bean = pack value makeFoo,
+--       cauldron = [
+--           recipe @Foo $ Recipe {
+--             bean = val do wire makeFoo,
 --             decos = [
---                  pack value makeFooDeco1,
---                  pack effect makeFooDeco2
+--                  val do wire makeFooDeco1,
+--                  eff do wire makeFooDeco2
 --               ]
 --           }
+--         ]
 --       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
 --   beans <- action
 --   let Just Foo {sayFoo} = taste beans
@@ -841,6 +840,7 @@ unsafeTreeToNonEmpty = \case
 
 -- $setup
 -- >>> :set -XBlockArguments
+-- >>> :set -XOverloadedLists
 -- >>> :set -Wno-incomplete-uni-patterns
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
