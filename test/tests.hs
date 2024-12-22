@@ -2,6 +2,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
@@ -15,6 +16,7 @@ import Control.Monad.Trans.Writer
 import Data.Foldable qualified
 import Data.Function ((&))
 import Data.Functor ((<&>))
+import Data.Functor.Identity
 import Data.IORef
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified
@@ -25,6 +27,7 @@ import Data.Monoid
 import Data.Proxy
 import Data.Set qualified
 import Data.Text (Text)
+import Data.Tree
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -164,6 +167,27 @@ cauldronLonely =
     [ recipe @(Lonely M) $ val do pure makeLonely
     ]
 
+data A = A
+
+makeA :: (Sum Int, A)
+makeA = (Sum 1, A)
+
+data B = B
+
+makeB :: A -> (Sum Int, B)
+makeB _ = (Sum 7, B)
+
+data C = C
+
+makeC :: A -> (Sum Int, C)
+makeC _ = (Sum 11, C)
+
+treeOfCauldrons :: Tree (Cauldron Identity)
+treeOfCauldrons =
+  Node
+    [recipe $ val $ wire makeA]
+    [Node [recipe $ val $ wire makeB] [], Node [recipe $ val $ wire makeC] []]
+
 tests :: TestTree
 tests =
   testGroup
@@ -231,6 +255,16 @@ tests =
               assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
             pure ()
           _ -> assertEqual "number of dependency graphs" 2 (Data.Foldable.length dgs),
+      testCase "tree of cauldrons" do
+        case cookTree' treeOfCauldrons of
+          Left err -> assertFailure $ "failed to build tree: " ++ show err
+          Right (_trees, Identity beans) -> case beans of
+            Node bbase [Node bbranch1 [], Node bbranch2 []] ->
+              assertEqual
+                "expected accs across brances"
+                (Just (Sum 1), Just (Sum 8), Just (Sum 12))
+                (taste @(Sum Int) bbase, taste @(Sum Int) bbranch1, taste @(Sum Int) bbranch2)
+            _ -> assertFailure $ "tree has unexpected shape",
       testCase "lonely beans get built" do
         (_, _) <- case cook' cauldronLonely of
           Left _ -> assertFailure "could not wire"
@@ -260,6 +294,7 @@ tests =
   where
     cook' = cook allowSelfDeps
     cookNonEmpty' = cookNonEmpty . fmap (allowSelfDeps,)
+    cookTree' = cookTree . fmap (allowSelfDeps,)
 
 main :: IO ()
 main = defaultMain tests
