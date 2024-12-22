@@ -7,9 +7,12 @@
 
 module Main (main) where
 
+import Algebra.Graph.AdjacencyMap
 import Cauldron
+import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer
+import Data.Foldable qualified
 import Data.Function ((&))
 import Data.Functor ((<&>))
 import Data.IORef
@@ -185,19 +188,20 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        (_, traces) <- case cookNonEmpty' cauldronNonEmpty of
+        (dgs, traces) <- case cookNonEmpty' cauldronNonEmpty of
           Left _ -> assertFailure "could not wire"
-          Right (_, beansAction) -> runWriterT do
-            _ Data.List.NonEmpty.:| [boiledBeans] <- beansAction
-            let ( Initializer {runInitializer},
-                  Repository {findById, store},
-                  Weird {anotherWeirdOp}
-                  ) = fromJust . taste $ boiledBeans
-            runInitializer
-            store 1 "foo"
-            _ <- findById 1
-            anotherWeirdOp
-            pure ()
+          Right (dgs, beansAction) -> do
+            runWriterT do
+              _ Data.List.NonEmpty.:| [boiledBeans] <- beansAction
+              let ( Initializer {runInitializer},
+                    Repository {findById, store},
+                    Weird {anotherWeirdOp}
+                    ) = fromJust . taste $ boiledBeans
+              runInitializer
+              store 1 "foo"
+              _ <- findById 1
+              anotherWeirdOp
+              pure dgs
         assertEqual
           "traces"
           [ "logger constructor",
@@ -216,7 +220,17 @@ tests =
             -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
             "weirdOp 2"
           ]
-          traces,
+          traces
+        case dgs of
+          dg1 Data.List.NonEmpty.:| [dg2] -> do
+            let _adj1 = toAdjacencyMap dg1
+            let adj2 = toAdjacencyMap dg2
+            unless (hasVertex (PrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+              assertFailure "cauldron 2 doesn't have the fully built logger from cauldron 1 in its dep graph"
+            when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+              assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
+            pure ()
+          _ -> assertEqual "number of dependency graphs" 2 (Data.Foldable.length dgs),
       testCase "lonely beans get built" do
         (_, _) <- case cook' cauldronLonely of
           Left _ -> assertFailure "could not wire"
