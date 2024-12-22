@@ -43,7 +43,7 @@
 --       cauldron = [
 --           recipe @A $ val do wire makeA, 
 --           recipe @B $ val do wire makeB,
---           recipe @C $ eff do wire makeC,
+--           recipe @C $ eff do wire makeC 
 --         ]
 --       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
 --   beans <- action
@@ -120,7 +120,7 @@ module Cauldron
     -- Args,
     wire,
     register,
-    -- Beans,
+    Beans,
     taste,
   )
 where
