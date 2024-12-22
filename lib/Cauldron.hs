@@ -73,7 +73,7 @@ module Cauldron
     SomeRecipe,
     recipe,
     withRecipe,
-    getRecipeCallStack,
+    getRecipeCallStacks,
 
     -- * Constructor
     Constructor,
@@ -184,19 +184,28 @@ hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
 hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$> recipes}
 
 data SomeRecipe m where
-  SomeRecipe :: (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe m
+  SomeRecipe :: (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> SomeRecipe m
 
 recipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe, HasCallStack) => recipe m bean -> SomeRecipe m
-recipe theRecipe = SomeRecipe callStack (toRecipe theRecipe)
+recipe theRecipe = withFrozenCallStack do
+  let initialStacks = Data.List.NonEmpty.singleton callStack
+  SomeRecipe initialStacks (toRecipe theRecipe)
 
-withRecipe :: forall m r. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
-withRecipe f (SomeRecipe stack theRecipe) = f stack theRecipe
+withRecipe :: forall m r. (forall bean. (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
+withRecipe f (SomeRecipe stacks theRecipe) = f stacks theRecipe
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
 fromRecipeList =
   foldl
-    do \c (SomeRecipe _ r) -> insert r c
-    do mempty
+    do \c sr -> withRecipe inserter sr c
+    do empty
+  where
+    -- Here we take care to preserve the initial call stacks
+    inserter :: forall bean m. (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> Cauldron m -> Cauldron m
+    inserter stacks r Cauldron {recipes} =
+      Cauldron
+        { recipes = Map.insert (typeRep (Proxy @bean)) (SomeRecipe stacks r) recipes
+        }
 
 toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
 toRecipeMap Cauldron {recipes} = recipes
@@ -320,27 +329,28 @@ insert ::
   recipe m bean ->
   Cauldron m ->
   Cauldron m
-insert aRecipe Cauldron {recipes} = do
+insert aRecipe Cauldron {recipes} = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
-  Cauldron {recipes = Map.insert rep (SomeRecipe callStack (toRecipe aRecipe)) recipes}
+  let initialStacks = Data.List.NonEmpty.singleton callStack
+  Cauldron {recipes = Map.insert rep (SomeRecipe initialStacks (toRecipe aRecipe)) recipes}
 
 -- | Tweak an already existing 'Recipe' recipe.
 adjust ::
   forall bean m.
-  (Typeable bean) =>
+  (Typeable bean, HasCallStack) =>
   (Recipe m bean -> Recipe m bean) ->
   Cauldron m ->
   Cauldron m
-adjust f (Cauldron {recipes}) = do
+adjust f (Cauldron {recipes}) = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
   Cauldron
     { recipes =
         Map.adjust
           do
-            \(SomeRecipe stack (r :: Recipe m a)) ->
+            \(SomeRecipe stacks (r :: Recipe m a)) ->
               case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
                 Nothing -> error "should never happen"
-                Just Refl -> SomeRecipe stack (f r)
+                Just Refl -> SomeRecipe (Data.List.NonEmpty.appendList stacks [callStack]) (f r)
           rep
           recipes
     }
@@ -503,7 +513,7 @@ cauldronTreeRegs = foldMap cauldronRegs
 cauldronRegs :: Cauldron m -> (Map TypeRep (CallStack, Dynamic), Map TypeRep CallStack)
 cauldronRegs Cauldron {recipes} =
   Map.foldMapWithKey
-    do \rep aRecipe -> (recipeRegs aRecipe, Map.singleton rep (getRecipeCallStack aRecipe))
+    do \rep aRecipe -> (recipeRegs aRecipe, Map.singleton rep (Data.List.NonEmpty.head $ getRecipeCallStacks aRecipe))
     recipes
 
 -- | Returns the accumulators, not the main bean
@@ -613,7 +623,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
             innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
         ( Map.fromList $
             [ (bareBean, getConstructorCallStack bean),
-              (boiledBean, recipeCallStack)
+              (boiledBean, Data.List.NonEmpty.head recipeCallStack)
             ]
               ++ do
                 (decoStep, decoCon) <- decos
@@ -828,8 +838,8 @@ getConstructorArgs (Constructor _ theArgs) = theArgs
 getConstructorCallStack :: Constructor m bean -> CallStack
 getConstructorCallStack (Constructor stack _) = stack
 
-getRecipeCallStack :: SomeRecipe m -> CallStack
-getRecipeCallStack (SomeRecipe stack _) = stack
+getRecipeCallStacks :: SomeRecipe m -> NonEmpty CallStack
+getRecipeCallStacks (SomeRecipe stacks _) = stacks
 
 keysSet :: Cauldron m -> Set TypeRep
 keysSet Cauldron {recipes} = Map.keysSet recipes
