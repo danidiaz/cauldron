@@ -602,14 +602,13 @@ newtype DependencyCycle = DependencyCycle (NonEmpty (BeanConstructionStep, Maybe
 
 buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either DependencyCycle (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
 buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) -> do
-  let (locations, fullDeps) = buildDepsCauldron secondary cauldron
-  let deps = filter (not . shouldOmitDependency) fullDeps
-  let graph = Graph.edges deps
+  let (locations, deps) = buildDepsCauldron secondary cauldron
+  -- We may omit some dependency edges to allow for cyclic dependencies.
+  let graph = Graph.edges $ filter (not . shouldOmitDependency) deps
   case Graph.topSort graph of
     Left recipeCycle ->
       Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
     Right (reverse -> plan) -> do
-      -- TODO: should this be full deps?
       let completeGraph = Graph.edges deps
       Right (completeGraph, (plan, fire, cauldron))
 
