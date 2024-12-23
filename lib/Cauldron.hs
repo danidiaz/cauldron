@@ -641,7 +641,15 @@ buildDepsCauldron secondary Cauldron {recipes} = do
               (decoStep, decoCon) <- decos
               constructorEdges makeTargetStep decoStep (removeBeanFromArgs do constructorReps decoCon)
             full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [boiledBean]
-            innerDeps = zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
+            innerDeps =
+              -- This explicit dependency between the completed bean and its
+              -- "bare" undecorated form is not strictly required. It will
+              -- always exist in an indirect manner, through the decorators.
+              -- But it might be useful when rendering the dep graph.
+              (PrimaryBean beanRep, BarePrimaryBean beanRep)
+                :
+                -- The chain completed bean -> decorators -> bare bean.
+                zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
         ( Map.fromList $
             [ (bareBean, getConstructorCallStack bean),
               (boiledBean, Data.List.NonEmpty.head recipeCallStack)
