@@ -9,7 +9,6 @@ module Main (main) where
 
 import Cauldron
 import Cauldron.Managed
-import Data.Function ((&))
 import Data.IORef
 import Data.Maybe (fromJust)
 import Data.Text (Text)
@@ -75,14 +74,14 @@ makeWithWrapperWithMessage ref inMsg outMsg v handler = do
 managedCauldron :: IORef [Text] -> Cauldron Managed
 managedCauldron ref =
   fromRecipeList
-    [ recipe @(Logger IO) $ eff do wire do managed (makeLogger ref),
+    [ recipe @(Logger IO) $ eff $ wire $ managed (makeLogger ref),
       recipe @(Weird IO)
         Recipe
           { bean = eff do
               wire \logger self -> managed (makeSelfInvokingWeird ref logger self),
             decos =
               fromDecoList
-                [ val do wire makeWeirdDecorator
+                [ val $ wire makeWeirdDecorator
                 ]
           },
       recipe @(Logger IO, Weird IO) $ val_ do wire (,)
