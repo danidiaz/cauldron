@@ -120,7 +120,7 @@ cauldron =
   fromRecipeList
     [ recipe @(Logger M) $ eff do pure makeLogger,
       recipe @(Repository M) $ eff do wire makeRepository,
-      recipe @(Initializer, Repository M) $ val0 do wire (,)
+      recipe @(Initializer, Repository M) $ val_ do wire (,)
     ]
 
 cauldronMissingDep :: Cauldron M
@@ -157,7 +157,7 @@ cauldronNonEmpty =
                       val do wire (weirdDeco "outer")
                     ]
               },
-          recipe @(Initializer, Repository M, Weird M) $ val0 do wire (,,)
+          recipe @(Initializer, Repository M, Weird M) $ val_ do wire (,,)
         ]
     ]
 

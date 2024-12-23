@@ -214,7 +214,7 @@ coolWiring fire = do
                         val do wire makeZDeco2
                       ]
                 },
-            recipe @(Initializer, Inspector, Z) $ val0 do wire (,,)
+            recipe @(Initializer, Inspector, Z) $ val_ do wire (,,)
           ]
   fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
 

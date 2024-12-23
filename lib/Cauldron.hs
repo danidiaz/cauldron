@@ -79,10 +79,10 @@ module Cauldron
     Constructor,
     val,
     val',
-    val0,
+    val_,
     eff,
     eff',
-    eff0,
+    eff_,
     hoistConstructor,
     getConstructorArgs,
     getConstructorCallStack,
@@ -854,8 +854,8 @@ val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity 
 val' :: (Applicative m, HasCallStack) => Args (Regs bean) -> Constructor m bean
 val' x = Constructor callStack $ fmap pure x
 
-val0 :: (Applicative m, HasCallStack) => Args bean -> Constructor m bean
-val0 x = Constructor callStack $ fmap (pure . pure) x
+val_ :: (Applicative m, HasCallStack) => Args bean -> Constructor m bean
+val_ x = Constructor callStack $ fmap (pure . pure) x
 
 eff :: (Monad m, Registrable nested bean, HasCallStack) => Args (m nested) -> Constructor m bean
 eff x = withFrozenCallStack (eff' $ register x)
@@ -863,8 +863,8 @@ eff x = withFrozenCallStack (eff' $ register x)
 eff' :: (HasCallStack) => Args (m (Regs bean)) -> Constructor m bean
 eff' = Constructor callStack
 
-eff0 :: (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
-eff0 x = Constructor callStack $ fmap (fmap pure) x
+eff_ :: (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
+eff_ x = Constructor callStack $ fmap (fmap pure) x
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
 runConstructor beans (Constructor _ args) = do

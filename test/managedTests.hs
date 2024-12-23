@@ -85,7 +85,7 @@ managedCauldron ref =
                 [ val do wire makeWeirdDecorator
                 ]
           },
-      recipe @(Logger IO, Weird IO) $ val0 do wire (,)
+      recipe @(Logger IO, Weird IO) $ val_ do wire (,)
     ]
 
 tests :: TestTree
