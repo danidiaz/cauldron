@@ -371,6 +371,7 @@ data Fire m = Fire
   { shouldOmitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
       Cauldron m ->
+      Set TypeRep ->
       Beans ->
       Plan ->
       m Beans
@@ -395,11 +396,11 @@ allowSelfDeps =
     { shouldOmitDependency = \case
         (BarePrimaryBean bean, PrimaryBean anotherBean) | bean == anotherBean -> True
         _ -> False,
-      followPlanCauldron = \cauldron initial plan ->
+      followPlanCauldron = \cauldron _secondaryBeanReps initial plan ->
         mfix do
           \final ->
             Data.Foldable.foldlM
-              do followPlanStep cauldron final
+              do followPlanStep Cauldron.Beans.delete (\_ -> id) cauldron final
               initial
               plan
     }
@@ -409,9 +410,9 @@ forbidDepCycles :: (Monad m) => Fire m
 forbidDepCycles =
   Fire
     { shouldOmitDependency = \_ -> False,
-      followPlanCauldron = \cauldron initial plan ->
+      followPlanCauldron = \cauldron _secondaryBeanReps initial plan ->
         Data.Foldable.foldlM
-          do followPlanStep cauldron mempty
+          do followPlanStep (\_ -> id) (\_ -> id) cauldron mempty
           initial
           plan
     }
@@ -658,21 +659,24 @@ followPlan ::
   (Tree (Plan, Fire m, Cauldron m)) ->
   m (Tree Beans)
 followPlan initial treecipes =
-  unfoldTreeM
-    ( \(initial', Node (plan, Fire {followPlanCauldron}, cauldron) rest) -> do
-        newInitial' <- followPlanCauldron cauldron initial' plan
-        pure (newInitial', (,) newInitial' <$> rest)
-    )
-    (initial, treecipes)
+  let secondaryBeanReps = Cauldron.Beans.keysSet initial
+   in unfoldTreeM
+        ( \(initial', Node (plan, Fire {followPlanCauldron}, cauldron) rest) -> do
+            newInitial' <- followPlanCauldron cauldron secondaryBeanReps initial' plan
+            pure (newInitial', (,) newInitial' <$> rest)
+        )
+        (initial, treecipes)
 
 followPlanStep ::
   (Monad m) =>
+  (TypeRep -> Beans -> Beans) ->
+  (TypeRep -> Beans -> Beans) ->
   Cauldron m ->
   Beans ->
   Beans ->
   BeanConstructionStep ->
   m Beans
-followPlanStep Cauldron {recipes} final super item =
+followPlanStep makeBareView makeDecoView Cauldron {recipes} final super item =
   case item of
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipes of
       SomeRecipe _ (Recipe {bean = beanConstructor}) -> do
@@ -681,13 +685,14 @@ followPlanStep Cauldron {recipes} final super item =
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
         -- There is a test for this.
-        inserter <- followConstructor beanConstructor final (Cauldron.Beans.delete beanRep super)
+        inserter <- followConstructor beanConstructor final (makeBareView beanRep super)
         pure do inserter super
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
       SomeRecipe _ (Recipe {decos}) -> do
         let decoCon = decos `Data.Sequence.index` index
+        let ConstructorReps {beanRep} = constructorReps decoCon
         -- Unlike before, we don't delete the beanRep before running the constructor.
-        inserter <- followConstructor decoCon final super
+        inserter <- followConstructor decoCon final (makeDecoView beanRep super)
         pure do inserter super
     -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
     -- 'PrimaryBeanDeco' steps.
@@ -707,9 +712,9 @@ followConstructor ::
   m (Beans -> Beans)
 followConstructor c final super = do
   (regs, bean) <- runConstructor [super, final] c
-  pure \bs -> 
+  pure \bs ->
     Cauldron.Beans.unionBeansMonoidally (getRegsReps (getConstructorArgs c)) bs regs
-    & Cauldron.Beans.insert bean
+      & Cauldron.Beans.insert bean
 
 -- | Sometimes the 'cook'ing process goes wrong.
 data RecipeError
