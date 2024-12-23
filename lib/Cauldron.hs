@@ -740,10 +740,10 @@ prettyRecipeErrorLines = \case
     [ "The following beans work both as primary beans and secondary beans:"
     ]
       ++ ( flip Map.foldMapWithKey doubleDutyMap \rep (secCS, primCS) ->
-             [ "- " ++ show rep ++ " is a secondary bean here:"
+             [ "- " ++ show rep ++ " is a secondary bean in this constructor:"
              ]
                ++ (("\t" ++) <$> prettyCallStackLines secCS)
-               ++ [ "  and a primary bean here:"
+               ++ [ "  and a primary bean in this recipe:"
                   ]
                ++ (("\t" ++) <$> prettyCallStackLines primCS)
          )
