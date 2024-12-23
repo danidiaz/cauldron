@@ -186,7 +186,7 @@ boringWiring = do
 -- graph we may want to draw.
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO Entrypoint)
 coolWiring fire = do
   let cauldron :: Cauldron IO =
         fromRecipeList
@@ -214,9 +214,11 @@ coolWiring fire = do
                         val do wire makeZDeco2
                       ]
                 },
-            recipe @(Initializer, Inspector, Z) $ val_ do wire (,,)
+            recipe @Entrypoint $ val_ do wire Entrypoint
           ]
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
+  fmap (fmap (fmap (fromJust . taste @Entrypoint))) do cook fire cauldron
+
+data Entrypoint = Entrypoint Initializer Inspector Z
 
 main :: IO ()
 main = do
@@ -235,7 +237,7 @@ main = do
       exportToDot defaultStepToText "beans-no-agg-no-decos.dot" do removeDecos do removeSecondaryBeans do depGraph
       exportToDot defaultStepToText "beans-simple.dot" do collapsePrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
       exportToDot defaultStepToText "beans-simple-with-decos.dot" do collapsePrimaryBeans do removeSecondaryBeans do depGraph
-      (Initializer {runInitializer}, Inspector {inspect}, z) <- action
+      Entrypoint (Initializer {runInitializer}) (Inspector {inspect}) z <- action
       inspection <- inspect
       print inspection
       print z

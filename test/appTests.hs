@@ -107,7 +107,7 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: F -> Z -> (Initializer, Z)
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO Entrypoint)
 coolWiring fire = do
   let cauldron :: Cauldron IO =
         fromRecipeList
@@ -135,9 +135,11 @@ coolWiring fire = do
                         val do wire makeZDeco2
                       ]
                 },
-            recipe @(Initializer, Inspector, Z) $ val_ do wire (,,)
+            recipe @Entrypoint $ val_ do wire Entrypoint
           ]
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
+  fmap (fmap (fmap (fromJust . taste @Entrypoint))) do cook fire cauldron
+
+data Entrypoint = Entrypoint Initializer Inspector Z
 
 tests :: TestTree
 tests =
