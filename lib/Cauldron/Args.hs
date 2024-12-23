@@ -41,15 +41,12 @@ where
 
 import Cauldron.Beans (Beans, SomeMonoidTypeRep (..), fromDynList, taste)
 import Cauldron.Beans qualified
-import Control.Applicative
 import Control.Exception (Exception, throw)
 import Data.Dynamic
 import Data.Foldable qualified
 import Data.Function ((&))
 import Data.Functor ((<&>))
 import Data.Kind
--- import Multicurryable
-
 import Data.Sequence (Seq)
 import Data.Sequence qualified
 import Data.Set (Set)
@@ -64,13 +61,13 @@ getArgsReps (Args {_argReps}) = _argReps
 getRegsReps :: Args a -> Set SomeMonoidTypeRep
 getRegsReps (Args {_regReps}) = _regReps
 
-runArgs :: Args a -> (forall b. Typeable b => Maybe b) -> a
+runArgs :: Args a -> (forall b. (Typeable b) => Maybe b) -> a
 runArgs (Args _ _ _runArgs) = _runArgs
 
 data Args a = Args
   { _argReps :: Set SomeTypeRep,
     _regReps :: Set SomeMonoidTypeRep,
-    _runArgs :: (forall b. Typeable b => Maybe b) -> a
+    _runArgs :: (forall b. (Typeable b) => Maybe b) -> a
   }
   deriving stock (Functor)
 
@@ -80,7 +77,7 @@ arg =
    in Args
         { _argReps = Set.singleton tr,
           _regReps = Set.empty,
-          _runArgs = \f -> 
+          _runArgs = \f ->
             case f @a of
               Just v -> v
               Nothing -> throw (LazilyReadBeanMissing tr)
