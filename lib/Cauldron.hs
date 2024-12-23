@@ -728,14 +728,16 @@ prettyRecipeErrorLines :: RecipeError -> [String]
 prettyRecipeErrorLines = \case
   MissingDependenciesError
     (MissingDependencies constructorCallStack constructorResultRep missingDependenciesReps) ->
-      [ "A constructor for a value of type "
+      [ "This constructor for a value of type "
           ++ show constructorResultRep
-          ++ " is missing the following dependencies:"
+          ++ ":"
       ]
+        ++ (("\t" ++) <$> prettyCallStackLines constructorCallStack)
+        ++ [ "is missing the following dependencies:"
+           ]
         ++ do
           rep <- Data.Foldable.toList missingDependenciesReps
           ["- " ++ show rep]
-        ++ (("\t" ++) <$> prettyCallStackLines constructorCallStack)
   DoubleDutyBeansError (DoubleDutyBeans doubleDutyMap) ->
     [ "The following beans work both as primary beans and secondary beans:"
     ]

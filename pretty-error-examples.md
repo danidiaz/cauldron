@@ -1,9 +1,9 @@
 ```
-A constructor for a value of type G is missing the following dependencies:
-- E
-- F
+This constructor for a value of type G:
 	CallStack (from HasCallStack):
-	  val, called at app/Main.hs:206:26 in cauldron-0.4.0.0-inplace-cauldron-example-wiring:Main
+	  val, called at app/Main.hs:201:26 in cauldron-0.4.0.0-inplace-cauldron-example-wiring:Main
+is missing the following dependencies:
+- E
 ```
 
 ```
