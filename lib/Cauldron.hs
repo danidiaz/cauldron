@@ -681,14 +681,14 @@ followPlanStep Cauldron {recipes} final super item =
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
         -- There is a test for this.
-        (super', bean) <- followConstructor beanConstructor final (Cauldron.Beans.delete beanRep super)
-        pure do Cauldron.Beans.insert bean super'
+        inserter <- followConstructor beanConstructor final (Cauldron.Beans.delete beanRep super)
+        pure do inserter super
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
       SomeRecipe _ (Recipe {decos}) -> do
         let decoCon = decos `Data.Sequence.index` index
         -- Unlike before, we don't delete the beanRep before running the constructor.
-        (super', bean) <- followConstructor decoCon final super
-        pure do Cauldron.Beans.insert bean super'
+        inserter <- followConstructor decoCon final super
+        pure do inserter super
     -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
     -- 'PrimaryBeanDeco' steps.
     PrimaryBean _ -> pure super
@@ -700,14 +700,16 @@ followPlanStep Cauldron {recipes} final super item =
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
 followConstructor ::
-  (Monad m) =>
+  (Monad m, Typeable bean) =>
   Constructor m bean ->
   Beans ->
   Beans ->
-  m (Beans, bean)
+  m (Beans -> Beans)
 followConstructor c final super = do
   (regs, bean) <- runConstructor [super, final] c
-  pure (Cauldron.Beans.unionBeansMonoidally (getRegsReps (getConstructorArgs c)) super regs, bean)
+  pure \bs -> 
+    Cauldron.Beans.unionBeansMonoidally (getRegsReps (getConstructorArgs c)) bs regs
+    & Cauldron.Beans.insert bean
 
 -- | Sometimes the 'cook'ing process goes wrong.
 data RecipeError
