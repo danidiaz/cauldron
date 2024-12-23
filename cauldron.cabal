@@ -64,6 +64,12 @@ test-suite tests
     hs-source-dirs:   test
     main-is:          tests.hs
 
+test-suite codec-tests
+    import:           common-tests
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          codecTests.hs
+
 test-suite app-tests
     import:           common-tests
     type:             exitcode-stdio-1.0

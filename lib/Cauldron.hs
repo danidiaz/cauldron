@@ -95,6 +95,7 @@ module Cauldron
     -- ** How loopy can we get?
     Fire,
     forbidDepCycles,
+    allowDepCycles,
     allowSelfDeps,
 
     -- ** Tasting the results
@@ -381,6 +382,18 @@ removeBeanFromArgs :: ConstructorReps -> ConstructorReps
 removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
   ConstructorReps {argReps = Set.delete beanRep argReps, regReps, beanRep}
 
+-- | Forbid any kind of cyclic dependencies between beans. This is probably what you want.
+forbidDepCycles :: (Monad m) => Fire m
+forbidDepCycles =
+  Fire
+    { shouldOmitDependency = \_ -> False,
+      followPlanCauldron = \cauldron _secondaryBeanReps initial plan ->
+        Data.Foldable.foldlM
+          do followPlanStep (\_ -> id) (\_ -> id) cauldron mempty
+          initial
+          plan
+    }
+
 -- | Allow /direct/ self-dependencies.
 --
 -- A bean constructor might depend on itself. This can be useful for having
@@ -405,16 +418,22 @@ allowSelfDeps =
               plan
     }
 
--- | Forbid any kind of cyclic dependencies between beans. This is probably what you want.
-forbidDepCycles :: (Monad m) => Fire m
-forbidDepCycles =
+allowDepCycles :: (MonadFix m) => Fire m
+allowDepCycles =
   Fire
-    { shouldOmitDependency = \_ -> False,
-      followPlanCauldron = \cauldron _secondaryBeanReps initial plan ->
-        Data.Foldable.foldlM
-          do followPlanStep (\_ -> id) (\_ -> id) cauldron mempty
-          initial
-          plan
+    { shouldOmitDependency = \case
+        (BarePrimaryBean _, PrimaryBean _) -> True
+        (PrimaryBeanDeco _ _, PrimaryBean _) -> True
+        _ -> False,
+      followPlanCauldron = \cauldron secondaryBeanReps initial plan -> do
+        let makeBareView _ = (`Cauldron.Beans.restrictKeys` secondaryBeanReps)
+        let makeDecoView tr = (`Cauldron.Beans.restrictKeys` (Set.insert tr secondaryBeanReps))
+        mfix do
+          \final ->
+            Data.Foldable.foldlM
+              do followPlanStep makeBareView makeDecoView cauldron final
+              initial
+              plan
     }
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
@@ -590,6 +609,7 @@ buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) ->
     Left recipeCycle ->
       Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
     Right (reverse -> plan) -> do
+      -- TODO: should this be full deps?
       let completeGraph = Graph.edges deps
       Right (completeGraph, (plan, fire, cauldron))
 
