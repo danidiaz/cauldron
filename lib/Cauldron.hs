@@ -867,8 +867,8 @@ eff_ :: (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
 eff_ x = Constructor callStack $ fmap (fmap pure) x
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
-runConstructor beans (Constructor _ args) = do
-  regs <- runArgs args beans
+runConstructor bss (Constructor _ args) = do
+  regs <- runArgs args (Data.Foldable.asum (taste <$> bss))
   pure (runRegs regs (getRegsReps args))
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.

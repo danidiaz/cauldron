@@ -51,14 +51,14 @@ tests =
   testGroup
     "All"
     [ testCase "withRegs" do
-        let (beans, C) = runRegs (runArgs argsForC [[toDyn A, toDyn B]]) (getRegsReps argsForC)
+        let (beans, C) = runRegs (runArgs argsForC (taste $ fromDynList [toDyn A, toDyn B])) (getRegsReps argsForC)
         Just m <- pure do taste @[Text] beans
         assertEqual
           "monoid"
           ["monoid"]
           m,
       testCase "throwy" do
-        r <- try $ evaluate $ runArgs throwyArgs []
+        r <- try $ evaluate $ runArgs throwyArgs Nothing
         case r of
           Left (LazilyReadBeanMissing tr) | tr == (typeRep (Proxy @L1)) -> pure ()
           _ -> assertFailure "expected exception did not happen"

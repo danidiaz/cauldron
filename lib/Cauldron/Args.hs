@@ -64,13 +64,13 @@ getArgsReps (Args {_argReps}) = _argReps
 getRegsReps :: Args a -> Set SomeMonoidTypeRep
 getRegsReps (Args {_regReps}) = _regReps
 
-runArgs :: Args a -> [Beans] -> a
+runArgs :: Args a -> (forall b. Typeable b => Maybe b) -> a
 runArgs (Args _ _ _runArgs) = _runArgs
 
 data Args a = Args
   { _argReps :: Set SomeTypeRep,
     _regReps :: Set SomeMonoidTypeRep,
-    _runArgs :: [Beans] -> a
+    _runArgs :: (forall b. Typeable b => Maybe b) -> a
   }
   deriving stock (Functor)
 
@@ -80,8 +80,8 @@ arg =
    in Args
         { _argReps = Set.singleton tr,
           _regReps = Set.empty,
-          _runArgs = \bss ->
-            case asum do taste <$> bss of
+          _runArgs = \f -> 
+            case f @a of
               Just v -> v
               Nothing -> throw (LazilyReadBeanMissing tr)
         }
@@ -92,7 +92,7 @@ foretellReg =
    in Args
         { _argReps = Set.empty,
           _regReps = Set.singleton tr,
-          _runArgs = pure \a -> Regs (Data.Sequence.singleton (toDyn a)) ()
+          _runArgs = \_ a -> Regs (Data.Sequence.singleton (toDyn a)) ()
         }
 
 instance Applicative Args where
@@ -100,7 +100,7 @@ instance Applicative Args where
     Args
       { _argReps = Set.empty,
         _regReps = Set.empty,
-        _runArgs = pure a
+        _runArgs = \_ -> a
       }
   Args
     { _argReps = _argReps1,
