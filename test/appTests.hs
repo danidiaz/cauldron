@@ -111,31 +111,31 @@ coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO Entrypoint)
 coolWiring fire = do
   let cauldron :: Cauldron IO =
         fromRecipeList
-          [ recipe $ val do pure makeA,
-            recipe $ val do pure makeB,
-            recipe $ val do wire makeC,
-            recipe $ val do wire makeD,
-            recipe $ val do wire makeE,
-            recipe @F $ val do wire makeF,
+          [ recipe $ val $ pure makeA,
+            recipe $ val $ pure makeB,
+            recipe $ val $ wire makeC,
+            recipe $ val $ wire makeD,
+            recipe $ val $ wire makeE,
+            recipe @F $ val $ wire makeF,
             recipe @G
               Recipe
-                { bean = val do wire makeG,
+                { bean = val $ wire makeG,
                   decos =
                     fromDecoList
-                      [ val do wire makeGDeco1
+                      [ val $ wire makeGDeco1
                       ]
                 },
-            recipe @H $ val do wire makeH,
+            recipe @H $ val $ wire makeH,
             recipe @Z
               Recipe
-                { bean = val do wire makeZ,
+                { bean = val $ wire makeZ,
                   decos =
                     fromDecoList
-                      [ val do wire makeZDeco1,
-                        val do wire makeZDeco2
+                      [ val $ wire makeZDeco1,
+                        val $ wire makeZDeco2
                       ]
                 },
-            recipe @Entrypoint $ val_ do wire Entrypoint
+            recipe @Entrypoint $ val $ wire Entrypoint
           ]
   fmap (fmap (fmap (fromJust . taste @Entrypoint))) do cook fire cauldron
 
