@@ -12,18 +12,7 @@ module Main (main) where
 import Cauldron
 import Cauldron.Args
 import Control.Exception
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Writer
 import Data.Dynamic
-import Data.Function ((&))
-import Data.Functor.Identity
-import Data.IORef
-import Data.List.NonEmpty (NonEmpty)
-import Data.List.NonEmpty qualified
-import Data.Map (Map)
-import Data.Map qualified as Map
-import Data.Maybe (fromJust)
-import Data.Monoid
 import Data.Proxy
 import Data.Text (Text)
 import Data.Typeable (typeRep)

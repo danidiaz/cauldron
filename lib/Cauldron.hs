@@ -766,7 +766,7 @@ prettyRecipeErrorLines = \case
 --
 -- The dependencies of each bean are given separatedly from its decorators.
 newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap BeanConstructionStep}
-  deriving newtype (Show)
+  deriving newtype (Show, Eq, Ord, Semigroup, Monoid)
 
 -- | Conversion to a graph type
 -- from the
