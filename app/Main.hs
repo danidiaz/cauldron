@@ -220,7 +220,6 @@ coolWiring fire = do
           ]
   fmap (fmap (fmap (fromJust . taste @Entrypoint))) do cook fire cauldron
 
-
 main :: IO ()
 main = do
   -- "manual" wiring

@@ -223,7 +223,6 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Registrable_ (IsReg rest) 
       action <- af
       pure (action <&> \regs -> regs >>= \(b, c, rest) -> tell1 b *> tell2 c *> pure rest)
 
-
 instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Registrable_ (IsReg rest) rest tip) => Registrable_ Tup3 (b, c, d, rest) tip where
   register_ _ af =
     register_ (Proxy @(IsReg rest)) do
