@@ -146,7 +146,11 @@ cauldronNonEmpty =
           recipe @(Weird M) $ eff $ wire makeWeird
         ],
       fromRecipeList
-        [ recipe @(Repository M) $ eff $ wire makeRepository,
+        [ recipe @(Repository M) $ eff $ do
+            action <- wire makeRepository
+            pure do
+              (initializer, repo) <- action
+              pure (initializer, repo),
           recipe @(Weird M)
             Recipe
               { bean = eff $ wire makeSelfInvokingWeird,
