@@ -186,12 +186,14 @@ data Where
 data WhereNested
   = Tup2
   | Tup3
+  | Tup4
   | Innermost
 
 type IsReg :: Type -> WhereNested
 type family IsReg f :: WhereNested where
   IsReg (_, _) = 'Tup2
   IsReg (_, _, _) = 'Tup3
+  IsReg (_, _, _, _) = 'Tup4
   IsReg _ = 'Innermost
 
 class Registrable nested tip | nested -> tip where
@@ -220,3 +222,13 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Registrable_ (IsReg rest) 
       tell2 <- foretellReg @c
       action <- af
       pure (action <&> \regs -> regs >>= \(b, c, rest) -> tell1 b *> tell2 c *> pure rest)
+
+
+instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Registrable_ (IsReg rest) rest tip) => Registrable_ Tup3 (b, c, d, rest) tip where
+  register_ _ af =
+    register_ (Proxy @(IsReg rest)) do
+      tell1 <- foretellReg @b
+      tell2 <- foretellReg @c
+      tell3 <- foretellReg @d
+      action <- af
+      pure (action <&> \regs -> regs >>= \(b, c, d, rest) -> tell1 b *> tell2 c *> tell3 d *> pure rest)
