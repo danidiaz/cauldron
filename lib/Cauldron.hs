@@ -25,6 +25,15 @@
 -- This library should be used at the ["composition root"](https://stackoverflow.com/questions/6277771/what-is-a-composition-root-in-the-context-of-dependency-injection) of the application,
 -- and only there: the components we are wiring together need not be aware that the library exists.
 --
+-- These extensions, while not required, play well with the library:
+--
+-- @
+-- {-# LANGUAGE ApplicativeDo #-} -- For building complex values in the Args applicative.
+-- {-# LANGUAGE OverloadedLists #-} -- For avoiding explicit calls to fromRecipeList and fromDecoList
+-- @
+--
+-- An example of using a 'Cauldron' to wire the constructors of dummy @A@, @B@, @C@ datatypes:
+--
 -- >>> :{
 -- data A = A deriving Show
 -- data B = B deriving Show
@@ -41,13 +50,13 @@
 -- do
 --   let cauldron :: Cauldron IO
 --       cauldron = [
---           recipe @A $ val do wire makeA,
---           recipe @B $ val do wire makeB,
---           recipe @C $ eff do wire makeC
+--           recipe @A $ val $ wire makeA,
+--           recipe @B $ val $ wire makeB,
+--           recipe @C $ eff $ wire makeC -- we use eff because the constructor has IO effects
 --         ]
 --       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
 --   beans <- action
---   pure do taste @C beans
+--   pure $ taste @C beans
 -- :}
 -- Just C
 module Cauldron
@@ -75,8 +84,9 @@ module Cauldron
     withRecipe,
     getRecipeCallStacks,
 
-    -- * Constructor
+    -- * Constructors
     Constructor,
+    wire,
     val,
     val',
     val_,
@@ -91,6 +101,7 @@ module Cauldron
     cook,
     cookNonEmpty,
     cookTree,
+    Beans,
 
     -- ** How loopy can we get?
     Fire,
@@ -99,6 +110,7 @@ module Cauldron
     allowSelfDeps,
 
     -- ** Tasting the results
+    taste,
     RecipeError (..),
     MissingDependencies (..),
     DoubleDutyBeans (..),
@@ -115,13 +127,6 @@ module Cauldron
     removeDecos,
     collapsePrimaryBeans,
     toAdjacencyMap,
-
-    -- * Re-exported
-
-    -- Args,
-    wire,
-    Beans,
-    taste,
   )
 where
 
@@ -274,10 +279,10 @@ hoistRecipe f (Recipe {bean, decos}) =
 --   let cauldron :: Cauldron IO
 --       cauldron = [
 --           recipe @Foo $ Recipe {
---             bean = val do wire makeFoo,
+--             bean = val $ wire makeFoo,
 --             decos = [
---                  val do wire makeFooDeco1,
---                  eff do wire makeFooDeco2
+--                  val $ wire makeFooDeco1,
+--                  eff $ wire makeFooDeco2
 --               ]
 --           }
 --         ]
