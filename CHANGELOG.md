@@ -34,6 +34,7 @@
 
 * Now `Constructor`s and `Recipe`s keep track of the `CallStack` of when they were created. This is used
   by errors to print the relevant code locations.
+  Because now we have code locations, `PathToCauldron` is no longer useful and has been removed.
 
 ## 0.4.0.0
 
