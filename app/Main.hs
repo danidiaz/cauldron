@@ -156,7 +156,9 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: (F -> Z -> (Initializer, Z))
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-boringWiring :: IO (Initializer, Inspector, Z)
+data Entrypoint = Entrypoint Initializer Inspector Z
+
+boringWiring :: IO Entrypoint
 boringWiring = do
   let -- We have to remember to collect the monoidal registrations.
       initializer = init1 <> init2
@@ -179,7 +181,7 @@ boringWiring = do
       z1 = makeZDeco1 b e z0
       (init2, z2) = makeZDeco2 f z1
       z = z2
-  pure (initializer, inspector, z)
+  pure $ Entrypoint initializer inspector z
 
 -- | Here we don't have to worry about positional parameters. We throw all the
 -- constructors into the 'Cauldron' and taste the bean values at the end, plus a
@@ -218,16 +220,17 @@ coolWiring fire = do
           ]
   fmap (fmap (fmap (fromJust . taste @Entrypoint))) do cook fire cauldron
 
-data Entrypoint = Entrypoint Initializer Inspector Z
 
 main :: IO ()
 main = do
+  -- "manual" wiring
   do
-    (Initializer {runInitializer}, Inspector {inspect}, z) <- boringWiring
+    Entrypoint (Initializer {runInitializer}) (Inspector {inspect}) z <- boringWiring
     inspection <- inspect
     print inspection
     print z
     runInitializer
+  -- wiring with Cauldron
   case coolWiring allowSelfDeps of
     Left badBeans -> do
       putStrLn $ prettyRecipeError badBeans
