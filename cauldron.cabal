@@ -1,8 +1,8 @@
 cabal-version:      3.4
 name:               cauldron
-version:            0.4.0.0
-synopsis:           Toy dependency injection framework
-description:        Toy dependency injection framework that wires things at runtime.
+version:            0.6.0.0
+synopsis:           Dependency injection library
+description:        Dependency injection library that wires things at runtime.
 license:            BSD-3-Clause
 license-file:       LICENSE
 author:             diaz_carrete@yahoo.com
