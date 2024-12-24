@@ -30,6 +30,11 @@
 
 * New `Monoid` instance for `DependencyGraph`.
 
+* `BadBeans` is now `RecipeError`.
+
+* Now `Constructor`s and `Recipe`s keep track of the `CallStack` of when they were created. This is used
+  by errors to print the relevant code locations.
+
 ## 0.4.0.0
 
 * `exportToDot` takes a new parameter to configure how to print the steps. Before, only the TyCon was printed. Now, the full type is printed by default.
