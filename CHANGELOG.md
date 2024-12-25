@@ -1,5 +1,41 @@
 # Revision history for cauldron
 
+## 0.6.0.0
+
+* Remove sop-core dependency, incorporate just the needed functionality into the library.
+
+  Also make the internals of the library less dependent on n-ary tuples. Now
+  they are more of an added layer for convenience.
+
+* `BoiledBeans` is now just `Beans` and has its own module.
+
+* A new `Cauldron.Args` module which defines the `Args` applicative.
+
+* The way of creating `Constructor`s has been overhauled.
+
+  `Packer` and `pack` are gone, along with `value`, `eff` and similar functions. The old `Regs` type is gone.
+
+  To create `Constructor`s, now we should use `val` and `eff` along with `wire`.
+
+* The `Bean` record is now called `Recipe`. There's also a `SomeRecipe` that hides the bean type parameter.
+ 
+* New `ToRecipe` typeclass that helps treating single `Constructor`s as recipes-without-decos.
+
+* The `Decos` type is now just a `Seq` of constructors of the same type.
+
+* New `allowDepCycles` `Fire`.
+
+* Now `DependencyGraph` render all the dependencies, even when some are ignored during plan construction 
+  to allow for dependency cycles.
+
+* New `Monoid` instance for `DependencyGraph`.
+
+* `BadBeans` is now `RecipeError`.
+
+* Now `Constructor`s and `Recipe`s keep track of the `CallStack` of when they were created. This is used
+  by errors to print the relevant code locations.
+  Because now we have code locations, `PathToCauldron` is no longer useful and has been removed.
+
 ## 0.4.0.0
 
 * `exportToDot` takes a new parameter to configure how to print the steps. Before, only the TyCon was printed. Now, the full type is printed by default.

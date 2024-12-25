@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
@@ -8,7 +9,6 @@ module Main (main) where
 
 import Cauldron
 import Cauldron.Managed
-import Data.Function ((&))
 import Data.IORef
 import Data.Maybe (fromJust)
 import Data.Text (Text)
@@ -73,17 +73,19 @@ makeWithWrapperWithMessage ref inMsg outMsg v handler = do
 
 managedCauldron :: IORef [Text] -> Cauldron Managed
 managedCauldron ref =
-  emptyCauldron
-    & insert @(Logger IO) do makeBean do pack effect do managed (makeLogger ref)
-    & insert @(Weird IO)
-      Bean
-        { constructor = pack effect do \logger self -> managed (makeSelfInvokingWeird ref logger self),
-          decos =
-            fromConstructors
-              [ pack value makeWeirdDecorator
-              ]
-        }
-    & insert @(Logger IO, Weird IO) do makeBean do pack value do (,)
+  fromRecipeList
+    [ recipe @(Logger IO) $ eff $ wire $ managed (makeLogger ref),
+      recipe @(Weird IO)
+        Recipe
+          { bean = eff do
+              wire \logger self -> managed (makeSelfInvokingWeird ref logger self),
+            decos =
+              fromDecoList
+                [ val $ wire makeWeirdDecorator
+                ]
+          },
+      recipe @(Logger IO, Weird IO) $ val_ do wire (,)
+    ]
 
 tests :: TestTree
 tests =

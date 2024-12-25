@@ -1,5 +1,7 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 
 -- | We have a bunch of datatypes, and a single recipe (constructor) for each
 -- datatype. This means the wiring can be type-directed: we don't have to make a
@@ -10,7 +12,6 @@
 module Main where
 
 import Cauldron
-import Data.Function ((&))
 import Data.Maybe (fromJust)
 
 {-
@@ -122,7 +123,7 @@ makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 --
 -- Dependency cycles of more than one bean are forbidden, however.
 makeG :: E -> F -> G -> G
-makeG _ _ !_ = G
+makeG _ _ _ = G
 
 -- | A decorator.
 --
@@ -155,7 +156,9 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: (F -> Z -> (Initializer, Z))
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-boringWiring :: IO (Initializer, Inspector, Z)
+data Entrypoint = Entrypoint Initializer Inspector Z
+
+boringWiring :: IO Entrypoint
 boringWiring = do
   let -- We have to remember to collect the monoidal registrations.
       initializer = init1 <> init2
@@ -178,62 +181,65 @@ boringWiring = do
       z1 = makeZDeco1 b e z0
       (init2, z2) = makeZDeco2 f z1
       z = z2
-  pure (initializer, inspector, z)
+  pure $ Entrypoint initializer inspector z
 
 -- | Here we don't have to worry about positional parameters. We throw all the
 -- constructors into the 'Cauldron' and taste the bean values at the end, plus a
 -- graph we may want to draw.
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Fire IO -> Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO Entrypoint)
 coolWiring fire = do
   let cauldron :: Cauldron IO =
-        mempty
-          & insert @A do makeBean do pack value makeA
-          & insert @B do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
-          & insert @C do makeBean do pack value makeC
-          & insert @D do makeBean do pack value makeD
-          & insert @E do makeBean do pack value makeE
-          & insert @F do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
-          & insert @G do
-            Bean
-              { constructor = pack value makeG,
-                decos =
-                  fromConstructors
-                    [ pack value makeGDeco1
-                    ]
-              }
-          & insert @H do makeBean do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
-          & insert @Z do
-            Bean
-              { constructor = pack value makeZ,
-                decos =
-                  fromConstructors
-                    [ pack value makeZDeco1,
-                      pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
-                    ]
-              }
-          & insert @(Initializer, Inspector, Z) do makeBean do pack value \a b c -> (a, b, c)
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
+        fromRecipeList
+          [ recipe @A $ val $ pure makeA,
+            recipe @B $ val $ pure makeB,
+            recipe @C $ val $ wire makeC,
+            recipe @D $ val $ wire makeD,
+            recipe @E $ val $ wire makeE,
+            recipe @F $ val $ wire makeF,
+            recipe @G $
+              Recipe
+                { bean = val $ wire makeG,
+                  decos =
+                    fromDecoList
+                      [ val $ wire makeGDeco1
+                      ]
+                },
+            recipe @H $ val $ wire makeH,
+            recipe @Z
+              Recipe
+                { bean = val do wire makeZ,
+                  decos =
+                    fromDecoList
+                      [ val $ wire makeZDeco1,
+                        val $ wire makeZDeco2
+                      ]
+                },
+            recipe @Entrypoint $ val do wire Entrypoint
+          ]
+  fmap (fmap (fmap (fromJust . taste @Entrypoint))) do cook fire cauldron
 
 main :: IO ()
 main = do
+  -- "manual" wiring
   do
-    (Initializer {runInitializer}, Inspector {inspect}, z) <- boringWiring
+    Entrypoint (Initializer {runInitializer}) (Inspector {inspect}) z <- boringWiring
     inspection <- inspect
     print inspection
     print z
     runInitializer
+  -- wiring with Cauldron
   case coolWiring allowSelfDeps of
     Left badBeans -> do
-      print badBeans
+      putStrLn $ prettyRecipeError badBeans
     Right (depGraph, action) -> do
       exportToDot defaultStepToText "beans.dot" depGraph
       exportToDot defaultStepToText "beans-no-agg.dot" do removeSecondaryBeans do depGraph
       exportToDot defaultStepToText "beans-no-agg-no-decos.dot" do removeDecos do removeSecondaryBeans do depGraph
-      exportToDot defaultStepToText "beans-simple.dot" do collapsePrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
-      exportToDot defaultStepToText "beans-simple-with-decos.dot" do collapsePrimaryBeans do removeSecondaryBeans do depGraph
-      (Initializer {runInitializer}, Inspector {inspect}, z) <- action
+      exportToDot defaultStepToText "beans-simple.dot" do collapseToPrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
+      exportToDot defaultStepToText "beans-simple-with-decos.dot" do collapseToPrimaryBeans do removeSecondaryBeans do depGraph
+      Entrypoint (Initializer {runInitializer}) (Inspector {inspect}) z <- action
       inspection <- inspect
       print inspection
       print z

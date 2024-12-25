@@ -1,3 +1,4 @@
+{-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
@@ -8,7 +9,6 @@
 module Main (main) where
 
 import Cauldron
-import Data.Function ((&))
 import Data.Maybe (fromJust)
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -107,36 +107,39 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: F -> Z -> (Initializer, Z)
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-coolWiring :: Fire IO -> Either BadBeans (DependencyGraph, IO (Initializer, Inspector, Z))
+coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO Entrypoint)
 coolWiring fire = do
   let cauldron :: Cauldron IO =
-        mempty
-          & insert @A do makeBean do pack value makeA
-          & insert @B do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeB
-          & insert @C do makeBean do pack value makeC
-          & insert @D do makeBean do pack value makeD
-          & insert @E do makeBean do pack value makeE
-          & insert @F do makeBean do pack (valueWith \(reg, bean) -> regs1 reg bean) do makeF
-          & insert @G
-            Bean
-              { constructor = pack value do makeG,
-                decos =
-                  fromConstructors
-                    [ pack value do makeGDeco1
-                    ]
-              }
-          & insert @H do makeBean do pack (valueWith \(reg1, reg2, bean) -> regs2 reg1 reg2 bean) do makeH
-          & insert @Z
-            Bean
-              { constructor = pack value do makeZ,
-                decos =
-                  fromConstructors
-                    [ pack value do makeZDeco1,
-                      pack (valueWith \(reg, bean) -> regs1 reg bean) do makeZDeco2
-                    ]
-              }
-          & insert @(Initializer, Inspector, Z) do makeBean do pack value do \a b c -> (a, b, c)
-  fmap (fmap (fmap (fromJust . taste @(Initializer, Inspector, Z)))) do cook fire cauldron
+        fromRecipeList
+          [ recipe $ val $ pure makeA,
+            recipe $ val $ pure makeB,
+            recipe $ val $ wire makeC,
+            recipe $ val $ wire makeD,
+            recipe $ val $ wire makeE,
+            recipe @F $ val $ wire makeF,
+            recipe @G
+              Recipe
+                { bean = val $ wire makeG,
+                  decos =
+                    fromDecoList
+                      [ val $ wire makeGDeco1
+                      ]
+                },
+            recipe @H $ val $ wire makeH,
+            recipe @Z
+              Recipe
+                { bean = val $ wire makeZ,
+                  decos =
+                    fromDecoList
+                      [ val $ wire makeZDeco1,
+                        val $ wire makeZDeco2
+                      ]
+                },
+            recipe @Entrypoint $ val $ wire Entrypoint
+          ]
+  fmap (fmap (fmap (fromJust . taste @Entrypoint))) do cook fire cauldron
+
+data Entrypoint = Entrypoint Initializer Inspector Z
 
 tests :: TestTree
 tests =
@@ -149,7 +152,7 @@ tests =
         pure (),
       testCase "dep cycles forbidden" do
         case coolWiring forbidDepCycles of
-          Left (DependencyCycle _) -> pure ()
+          Left (DependencyCycleError _) -> pure ()
           Left _ -> assertFailure do "wrong kind of error detected"
           Right _ -> assertFailure do "self dependency not detected"
         pure ()
