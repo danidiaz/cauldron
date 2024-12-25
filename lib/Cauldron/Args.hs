@@ -72,6 +72,17 @@ data Args a = Args
   deriving stock (Functor)
 
 -- | Look for a type in the 'Beans' map and return its corresponding value.
+--
+-- >>> :{
+-- fun1 :: Bool -> Int
+-- fun1 _ = 5
+-- w1 :: Args Int
+-- w1 = fun1 <$> arg
+-- fun2 :: String -> Bool -> Int
+-- fun2 _ _ = 5
+-- w2 :: Args Int
+-- w2 = fun2 <$> arg <*> arg
+-- :}
 arg :: forall a. (Typeable a) => Args a
 arg =
   let tr = typeRep (Proxy @a)
@@ -192,7 +203,7 @@ manyMemptys reps =
 -- caused undesirable strictness when doing weird things like reading values
 -- \"from the future\".
 --
--- If more safety is needed, one can perform additional checks by using 'getArgsReps'.
+-- If more safety is needed, one can perform additional checks with the help of 'getArgsReps'.
 newtype LazilyReadBeanMissing = LazilyReadBeanMissing TypeRep
   deriving stock (Show)
   deriving anyclass (Exception)
