@@ -116,7 +116,7 @@ runArgs (Args _ _ _runArgs) = _runArgs
 -- >>> :{
 -- let beans = fromDynList [toDyn @Int 5, toDyn False]
 --     args = (,) <$> arg @Int <*> arg @Bool
---  in (getArgsReps args, runArgs (taste beans) args)
+--  in (getArgsReps args, runArgs args (taste beans))
 -- :}
 -- 5
 --

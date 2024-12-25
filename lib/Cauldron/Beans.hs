@@ -102,7 +102,7 @@ instance IsList Beans where
 -- let beans = fromDynList [toDyn False, toDyn @Int 5]
 --  in (taste @Bool beans, taste @Int beans, taste @String beans)
 -- :}
--- (Just False, Just 5, Nothing)
+-- (Just False,Just 5,Nothing)
 fromDynList :: [Dynamic] -> Beans
 fromDynList ds = Beans do Map.fromList do ds <&> \d -> (dynTypeRep d, d)
 
