@@ -132,7 +132,7 @@ getArgsReps (Args {_argReps}) = _argReps
 -- let args = foretellReg @(Sum Int) *> pure ()
 --  in getRegsReps args
 -- :}
--- 5
+-- fromList [Sum Int]
 getRegsReps :: Args a -> Set SomeMonoidTypeRep
 getRegsReps (Args {_regReps}) = _regReps
 
