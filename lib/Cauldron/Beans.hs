@@ -82,7 +82,7 @@ taste Beans {beanMap} =
 -- Maintains the invariant that the 'TypeRep' of the key matches the 'TypeRep'
 -- of the 'Dynamic'.
 newtype Beans = Beans {beanMap :: Map TypeRep Dynamic}
-  deriving newtype Show
+  deriving newtype (Show)
 
 -- | Union of two 'Beans' maps, right-biased: prefers values from the /right/
 -- 'Beans' map when both contain the same 'TypeRep' key. (Note that

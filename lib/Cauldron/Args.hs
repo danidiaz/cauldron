@@ -290,9 +290,44 @@ type family IsReg f :: WhereNested where
 -- | Convenience typeclass for automatically extracting registrations from a value.
 -- Counterpart of 'Wireable' for registrations.
 class Registrable nested tip | nested -> tip where
-  -- | We look for (potentially nested) tuples in the value.  All tuple components except the
-  -- rightmost-innermost one are considered registrations (if they have
-  -- 'Monoid' instances, otherwise 'register' won't compile).
+  -- | We look for (potentially nested) tuples in the value. All tuple
+  -- components except the rightmost-innermost must have 'Monoid' instances, and
+  -- are put into a 'Regs'.
+  --
+  -- >>> :{
+  -- args :: Args (Identity (Sum Int, All, String))
+  -- args = pure (Identity (Sum 5, All False, "foo"))
+  -- registeredArgs :: Args (Identity (Regs String))
+  -- registeredArgs = register args
+  -- :}
+  --
+  -- >>> :{
+  -- ( getRegsReps registeredArgs
+  -- , registeredArgs & runArgs (taste Cauldron.Beans.empty)
+  --                  & runIdentity
+  --                  & runRegs (getRegsReps registeredArgs)
+  --                  & \(beans,_) -> (taste @(Sum Int) beans, taste @All beans)
+  -- )
+  -- :}
+  -- (fromList [All,Sum Int],(Just (Sum {getSum = 5}),Just (All {getAll = False})))
+  --
+  -- Tuples can be nested:
+  --
+  -- >>> :{
+  -- args :: Args (Identity (Sum Int, (All, String)))
+  -- args = pure (Identity (Sum 5, (All False, "foo")))
+  -- registeredArgs :: Args (Identity (Regs String))
+  -- registeredArgs = register args
+  -- :}
+  --
+  -- If there are no tuples in the result type, no values are put into 'Regs'.
+  --
+  -- >>> :{
+  -- args :: Args (Identity String)
+  -- args = pure (Identity "foo")
+  -- registeredArgs :: Args (Identity (Regs String))
+  -- registeredArgs = register args
+  -- :}
   register :: forall m. (Functor m) => Args (m nested) -> Args (m (Regs tip))
 
 instance (Registrable_ (IsReg nested) nested tip) => Registrable nested tip where
@@ -332,22 +367,22 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 --
 -- The 'Args' applicative has an additional feature: it lets you \"register\"
 -- ahead of time the types of some values that /might/ be included in the result
--- of the 'Args', without being reflected in the result type. It's not mandatory
--- that these values must be ultimately produced, however.
+-- of the 'Args', but without being reflected in the result type. It's not
+-- mandatory that these values must be ultimately produced, however.
 --
 -- Here's an example. We have an 'Args' value that returns a 'Regs'. While
 -- constructing the 'Args' value, we register the @Sum Int@ and @All@ types
 -- using 'foretellReg', which also gives us the means of later writing into the
 -- 'Regs'. By using 'getRegsReps', we can inspect the 'TypeRep's of the types we
--- registered without having to run the 'Args', 
+-- registered without having to run the 'Args',
 --
 -- >>> :{
 -- fun2 :: String -> Bool -> Int
--- fun2 _ _ = 5 
+-- fun2 _ _ = 5
 -- args :: Args (Regs Int)
 -- args = do -- Using ApplicativeDo
 --   r <- fun2 <$> arg <*> arg -- could also have used 'wire'
---   tell1 <- foretellReg @(Sum Int) 
+--   tell1 <- foretellReg @(Sum Int)
 --   tell2 <- foretellReg @All
 --   pure $ do
 --      tell1 (Sum 11)
@@ -358,12 +393,11 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 -- >>> :{
 -- ( getRegsReps args
 -- , args & runArgs (taste $ fromDynList [toDyn @String "foo", toDyn False])
---        & runRegs (getRegsReps args) 
---        & \(beans,_) -> (taste @(Sum Int) beans, taste @All beans) 
+--        & runRegs (getRegsReps args)
+--        & \(beans,_) -> (taste @(Sum Int) beans, taste @All beans)
 -- )
 -- :}
 -- (fromList [All,Sum Int],(Just (Sum {getSum = 11}),Just (All {getAll = False})))
---
 
 -- $setup
 -- >>> :set -XBlockArguments
