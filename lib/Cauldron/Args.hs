@@ -363,6 +363,7 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 -- $setup
 -- >>> :set -XBlockArguments
 -- >>> :set -XOverloadedLists
+-- >>> :set -XApplicativeDo
 -- >>> :set -Wno-incomplete-uni-patterns
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
