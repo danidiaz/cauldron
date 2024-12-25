@@ -204,6 +204,21 @@ newtype LazilyReadBeanMissing = LazilyReadBeanMissing TypeRep
 class Wireable curried tip | curried -> tip where
   -- | Takes a curried function and reads all of its arguments by type using
   -- 'arg', returning an 'Args' for the final result value of the function.
+  --
+  -- >>> :{
+  -- fun0 :: Int
+  -- fun0 = 5
+  -- w0 :: Args Int
+  -- w0 = wire w0
+  -- fun1 :: Bool -> Int
+  -- fun1 _ = 5
+  -- w1 :: Args Int
+  -- w1 = wire fun1
+  -- fun2 :: String -> Bool -> Int
+  -- fun2 _ _ = 5
+  -- w2 :: Args Int
+  -- w2 = wire fun1
+  -- :}
   wire :: curried -> Args tip
 
 instance (Wireable_ (IsFunction curried) curried tip) => Wireable curried tip where
