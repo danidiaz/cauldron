@@ -35,6 +35,7 @@ module Cauldron.Args
     foretellReg,
     runRegs,
     getRegsReps,
+
     -- ** Reducing 'foretellReg' boilerplate with 'register'
     Registrable (register),
 
@@ -108,8 +109,10 @@ arg =
 -- 5
 --
 -- See also 'LazilyReadBeanMissing'.
-runArgs :: Args a -> (forall b. (Typeable b) => Maybe b) -> a
-runArgs (Args _ _ _runArgs) = _runArgs
+runArgs :: (forall b. (Typeable b) => Maybe b) -> Args a -> a
+runArgs f (Args _ _ _runArgs) = 
+  -- https://www.reddit.com/r/haskell/comments/16diti/comment/c7vc9ky/
+  _runArgs f
 
 -- | Inspect ahead of time what types will be searched in the 'Beans' map.
 --
@@ -118,8 +121,7 @@ runArgs (Args _ _ _runArgs) = _runArgs
 --     args = (,) <$> arg @Int <*> arg @Bool
 --  in (getArgsReps args, runArgs args (taste beans))
 -- :}
--- 5
---
+-- (fromList [Int,Bool],(5,False))
 getArgsReps :: Args a -> Set TypeRep
 getArgsReps (Args {_argReps}) = _argReps
 
@@ -186,8 +188,9 @@ data Regs a = Regs (Seq Dynamic) a
 -- Only values for 'TypeRep's present in the set will be returned. There will be
 -- values for all 'TypeRep's present in the set (some of them might be the
 -- 'mempty' for that type).
-runRegs :: Regs a -> Set SomeMonoidTypeRep -> (Beans, a)
-runRegs (Regs dyns a) monoidReps =
+runRegs :: Set SomeMonoidTypeRep -> Regs a -> (Beans, a)
+runRegs monoidReps (Regs dyns a) =
+  -- https://www.reddit.com/r/haskell/comments/16diti/comment/c7vc9ky/
   let onlyStaticlyKnown =
         ( manyMemptys monoidReps : do
             dyn <- Data.Foldable.toList dyns
@@ -330,3 +333,11 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 -- The 'Args' applicative has an additional feature: it lets you \"register\" ahead of time
 -- the types of some values that /might/ be included in the result of the 'Args'. It's not mandatory
 -- that these values must be ultimately produced, however.
+
+-- $setup
+-- >>> :set -XBlockArguments
+-- >>> :set -XOverloadedLists
+-- >>> :set -Wno-incomplete-uni-patterns
+-- >>> import Data.Functor.Identity
+-- >>> import Data.Function ((&))
+-- >>> import Data.Monoid

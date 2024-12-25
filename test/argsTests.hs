@@ -18,6 +18,7 @@ import Data.Text (Text)
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
+import Data.Function ((&))
 
 data A = A
 
@@ -51,14 +52,16 @@ tests =
   testGroup
     "All"
     [ testCase "withRegs" do
-        let (beans, C) = runRegs (runArgs argsForC (taste $ fromDynList [toDyn A, toDyn B])) (getRegsReps argsForC)
+        let (beans, C) = argsForC 
+                       & runArgs (taste $ fromDynList [toDyn A, toDyn B]) 
+                       & runRegs (getRegsReps argsForC) 
         Just m <- pure do taste @[Text] beans
         assertEqual
           "monoid"
           ["monoid"]
           m,
       testCase "throwy" do
-        r <- try $ evaluate $ runArgs throwyArgs Nothing
+        r <- try $ evaluate $ runArgs Nothing throwyArgs
         case r of
           Left (LazilyReadBeanMissing tr) | tr == (typeRep (Proxy @L1)) -> pure ()
           _ -> assertFailure "expected exception did not happen"

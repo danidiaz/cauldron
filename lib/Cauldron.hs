@@ -961,8 +961,8 @@ eff' = Constructor callStack
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
 runConstructor bss (Constructor _ args) = do
-  regs <- runArgs args (Data.Foldable.asum (taste <$> bss))
-  pure (runRegs regs (getRegsReps args))
+  regs <- args & runArgs (Data.Foldable.asum (taste <$> bss))
+  pure (runRegs (getRegsReps args) regs)
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
