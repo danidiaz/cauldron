@@ -105,7 +105,7 @@ toDynMap Beans {beanMap} = beanMap
 data SomeMonoidTypeRep where
   SomeMonoidTypeRep ::
     forall a.
-    (Typeable a, Monoid a) =>
+    (Monoid a) =>
     Type.Reflection.TypeRep a ->
     SomeMonoidTypeRep
 
@@ -120,6 +120,7 @@ instance Ord SomeMonoidTypeRep where
   (SomeMonoidTypeRep tr1) `compare` (SomeMonoidTypeRep tr2) =
     (SomeTypeRep tr1) `compare` (SomeTypeRep tr2)
 
+-- | The 'mempty' value corresponding to the inner 'Type.Reflection.TypeRep'.
 someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
 someMonoidTypeRepMempty (SomeMonoidTypeRep tr) = Type.Reflection.withTypeable tr (go tr)
   where
@@ -140,7 +141,7 @@ unionBeansMonoidally reps (Beans beans1) (Beans beans2) =
           (Just (SomeMonoidTypeRep tr'), Dynamic tr1 v1, Dynamic tr2 v2)
             | Just HRefl <- tr' `eqTypeRep` tr1,
               Just HRefl <- tr' `eqTypeRep` tr2 ->
-                toDyn (v1 <> v2)
+                Type.Reflection.withTypeable tr' (toDyn (v1 <> v2))
           _ -> d2
    in Beans $ Map.unionWithKey combine beans1 beans2
 

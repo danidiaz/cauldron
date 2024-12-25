@@ -60,7 +60,6 @@ import Data.Set qualified as Set
 import Data.Typeable
 import Type.Reflection (SomeTypeRep (..))
 import Type.Reflection qualified
-import Type.Reflection qualified as Data.Reflection
 
 -- | An 'Applicative' that knows how to construct values by searching in a
 -- 'Beans' map, and keeps track of the types that will be searched in the

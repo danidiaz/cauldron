@@ -479,12 +479,9 @@ constructorReps (getConstructorArgs -> c) =
       regReps =
         c
           & getRegsReps
-          & Set.map (\mtr@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (Type.Reflection.SomeTypeRep tr) (toDyn (someMonoidTypeRepMempty mtr)))
+          & Set.map (\mtr@(SomeMonoidTypeRep tr) -> Data.Semigroup.Arg (Type.Reflection.SomeTypeRep tr) (toDyn (Cauldron.Beans.someMonoidTypeRepMempty mtr)))
           & Map.fromArgSet
     }
-  where
-    someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
-    someMonoidTypeRepMempty (SomeMonoidTypeRep @t _) = toDyn (mempty @t)
 
 type Plan = [BeanConstructionStep]
 
