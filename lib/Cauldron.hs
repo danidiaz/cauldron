@@ -75,24 +75,30 @@ module Cauldron
     -- * Recipes
     Recipe (..),
     ToRecipe,
-    hoistRecipe,
     fromDecoList,
     (Data.Sequence.|>),
     (Data.Sequence.<|),
+    hoistRecipe,
+
+    -- ** How decorators work
+    -- $decos
+
+    -- ** Hiding a recipe's bean type
     SomeRecipe,
     recipe,
     withRecipe,
     getRecipeCallStacks,
 
     -- * Constructors
+    -- $constructors
     Constructor,
-    wire,
+    val_,
     val,
     val',
-    val_,
+    eff_,
     eff,
     eff',
-    eff_,
+    wire,
     hoistConstructor,
     getConstructorArgs,
     getConstructorCallStack,
@@ -101,16 +107,18 @@ module Cauldron
     cook,
     cookNonEmpty,
     cookTree,
-    Beans,
 
     -- ** How loopy can we get?
     Fire,
     forbidDepCycles,
-    allowDepCycles,
     allowSelfDeps,
+    allowDepCycles,
 
     -- ** Tasting the results
+    Beans,
     taste,
+
+    -- ** When things go wrong
     RecipeError (..),
     MissingDependencies (..),
     DoubleDutyBeans (..),
@@ -123,10 +131,13 @@ module Cauldron
     exportToDot,
     defaultStepToText,
     BeanConstructionStep (..),
+    toAdjacencyMap,
+
+    -- *** Simplifying the dep graph
+    -- $simplifygraph
     removeSecondaryBeans,
     removeDecos,
     collapsePrimaryBeans,
-    toAdjacencyMap,
   )
 where
 
@@ -135,6 +146,7 @@ import Algebra.Graph.AdjacencyMap qualified as Graph
 import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
 import Cauldron.Args
+import Cauldron.Beans (SomeMonoidTypeRep (..))
 import Cauldron.Beans qualified
 import Control.Monad.Fix
 import Data.Bifunctor (first)
@@ -166,7 +178,8 @@ import GHC.IsList
 import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
 import Type.Reflection qualified
 
--- | A map of 'Bean' recipes. Parameterized by the monad @m@ in which the 'Bean'
+-- | A map of bean recipes, indexed by the 'TypeRep' of the bean each recipe
+-- ultimately produces. Parameterized by the monad @m@ in which the recipe
 -- 'Constructor's might have effects.
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeRecipe m)} -> Cauldron m
@@ -174,8 +187,8 @@ newtype Cauldron m where
 empty :: Cauldron m
 empty = Cauldron {recipes = Map.empty}
 
--- | Union of two 'Cauldron's, right-biased: prefers values from the /right/ cauldron when
--- both contain the same bean. (Note that 'Data.Map.Map' is left-biased.)
+-- | Union of two 'Cauldron's, right-biased: prefers 'Recipe's from the /right/ cauldron when
+-- both contain the same key. (Note that 'Data.Map.Map' is left-biased.)
 instance Semigroup (Cauldron m) where
   Cauldron {recipes = r1} <> Cauldron {recipes = r2} = Cauldron do Map.unionWith (flip const) r1 r2
 
@@ -187,18 +200,22 @@ instance IsList (Cauldron m) where
   toList (Cauldron {recipes}) = Map.elems recipes
   fromList = fromRecipeList
 
--- | Change the monad used by the beans in the 'Cauldron'.
+-- | Change the monad used by the 'Recipe's in the 'Cauldron'.
 hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
 hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$> recipes}
 
+-- | In order to put recipes producing different bean types into a container, we
+-- need to hide each recipe's bean type. This wrapper allows that.
 data SomeRecipe m where
   SomeRecipe :: (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> SomeRecipe m
 
+-- | Build a 'SomeRecipe' from a 'Recipe' or a 'Constructor'. See 'ToRecipe'.
 recipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe, HasCallStack) => recipe m bean -> SomeRecipe m
 recipe theRecipe = withFrozenCallStack do
   let initialStacks = Data.List.NonEmpty.singleton callStack
   SomeRecipe initialStacks (toRecipe theRecipe)
 
+-- | Access the 'Recipe' inside a 'SomeRecipe'.
 withRecipe :: forall m r. (forall bean. (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
 withRecipe f (SomeRecipe stacks theRecipe) = f stacks theRecipe
 
@@ -221,12 +238,19 @@ toRecipeMap Cauldron {recipes} = recipes
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
 hoistSomeRecipe f (SomeRecipe stack bean) = SomeRecipe stack do hoistRecipe f bean
 
--- | A bean recipe, to be inserted into a 'Cauldron'.
+-- | Instructions for how to build a value of type @bean@ while possibly
+-- performing actions in the monad @m@.
+--
+-- Because the instructions aren't really run until the 'Cauldron' is 'cook'ed,
+-- they can be modified with functions like 'adjust', in order to change the
+-- base bean 'Constructor', or add or remove decorators.
 data Recipe m bean where
   Recipe ::
     { -- | How to build the bean itself.
       bean :: Constructor m bean,
-      -- | How to build the decorators that wrap the bean. There might be no decorators.
+      -- | A 'Data.Sequence.Sequence' of decorators that will wrap the bean. There might be no decorators.
+      --
+      -- See 'fromDecoList', 'Data.Sequence.|>' and 'Data.Sequence.<|'.
       decos :: Seq (Constructor m bean)
     } ->
     Recipe m bean
@@ -234,16 +258,20 @@ data Recipe m bean where
 fromDecoList :: [Constructor m bean] -> Seq (Constructor m bean)
 fromDecoList = Data.Sequence.fromList
 
-class ToRecipe c where
-  toRecipe :: c m bean -> Recipe m bean
+-- | Convenience typeclass that allows passing either 'Recipe's or 'Constructor's
+-- to the 'insert' and 'recipe' functions.
+class ToRecipe recipelike where
+  toRecipe :: recipelike m bean -> Recipe m bean
 
+-- | Simply identity.
 instance ToRecipe Recipe where
   toRecipe = id
 
+-- | 'Constructor' is converted to a 'Recipe' without decorators.
 instance ToRecipe Constructor where
   toRecipe c = Recipe {bean = c, decos = Data.Sequence.empty}
 
--- | Change the monad used by the bean\'s 'Constructor' and its 'Decos'.
+-- | Change the monad used by the bean\'s main 'Constructor' and its decos.
 hoistRecipe :: (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
 hoistRecipe f (Recipe {bean, decos}) =
   Recipe
@@ -261,8 +289,10 @@ hoistRecipe f (Recipe {bean, decos}) =
 -- Decorators can have other dependencies beyond the modified bean.
 --
 -- When the bean is a record-of-functions, decorators can be used to
--- add behaviors like caching, logging... to the functions.
+-- add behaviors like caching and logging to the functions.
 --
+-- The order of the decorators in the sequence is the order in which they modify
+-- the underlying bean. First decorator wraps first, last decorator wraps last.
 --
 -- >>> :{
 -- newtype Foo = Foo { sayFoo :: IO () }
@@ -300,24 +330,8 @@ hoistRecipe f (Recipe {bean, decos}) =
 
 -- $constructors
 --
--- The bean-producing or bean-decorating functions that we want to wire need to be
--- coaxed into a 'Constructor' value before creating a 'Recipe' recipe and adding it to the 'Cauldron'.
---
--- If your aren't dealing with secondary beans, don't sweat it: use @pack value@ for pure
--- constructors functions and @pack effect@ for effectful ones. That should be enough.
+-- Bean-producing or bean-decorating functions need to be coaxed into 'Constructor's in order to be used in 'Cauldron's.
 
--- | A way of building some @bean@ value, potentially requiring some
--- dependencies, potentially returning some secondary beans
--- along the primary @bean@ result, and also potentially requiring some
--- initialization effect in a monad @m@.
---
--- Note that only the type of the primary @bean@ is reflected in the
--- 'Constructor' type. Those of the dependencies and secondary beans are not.
---
--- A typical initialization monad will be 'IO', used for example to create
--- mutable references that the bean will use internally. Sometimes the a
--- constructor will allocate resources with bracket-like operations, and in that
--- case a monad like 'Managed' might be needed instead.
 data ConstructorReps where
   ConstructorReps ::
     { beanRep :: TypeRep,
@@ -326,10 +340,10 @@ data ConstructorReps where
     } ->
     ConstructorReps
 
--- | Put a recipe for a 'Recipe' into the 'Cauldron'.
+-- | Put a 'Recipe' into the 'Cauldron'.
 --
--- Only one recipe is allowed for each different @bean@ type, so 'insert' for a
--- @bean@ will overwrite previous recipes for that type.
+-- Only one recipe is allowed for each bean type, so 'insert' for a
+-- bean will overwrite any previous recipe for that bean.
 insert ::
   forall (bean :: Type) m recipe.
   (Typeable bean, ToRecipe recipe, HasCallStack) =>
@@ -341,7 +355,7 @@ insert aRecipe Cauldron {recipes} = withFrozenCallStack do
   let initialStacks = Data.List.NonEmpty.singleton callStack
   Cauldron {recipes = Map.insert rep (SomeRecipe initialStacks (toRecipe aRecipe)) recipes}
 
--- | Tweak an already existing 'Recipe' recipe.
+-- | Tweak a 'Recipe' inside the 'Cauldron', if the recipe exists.
 adjust ::
   forall bean m.
   (Typeable bean, HasCallStack) =>
@@ -372,7 +386,7 @@ delete tr Cauldron {recipes} =
 
 -- | Strategy for dealing with dependency cycles.
 --
--- (Terrible uninformative name caused by a metaphor stretched too far.)
+-- (The name is admittedly uninformative; the culinary metaphor was stretched too far.)
 data Fire m = Fire
   { shouldOmitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
@@ -403,11 +417,13 @@ forbidDepCycles =
 --
 -- A bean constructor might depend on itself. This can be useful for having
 -- decorated self-invocations, because the version of the bean received as
--- argument comes \"from the future\" and is already decorated. (__BEWARE__:
--- Pattern-matching too eagerly on this \"bean from the future\" during
--- construction will cause infinite loops.)
+-- argument comes \"from the future\" and is already decorated.
 --
 -- Note that a 'MonadFix' instance is required of the initialization monad.
+--
+-- __BEWARE__: Pattern-matching too eagerly on a \"bean from the future\" during
+-- construction will cause infinite loops or, if you are lucky, throw
+-- 'Control.Exception.FixIOException's.
 allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
@@ -423,6 +439,16 @@ allowSelfDeps =
               plan
     }
 
+-- | Allow /any/ kind of dependency cycles.
+--
+-- Usually comes in handy for creating serializers / deserializers for mutually
+-- dependent types.
+--
+-- Note that a 'MonadFix' instance is required of the initialization monad.
+--
+-- __BEWARE__: Pattern-matching too eagerly on argument beans during
+-- construction will cause infinite loops or, if you are lucky, throw
+-- 'Control.Exception.FixIOException's.
 allowDepCycles :: (MonadFix m) => Fire m
 allowDepCycles =
   Fire
@@ -475,6 +501,9 @@ data BeanConstructionStep
   deriving stock (Show, Eq, Ord)
 
 -- | Build the beans using the recipes stored in the 'Cauldron'.
+--
+-- Any secondary beans that are registered by constructors are aggregated
+-- monoidally.
 cook ::
   forall m.
   (Monad m) =>
@@ -485,7 +514,7 @@ cook fire cauldron = do
   let result = cookTree (Node (fire, cauldron) [])
   result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
 
--- | Cook a list of 'Cauldron's.
+-- | Cook a nonempty list of 'Cauldron's.
 --
 -- 'Cauldron's later in the list can see the beans in all previous 'Cauldron's,
 -- but not vice versa.
@@ -816,10 +845,12 @@ newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap BeanConstructio
 toAdjacencyMap :: DependencyGraph -> AdjacencyMap BeanConstructionStep
 toAdjacencyMap DependencyGraph {graph} = graph
 
+-- | Remove all vertices and edges related to secondary beans.
 removeSecondaryBeans :: DependencyGraph -> DependencyGraph
 removeSecondaryBeans DependencyGraph {graph} =
   DependencyGraph {graph = Graph.induce (\case SecondaryBean {} -> False; _ -> True) graph}
 
+-- | Remove all vertices and edges related to bean decorators.
 removeDecos :: DependencyGraph -> DependencyGraph
 removeDecos DependencyGraph {graph} =
   DependencyGraph {graph = Graph.induce (\case PrimaryBeanDeco {} -> False; _ -> True) graph}
@@ -878,34 +909,57 @@ unsafeTreeToNonEmpty = \case
   Node a [b] -> Data.List.NonEmpty.cons a (unsafeTreeToNonEmpty b)
   _ -> error "tree not list-shaped"
 
--- $setup
--- >>> :set -XBlockArguments
--- >>> :set -XOverloadedLists
--- >>> :set -Wno-incomplete-uni-patterns
--- >>> import Data.Functor.Identity
--- >>> import Data.Function ((&))
--- >>> import Data.Monoid
-
-data Constructor m a = Constructor CallStack (Args (m (Regs a)))
+-- | A way of building value of type @bean@, potentially requiring some
+-- dependencies, potentially returning some secondary beans
+-- along the primary @bean@ result, and also potentially requiring some
+-- initialization effect in a monad @m@.
+--
+-- Note that only the type of the primary @bean@ is reflected in the
+-- 'Constructor' type. Those of the dependencies and secondary beans are not.
+--
+-- A typical initialization monad will be 'IO', used for example to create
+-- mutable references that the bean will use internally. Sometimes the
+-- constructor will allocate resources with bracket-like operations, and in that
+-- case a monad like 'Cauldron.Managed.Managed' might be needed instead.
+data Constructor m bean = Constructor CallStack (Args (m (Regs bean)))
   deriving stock (Functor)
 
-val :: (Applicative m, Registrable nested bean, HasCallStack) => Args nested -> Constructor m bean
-val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity x)
-
-val' :: (Applicative m, HasCallStack) => Args (Regs bean) -> Constructor m bean
-val' x = Constructor callStack $ fmap pure x
-
+-- | Create a 'Constructor' from an 'Args' value that returns a 'bean'.
+--
+-- Usually, the 'Args' value will be created by 'wire'ing a constructor function.
 val_ :: (Applicative m, HasCallStack) => Args bean -> Constructor m bean
 val_ x = Constructor callStack $ fmap (pure . pure) x
 
+-- | Like 'val_', but examines the @nested@ value returned by the 'Args' looking
+-- for (potentially nested) tuples.  All tuple components except the
+-- rightmost-innermost one are registered as secondary beans (if they have
+-- 'Monoid' instances, otherwise 'val' won't compile).
+val :: (Applicative m, Registrable nested bean, HasCallStack) => Args nested -> Constructor m bean
+val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity x)
+
+-- | Like 'val', but uses an alternative form of registering secondary beans.
+-- Less 'Registrable' typeclass magic, but more verbose.
+val' :: (Applicative m, HasCallStack) => Args (Regs bean) -> Constructor m bean
+val' x = Constructor callStack $ fmap pure x
+
+-- | Create a 'Constructor' from an 'Args' value that returns an initialization
+-- effect that produces 'bean'.
+--
+-- Usually, the 'Args' value will be created by 'wire'ing an effectul constructor function.
+eff_ :: (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
+eff_ x = Constructor callStack $ fmap (fmap pure) x
+
+-- | Like 'eff_', but examines the @nested@ value produced by the action
+-- returned by the 'Args' looking for (potentially nested) tuples.  All tuple
+-- components except the rightmost-innermost one are registered as secondary
+-- beans (if they have 'Monoid' instances, otherwise 'eff' won't compile).
 eff :: (Monad m, Registrable nested bean, HasCallStack) => Args (m nested) -> Constructor m bean
 eff x = withFrozenCallStack (eff' $ register x)
 
+-- | Like 'eff', but uses an alternative form of registering secondary beans.
+-- Less 'Registrable' typeclass magic, but more verbose.
 eff' :: (HasCallStack) => Args (m (Regs bean)) -> Constructor m bean
 eff' = Constructor callStack
-
-eff_ :: (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
-eff_ x = Constructor callStack $ fmap (fmap pure) x
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
 runConstructor bss (Constructor _ args) = do
@@ -916,17 +970,42 @@ runConstructor bss (Constructor _ args) = do
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
 hoistConstructor f (Constructor theStack theArgs) = Constructor theStack do fmap f theArgs
 
+-- | Get the inner 'Args' value for the 'Constructor', typically for inspecting
+-- 'TypeRep's of its arguments/registrations.
 getConstructorArgs :: Constructor m bean -> Args (m (Regs bean))
 getConstructorArgs (Constructor _ theArgs) = theArgs
 
+-- | For debugging purposes, 'Constructor's remember the 'CallStack'
+-- of when they were created.
 getConstructorCallStack :: Constructor m bean -> CallStack
 getConstructorCallStack (Constructor stack _) = stack
 
+-- | For debugging purposes, 'SomeRecipe's remember the 'CallStack's
+-- of when they were created or 'adjust'ed.
 getRecipeCallStacks :: SomeRecipe m -> NonEmpty CallStack
 getRecipeCallStacks (SomeRecipe stacks _) = stacks
 
+-- | The set of all 'TypeRep' keys of the map.
 keysSet :: Cauldron m -> Set TypeRep
 keysSet Cauldron {recipes} = Map.keysSet recipes
 
+-- | Restrict a 'Cauldron' to only those 'TypeRep's found in a 'Set'.
 restrictKeys :: Cauldron m -> Set TypeRep -> Cauldron m
 restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recipes trs}
+
+-- $simplifygraph
+--
+-- 'DependencyGraph's can get complex and difficult to intepret because they
+-- include bean decorators and secondary beans, details in which we many not be
+-- interested.
+--
+-- These functions help simplify 'DependencyGraph's before passing them to
+-- 'exportToDot'. They can be composed between themselves.
+
+-- $setup
+-- >>> :set -XBlockArguments
+-- >>> :set -XOverloadedLists
+-- >>> :set -Wno-incomplete-uni-patterns
+-- >>> import Data.Functor.Identity
+-- >>> import Data.Function ((&))
+-- >>> import Data.Monoid

@@ -16,26 +16,32 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
--- {-# LANGUAGE TypeAbstractions #-}
-
 module Cauldron.Args
-  ( getArgsReps,
-    getRegsReps,
+  ( -- * Arguments
     Args,
-    runArgs,
-    LazilyReadBeanMissing (..),
     arg,
+    runArgs,
+    getArgsReps,
+
+    -- ** Reducing 'arg' boilerplate with 'wire'
     Wireable (wire),
-    foretellReg,
+
+    -- ** When a bean is missing
+    LazilyReadBeanMissing (..),
+
+    -- * Registrations
+    -- $registrations
     Regs,
+    foretellReg,
     runRegs,
+    getRegsReps,
     Registrable (register),
 
     -- * Re-exports
     Beans,
     taste,
     fromDynList,
-    SomeMonoidTypeRep (..),
+    SomeMonoidTypeRep,
   )
 where
 
@@ -55,15 +61,9 @@ import Data.Typeable
 import Type.Reflection (SomeTypeRep (..))
 import Type.Reflection qualified
 
-getArgsReps :: Args a -> Set SomeTypeRep
-getArgsReps (Args {_argReps}) = _argReps
-
-getRegsReps :: Args a -> Set SomeMonoidTypeRep
-getRegsReps (Args {_regReps}) = _regReps
-
-runArgs :: Args a -> (forall b. (Typeable b) => Maybe b) -> a
-runArgs (Args _ _ _runArgs) = _runArgs
-
+-- | An 'Applicative' that knows how to construct values by searching in a
+-- 'Beans' map, and keeps track of the types that will be searched in the
+-- 'Beans' map.
 data Args a = Args
   { _argReps :: Set SomeTypeRep,
     _regReps :: Set SomeMonoidTypeRep,
@@ -71,6 +71,7 @@ data Args a = Args
   }
   deriving stock (Functor)
 
+-- | Look for a type in the 'Beans' map and return its corresponding value.
 arg :: forall a. (Typeable a) => Args a
 arg =
   let tr = typeRep (Proxy @a)
@@ -83,6 +84,30 @@ arg =
               Nothing -> throw (LazilyReadBeanMissing tr)
         }
 
+-- | Here the 'Beans' map is not passed /directly/, instead, we pass a
+-- function-like value that, given a type, will return a value of that type or
+-- 'Nothing'. Such function is usually constructed using 'taste' on some 'Beans'
+-- map.
+--
+-- See also 'LazilyReadBeanMissing'.
+runArgs :: Args a -> (forall b. (Typeable b) => Maybe b) -> a
+runArgs (Args _ _ _runArgs) = _runArgs
+
+-- | Inspect ahead of time what types will be searched in the 'Beans' map.
+getArgsReps :: Args a -> Set TypeRep
+getArgsReps (Args {_argReps}) = _argReps
+
+-- | Inspect ahead of time the types of registrations that might be contained in
+-- the result value of an 'Args'.
+getRegsReps :: Args a -> Set SomeMonoidTypeRep
+getRegsReps (Args {_regReps}) = _regReps
+
+-- | This function is used in an 'Args' context to create a tell-like function
+-- that can later be used to register a value into a 'Regs'.
+--
+-- The type of the future registration must be an instance of 'Monoid'.
+--
+-- There are no other ways of registering values into 'Regs'.
 foretellReg :: forall a. (Typeable a, Monoid a) => Args (a -> Regs ())
 foretellReg =
   let tr = SomeMonoidTypeRep (Type.Reflection.typeRep @a)
@@ -121,10 +146,17 @@ someMonoidTypeRepMempty (SomeMonoidTypeRep @t _) = toDyn (mempty @t)
 someMonoidTypeRepToSomeTypeRep :: SomeMonoidTypeRep -> SomeTypeRep
 someMonoidTypeRepToSomeTypeRep (SomeMonoidTypeRep tr) = SomeTypeRep tr
 
--- | Unrestricted building SHOULD NOT be public!
+-- | A writer-like monad for collecting the values of registrations.
 data Regs a = Regs (Seq Dynamic) a
   deriving stock (Functor)
 
+-- | Extract the 'Beans' map of registrations, along with the main result value.
+--
+-- The 'Set' of 'SomeMonoidTypeRep's will typically come from 'getRegsReps'.
+--
+-- Only values for 'TypeRep's present in the set will be returned. There will be
+-- values for all 'TypeRep's present in the set (some of them might be the
+-- 'mempty' for that type).
 runRegs :: Regs a -> Set SomeMonoidTypeRep -> (Beans, a)
 runRegs (Regs dyns a) monoidReps =
   let onlyStaticlyKnown =
@@ -155,11 +187,23 @@ manyMemptys reps =
     <&> someMonoidTypeRepMempty
     & fromDynList
 
+-- | Imprecise exception that might lie hidden in the result of 'runArgs', if
+-- the 'Beans' map lacks a value for some type demanded by the 'Args'.
+--
+-- Why not make 'runArgs' return a 'Maybe' instead of throwing an imprecise
+-- exception? The answer is that, for my purposes, using 'Maybe' or 'Either'
+-- caused undesirable strictness when doing weird things like reading values
+-- \"from the future\".
+--
+-- If more safety is needed, one can perform additional checks by using 'getArgsReps'.
 newtype LazilyReadBeanMissing = LazilyReadBeanMissing TypeRep
   deriving stock (Show)
   deriving anyclass (Exception)
 
+-- | Convenience typeclass for wiring all the arguments of a curried function in one go.
 class Wireable curried tip | curried -> tip where
+  -- | Takes a curried function and reads all of its arguments by type using
+  -- 'arg', returning an 'Args' for the final result value of the function.
   wire :: curried -> Args tip
 
 instance (Wireable_ (IsFunction curried) curried tip) => Wireable curried tip where
@@ -196,7 +240,12 @@ type family IsReg f :: WhereNested where
   IsReg (_, _, _, _) = 'Tup4
   IsReg _ = 'Innermost
 
+-- | Convenience typeclass for automatically extracting registrations from a value.
+-- Counterpart of 'Wireable' for registrations.
 class Registrable nested tip | nested -> tip where
+  -- | We look for (potentially nested) tuples in the value.  All tuple components except the
+  -- rightmost-innermost one are considered registrations (if they have
+  -- 'Monoid' instances, otherwise 'register' won't compile).
   register :: forall m. (Functor m) => Args (m nested) -> Args (m (Regs tip))
 
 instance (Registrable_ (IsReg nested) nested tip) => Registrable nested tip where
@@ -231,3 +280,9 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
       tell3 <- foretellReg @d
       action <- af
       pure (action <&> \regs -> regs >>= \(b, c, d, rest) -> tell1 b *> tell2 c *> tell3 d *> pure rest)
+
+-- $registrations
+--
+-- The 'Args' applicative has an additional feature: it lets you \"register\" ahead of time
+-- the types of some values that /might/ be included in the result of the 'Args'. It's not mandatory
+-- that these values must be ultimately produced, however.
