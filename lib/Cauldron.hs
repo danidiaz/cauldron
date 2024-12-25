@@ -104,6 +104,9 @@ module Cauldron
     getConstructorArgs,
     getConstructorCallStack,
 
+    -- ** Registering secondary beans
+    -- $secondarybeans
+
     -- * Cooking the beans
     cook,
     cookNonEmpty,
@@ -1002,6 +1005,10 @@ restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recip
 --
 -- These functions help simplify 'DependencyGraph's before passing them to
 -- 'exportToDot'. They can be composed between themselves.
+
+-- $secondarybeans
+--
+-- TBD
 
 -- $setup
 -- >>> :set -XBlockArguments

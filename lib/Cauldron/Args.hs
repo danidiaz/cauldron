@@ -302,14 +302,16 @@ class Registrable nested tip | nested -> tip where
   -- :}
   --
   -- >>> :{
-  -- ( getRegsReps registeredArgs
-  -- , registeredArgs & runArgs (taste Cauldron.Beans.empty)
-  --                  & runIdentity
-  --                  & runRegs (getRegsReps registeredArgs)
-  --                  & \(beans,_) -> (taste @(Sum Int) beans, taste @All beans)
-  -- )
+  -- let reps = getRegsReps registeredArgs
+  --  in ( reps == Data.Set.fromList [ SomeMonoidTypeRep $ Type.Reflection.typeRep @(Sum Int)
+  --                                 , SomeMonoidTypeRep $ Type.Reflection.typeRep @All]
+  --     , registeredArgs & runArgs (taste Cauldron.Beans.empty)
+  --                      & runIdentity
+  --                      & runRegs reps
+  --                      & \(beans,_) -> (taste @(Sum Int) beans, taste @All beans)
+  --     )
   -- :}
-  -- (fromList [All,Sum Int],(Just (Sum {getSum = 5}),Just (All {getAll = False})))
+  -- (True,(Just (Sum {getSum = 5}),Just (All {getAll = False})))
   --
   -- Tuples can be nested:
   --
@@ -391,13 +393,15 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 -- :}
 --
 -- >>> :{
--- ( getRegsReps args
--- , args & runArgs (taste $ fromDynList [toDyn @String "foo", toDyn False])
---        & runRegs (getRegsReps args)
---        & \(beans,_) -> (taste @(Sum Int) beans, taste @All beans)
--- )
+-- let reps = getRegsReps args
+--  in ( reps == Data.Set.fromList [ SomeMonoidTypeRep $ Type.Reflection.typeRep @(Sum Int)
+--                                 , SomeMonoidTypeRep $ Type.Reflection.typeRep @All]
+--     , args & runArgs (taste $ fromDynList [toDyn @String "foo", toDyn False])
+--            & runRegs reps
+--            & \(beans,_) -> (taste @(Sum Int) beans, taste @All beans)
+--     )
 -- :}
--- (fromList [All,Sum Int],(Just (Sum {getSum = 11}),Just (All {getAll = False})))
+-- (True,(Just (Sum {getSum = 11}),Just (All {getAll = False})))
 
 -- $setup
 -- >>> :set -XBlockArguments
