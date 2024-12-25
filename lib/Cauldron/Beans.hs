@@ -35,7 +35,7 @@ module Cauldron.Beans
     someMonoidTypeRepMempty,
 
     -- * Re-exported
-    toDyn
+    toDyn,
   )
 where
 
@@ -97,7 +97,7 @@ instance IsList Beans where
   toList (Beans {beanMap}) = Map.elems beanMap
   fromList = fromDynList
 
--- | 
+-- |
 -- >>> :{
 -- let beans = fromDynList [toDyn False, toDyn @Int 5]
 --  in (taste @Bool beans, taste @Int beans, taste @String beans)

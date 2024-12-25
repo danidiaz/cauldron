@@ -148,6 +148,7 @@ import Algebra.Graph.Export.Dot qualified as Dot
 import Cauldron.Args
 import Cauldron.Beans (SomeMonoidTypeRep (..))
 import Cauldron.Beans qualified
+import Control.Exception (Exception)
 import Control.Monad.Fix
 import Data.Bifunctor (first)
 import Data.ByteString qualified
@@ -331,7 +332,7 @@ hoistRecipe f (Recipe {bean, decos}) =
 
 -- $constructors
 --
--- Bean-producing or bean-decorating functions need to be coaxed into 'Constructor's in order to be used in 'Cauldron's.
+-- Bean-producing and bean-decorating functions need to be coaxed into 'Constructor's in order to be used in 'Cauldron's.
 
 data ConstructorReps where
   ConstructorReps ::
@@ -786,6 +787,7 @@ data RecipeError
   | -- | Dependency cycles are disallowed by some 'Fire's.
     DependencyCycleError DependencyCycle
   deriving stock (Show)
+  deriving anyclass (Exception)
 
 prettyRecipeError :: RecipeError -> String
 prettyRecipeError = Data.List.intercalate "\n" . prettyRecipeErrorLines

@@ -13,12 +13,12 @@ import Cauldron
 import Cauldron.Args
 import Control.Exception
 import Data.Dynamic
+import Data.Function ((&))
 import Data.Proxy
 import Data.Text (Text)
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Data.Function ((&))
 
 data A = A
 
@@ -52,9 +52,10 @@ tests =
   testGroup
     "All"
     [ testCase "withRegs" do
-        let (beans, C) = argsForC 
-                       & runArgs (taste $ fromDynList [toDyn A, toDyn B]) 
-                       & runRegs (getRegsReps argsForC) 
+        let (beans, C) =
+              argsForC
+                & runArgs (taste $ fromDynList [toDyn A, toDyn B])
+                & runRegs (getRegsReps argsForC)
         Just m <- pure do taste @[Text] beans
         assertEqual
           "monoid"

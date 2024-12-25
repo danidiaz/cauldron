@@ -110,7 +110,7 @@ arg =
 --
 -- See also 'LazilyReadBeanMissing'.
 runArgs :: (forall b. (Typeable b) => Maybe b) -> Args a -> a
-runArgs f (Args _ _ _runArgs) = 
+runArgs f (Args _ _ _runArgs) =
   -- https://www.reddit.com/r/haskell/comments/16diti/comment/c7vc9ky/
   _runArgs f
 
