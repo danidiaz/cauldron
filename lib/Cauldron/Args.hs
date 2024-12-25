@@ -119,7 +119,7 @@ runArgs f (Args _ _ _runArgs) =
 -- >>> :{
 -- let beans = fromDynList [toDyn @Int 5, toDyn False]
 --     args = (,) <$> arg @Int <*> arg @Bool
---  in (getArgsReps args, runArgs args (taste beans))
+--  in (getArgsReps args, runArgs (taste beans) args)
 -- :}
 -- (fromList [Int,Bool],(5,False))
 getArgsReps :: Args a -> Set TypeRep
@@ -129,7 +129,7 @@ getArgsReps (Args {_argReps}) = _argReps
 -- the result value of an 'Args'.
 --
 -- >>> :{
--- let _tell = foretellReg @(Sum Int)
+-- let args = foretellReg @(Sum Int) *> pure ()
 --  in getRegsReps args
 -- :}
 -- 5
