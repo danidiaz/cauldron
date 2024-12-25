@@ -103,7 +103,7 @@ arg =
 --
 -- >>> :{
 -- let beans = fromDynList [toDyn @Int 5]
--- runArgs (taste beans) (arg @Int)
+--  in runArgs (taste beans) (arg @Int)
 -- :}
 -- 5
 --
@@ -112,6 +112,14 @@ runArgs :: Args a -> (forall b. (Typeable b) => Maybe b) -> a
 runArgs (Args _ _ _runArgs) = _runArgs
 
 -- | Inspect ahead of time what types will be searched in the 'Beans' map.
+--
+-- >>> :{
+-- let beans = fromDynList [toDyn @Int 5, toDyn False]
+--     args = (,) <$> arg @Int <*> arg @Bool
+--  in (getArgsReps args, runArgs (taste beans) args)
+-- :}
+-- 5
+--
 getArgsReps :: Args a -> Set TypeRep
 getArgsReps (Args {_argReps}) = _argReps
 
