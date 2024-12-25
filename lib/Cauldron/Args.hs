@@ -353,11 +353,16 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 --      tell1 (Sum 11)
 --      tell2 (All False)
 --      pure r
--- ( getRegsReps args, 
---   args & runArgs (fromDynList [toDyn @String "foo", toDyn False])
---        & runRegs (getRegsReps args) )
 -- :}
 --
+-- >>> :{
+-- ( getRegsReps args
+-- , args & runArgs (taste $ fromDynList [toDyn @String "foo", toDyn False])
+--        & runRegs (getRegsReps args) 
+--        & \(beans,_) -> (taste @(Sum Int) beans, taste @All beans) 
+-- )
+-- :}
+-- (fromList [All,Sum Int],(Just (Sum {getSum = 11}),Just (All {getAll = False})))
 --
 
 -- $setup
