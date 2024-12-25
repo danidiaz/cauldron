@@ -354,9 +354,8 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 --      tell2 (All False)
 --      pure r
 -- ( getRegsReps args, 
--- , args & runArgs (fromDynList [toDyn @String "foo", toDyn False])
---        & runRegs (getRegsReps args)
--- ) 
+--   args & runArgs (fromDynList [toDyn @String "foo", toDyn False])
+--        & runRegs (getRegsReps args) )
 -- :}
 --
 --
