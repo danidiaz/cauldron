@@ -1008,7 +1008,18 @@ restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recip
 
 -- $secondarybeans
 --
--- TBD
+-- There is an exception to the 'Cauldron' rule that each bean type can only
+-- have a single 'Recipe' in the 'Cauldron'.
+-- 
+-- 'Constructor's can produce, besides their \"primary\" bean result,
+-- \"secondary\" beans that are not reflected in the 'Constructor' signature.
+-- Multiple constructors in different recipes can produce secondary beans of the
+-- same type.
+--
+-- secondary beans [can be depended] are a bit special, in that:
+-- - The must have 'Monoid' instances.
+-- TBD 
+-- 
 
 -- $setup
 -- >>> :set -XBlockArguments
