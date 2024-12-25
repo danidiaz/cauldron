@@ -338,15 +338,15 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 -- Here's an example. We have an 'Args' value that returns a 'Regs'. While
 -- constructing the 'Args' value, we register the @Sum Int@ and @All@ types
 -- using 'foretellReg', which also gives us the means of later writing into the
--- 'Regs'. We can inspect the 'TypeRep's of the types we registered without
--- having to run the 'Args', by using 'getRegsReps'.
+-- 'Regs'. By using 'getRegsReps', we can inspect the 'TypeRep's of the types we
+-- registered without having to run the 'Args', 
 --
 -- >>> :{
 -- fun2 :: String -> Bool -> Int
 -- fun2 _ _ = 5 
 -- args :: Args (Regs Int)
 -- args = do -- Using ApplicativeDo
---   r <- fun <$> args <*> args
+--   r <- fun <$> arg <*> arg -- could also use 'wire'
 --   tell1 <- foretellReg @(Sum Int) 
 --   tell2 <- foretellReg @All
 --   pure $ do
