@@ -32,6 +32,7 @@ module Cauldron.Beans
     -- * Monoidal stuff
     unionBeansMonoidally,
     SomeMonoidTypeRep (..),
+    someMonoidTypeRepMempty,
   )
 where
 
@@ -118,6 +119,12 @@ instance Eq SomeMonoidTypeRep where
 instance Ord SomeMonoidTypeRep where
   (SomeMonoidTypeRep tr1) `compare` (SomeMonoidTypeRep tr2) =
     (SomeTypeRep tr1) `compare` (SomeTypeRep tr2)
+
+someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic
+someMonoidTypeRepMempty (SomeMonoidTypeRep tr) = Type.Reflection.withTypeable tr (go tr)
+  where
+    go :: forall t proxy. (Typeable t, Monoid t) => proxy t -> Dynamic
+    go _ = toDyn (mempty @t)
 
 -- | Union of to 'Beans' maps. If both share a 'TypeRep' key and the key is
 -- present in the 'SomeMonoidTypeRep' 'Set', combine the values monoidally.
