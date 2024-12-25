@@ -125,6 +125,12 @@ getArgsReps (Args {_argReps}) = _argReps
 
 -- | Inspect ahead of time the types of registrations that might be contained in
 -- the result value of an 'Args'.
+--
+-- >>> :{
+-- let _tell = foretellReg @(Sum Int)
+--  in getRegsReps args
+-- :}
+-- 5
 getRegsReps :: Args a -> Set SomeMonoidTypeRep
 getRegsReps (Args {_regReps}) = _regReps
 
