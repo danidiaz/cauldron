@@ -330,9 +330,36 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 
 -- $registrations
 --
--- The 'Args' applicative has an additional feature: it lets you \"register\" ahead of time
--- the types of some values that /might/ be included in the result of the 'Args'. It's not mandatory
+-- The 'Args' applicative has an additional feature: it lets you \"register\"
+-- ahead of time the types of some values that /might/ be included in the result
+-- of the 'Args', without being reflected in the result type. It's not mandatory
 -- that these values must be ultimately produced, however.
+--
+-- Here's an example. We have an 'Args' value that returns a 'Regs'. While
+-- constructing the 'Args' value, we register the @Sum Int@ and @All@ types
+-- using 'foretellReg', which also gives us the means of later writing into the
+-- 'Regs'. We can inspect the 'TypeRep's of the types we registered without
+-- having to run the 'Args', by using 'getRegsReps'.
+--
+-- >>> :{
+-- fun2 :: String -> Bool -> Int
+-- fun2 _ _ = 5 
+-- args :: Args (Regs Int)
+-- args = do -- Using ApplicativeDo
+--   r <- fun <$> args <*> args
+--   tell1 <- foretellReg @(Sum Int) 
+--   tell2 <- foretellReg @All
+--   pure $ do
+--      tell1 (Sum 11)
+--      tell2 (All False)
+--      pure r
+-- ( getRegsReps args, 
+-- , args & runArgs (fromDynList [toDyn @String "foo", toDyn False])
+--        & runRegs (getRegsReps args)
+-- ) 
+-- :}
+--
+--
 
 -- $setup
 -- >>> :set -XBlockArguments
