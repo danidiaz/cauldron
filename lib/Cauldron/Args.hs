@@ -207,7 +207,7 @@ class Wireable curried tip | curried -> tip where
   -- fun0 :: Int
   -- fun0 = 5
   -- w0 :: Args Int
-  -- w0 = wire w0
+  -- w0 = wire fun0
   -- fun1 :: Bool -> Int
   -- fun1 _ = 5
   -- w1 :: Args Int
@@ -215,7 +215,7 @@ class Wireable curried tip | curried -> tip where
   -- fun2 :: String -> Bool -> Int
   -- fun2 _ _ = 5
   -- w2 :: Args Int
-  -- w2 = wire fun1
+  -- w2 = wire fun2
   -- :}
   wire :: curried -> Args tip
 
