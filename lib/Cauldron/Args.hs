@@ -346,7 +346,7 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 -- fun2 _ _ = 5 
 -- args :: Args (Regs Int)
 -- args = do -- Using ApplicativeDo
---   r <- fun <$> arg <*> arg -- could also use 'wire'
+--   r <- fun2 <$> arg <*> arg -- could also have used 'wire'
 --   tell1 <- foretellReg @(Sum Int) 
 --   tell2 <- foretellReg @All
 --   pure $ do
