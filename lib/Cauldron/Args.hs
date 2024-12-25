@@ -35,6 +35,7 @@ module Cauldron.Args
     foretellReg,
     runRegs,
     getRegsReps,
+    -- ** Reducing 'foretellReg' boilerplate with 'register'
     Registrable (register),
 
     -- * Re-exports
@@ -99,6 +100,12 @@ arg =
 -- function-like value that, given a type, will return a value of that type or
 -- 'Nothing'. Such function is usually constructed using 'taste' on some 'Beans'
 -- map.
+--
+-- >>> :{
+-- let beans = fromDynList [toDyn @Int 5]
+-- runArgs (taste beans) (arg @Int)
+-- :}
+-- 5
 --
 -- See also 'LazilyReadBeanMissing'.
 runArgs :: Args a -> (forall b. (Typeable b) => Maybe b) -> a
