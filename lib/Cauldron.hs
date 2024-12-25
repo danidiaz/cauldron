@@ -137,7 +137,7 @@ module Cauldron
     -- $simplifygraph
     removeSecondaryBeans,
     removeDecos,
-    collapsePrimaryBeans,
+    collapseToPrimaryBeans,
   )
 where
 
@@ -179,8 +179,9 @@ import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
 import Type.Reflection qualified
 
 -- | A map of bean recipes, indexed by the 'TypeRep' of the bean each recipe
--- ultimately produces. Parameterized by the monad @m@ in which the recipe
--- 'Constructor's might have effects.
+-- ultimately produces. Only one recipe is allowed for each bean type.
+-- Parameterized by the monad @m@ in which the recipe 'Constructor's might have
+-- effects.
 newtype Cauldron m where
   Cauldron :: {recipes :: Map TypeRep (SomeRecipe m)} -> Cauldron m
 
@@ -855,8 +856,8 @@ removeDecos DependencyGraph {graph} =
 -- | Unifies 'PrimaryBean's with their respective 'BarePrimaryBean's and 'PrimaryBeanDeco's.
 --
 -- Also removes any self-loops.
-collapsePrimaryBeans :: DependencyGraph -> DependencyGraph
-collapsePrimaryBeans DependencyGraph {graph} = do
+collapseToPrimaryBeans :: DependencyGraph -> DependencyGraph
+collapseToPrimaryBeans DependencyGraph {graph} = do
   let simplified =
         Graph.gmap
           ( \case

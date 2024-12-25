@@ -237,8 +237,8 @@ main = do
       exportToDot defaultStepToText "beans.dot" depGraph
       exportToDot defaultStepToText "beans-no-agg.dot" do removeSecondaryBeans do depGraph
       exportToDot defaultStepToText "beans-no-agg-no-decos.dot" do removeDecos do removeSecondaryBeans do depGraph
-      exportToDot defaultStepToText "beans-simple.dot" do collapsePrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
-      exportToDot defaultStepToText "beans-simple-with-decos.dot" do collapsePrimaryBeans do removeSecondaryBeans do depGraph
+      exportToDot defaultStepToText "beans-simple.dot" do collapseToPrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
+      exportToDot defaultStepToText "beans-simple-with-decos.dot" do collapseToPrimaryBeans do removeSecondaryBeans do depGraph
       Entrypoint (Initializer {runInitializer}) (Inspector {inspect}) z <- action
       inspection <- inspect
       print inspection

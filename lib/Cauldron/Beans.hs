@@ -33,6 +33,9 @@ module Cauldron.Beans
     unionBeansMonoidally,
     SomeMonoidTypeRep (..),
     someMonoidTypeRepMempty,
+
+    -- * Re-exported
+    toDyn
   )
 where
 
@@ -94,6 +97,12 @@ instance IsList Beans where
   toList (Beans {beanMap}) = Map.elems beanMap
   fromList = fromDynList
 
+-- | 
+-- >>> :{
+-- let beans = fromDynList [toDyn False, toDyn @Int 5]
+--  in (taste @Bool beans, taste @Int beans, taste @String)
+-- :}
+-- (Just False, Just 5, Nothing)
 fromDynList :: [Dynamic] -> Beans
 fromDynList ds = Beans do Map.fromList do ds <&> \d -> (dynTypeRep d, d)
 
