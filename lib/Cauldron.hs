@@ -133,7 +133,7 @@ module Cauldron
     prettyRecipeError,
     prettyRecipeErrorLines,
 
-    -- ** Drawing deps
+    -- ** Visualizing dependencies between beans.
     getDependencyGraph,
     DependencyGraph,
     exportToDot,
