@@ -192,27 +192,27 @@ import Type.Reflection qualified
 -- Parameterized by the monad @m@ in which the recipe 'Constructor's might have
 -- effects.
 newtype Cauldron m where
-  Cauldron :: {recipes :: Map TypeRep (SomeRecipe m)} -> Cauldron m
+  Cauldron :: {recipeMap :: Map TypeRep (SomeRecipe m)} -> Cauldron m
 
 empty :: Cauldron m
-empty = Cauldron {recipes = Map.empty}
+empty = Cauldron {recipeMap = Map.empty}
 
 -- | Union of two 'Cauldron's, right-biased: prefers 'Recipe's from the /right/ cauldron when
 -- both contain the same key. (Note that 'Data.Map.Map' is left-biased.)
 instance Semigroup (Cauldron m) where
-  Cauldron {recipes = r1} <> Cauldron {recipes = r2} = Cauldron do Map.unionWith (flip const) r1 r2
+  Cauldron {recipeMap = r1} <> Cauldron {recipeMap = r2} = Cauldron do Map.unionWith (flip const) r1 r2
 
 instance Monoid (Cauldron m) where
   mempty = Cauldron do Map.empty
 
 instance IsList (Cauldron m) where
   type Item (Cauldron m) = SomeRecipe m
-  toList (Cauldron {recipes}) = Map.elems recipes
+  toList (Cauldron {recipeMap}) = Map.elems recipeMap
   fromList = fromRecipeList
 
 -- | Change the monad used by the 'Recipe's in the 'Cauldron'.
 hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
-hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$> recipes}
+hoistCauldron f (Cauldron {recipeMap}) = Cauldron {recipeMap = hoistSomeRecipe f <$> recipeMap}
 
 -- | More general form of 'hoistCauldron' that lets you modify the 'Args'
 -- inside all the 'Recipe's in the 'Cauldron'. See 'hoistRecipe''.
@@ -223,31 +223,30 @@ hoistCauldron' ::
   (forall x. (Typeable x) => Int -> Args (m (Regs x)) -> Args (n (Regs x))) ->
   Cauldron m ->
   Cauldron n
-hoistCauldron' f fds Cauldron {recipes} =
+hoistCauldron' f fds Cauldron {recipeMap} =
   Cauldron
-    { recipes = Map.map (hoistSomeRecipe' f fds) recipes
+    { recipeMap = Map.map (hoistSomeRecipe' f fds) recipeMap
     }
 
 -- | In order to put recipes producing different bean types into a container, we
 -- need to hide each recipe's bean type. This wrapper allows that.
 data SomeRecipe m where
-  SomeRecipe :: (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe m
+  SomeRecipe :: (Typeable bean) => { _callStack :: CallStack , _recipe :: Recipe m bean } -> SomeRecipe m
 
 -- | Build a 'SomeRecipe' from a 'Recipe' or a 'Constructor'. See 'ToRecipe'.
 --
 -- Useful in combination with 'fromRecipeList'.
-recipe ::
-  forall bean m recipelike.
-  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
-  -- | A 'Recipe' or a 'Constructor'.
-  recipelike m bean ->
-  SomeRecipe m
+recipe :: forall bean m recipelike . (Typeable bean, ToRecipe recipelike, HasCallStack) =>
+       -- | A 'Recipe' or a 'Constructor'.
+       recipelike m bean ->
+       -- |
+       SomeRecipe m
 recipe theRecipe = withFrozenCallStack do
   SomeRecipe callStack (toRecipe theRecipe)
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
 withRecipe :: forall r m. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
-withRecipe f (SomeRecipe _callStack theRecipe) = f _callStack theRecipe
+withRecipe f (SomeRecipe {_callStack, _recipe}) = f _callStack _recipe
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
 fromRecipeList =
@@ -257,16 +256,16 @@ fromRecipeList =
   where
     -- Here we take care to preserve the initial call stacks
     inserter :: forall bean m. (Typeable bean) => CallStack -> Recipe m bean -> Cauldron m -> Cauldron m
-    inserter _callStack r Cauldron {recipes} =
+    inserter _callStack _recipe Cauldron {recipeMap} =
       Cauldron
-        { recipes = Map.insert (typeRep (Proxy @bean)) (SomeRecipe _callStack r) recipes
+        { recipeMap = Map.insert (typeRep (Proxy @bean)) (SomeRecipe _callStack _recipe) recipeMap
         }
 
 toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
-toRecipeMap Cauldron {recipes} = recipes
+toRecipeMap Cauldron {recipeMap} = recipeMap
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
-hoistSomeRecipe f (SomeRecipe stack bean) = SomeRecipe stack do hoistRecipe f bean
+hoistSomeRecipe f (SomeRecipe { _callStack, _recipe}) = SomeRecipe {_callStack, _recipe = hoistRecipe f _recipe }
 
 hoistSomeRecipe' ::
   forall m n.
@@ -278,7 +277,7 @@ hoistSomeRecipe' f fds = withRecipe go
   where
     go :: forall bean. (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe n
     go _callStack theRecipe =
-      SomeRecipe _callStack (hoistRecipe' (f @bean) (fds @bean) theRecipe)
+      SomeRecipe { _callStack, _recipe =  hoistRecipe' (f @bean) (fds @bean) theRecipe }
 
 -- | Instructions for how to build a value of type @bean@ while possibly
 -- performing actions in the monad @m@.
@@ -400,15 +399,15 @@ data ConstructorReps where
 -- Only one recipe is allowed for each bean type, so 'insert' for a
 -- bean will overwrite any previous recipe for that bean.
 insert ::
-  forall (bean :: Type) m recipelike.
-  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
+  forall (bean :: Type) m recipelike .  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
   -- | A 'Recipe' or a 'Constructor'.
   recipelike m bean ->
+  -- |
   Cauldron m ->
   Cauldron m
-insert aRecipe Cauldron {recipes} = withFrozenCallStack do
+insert recipelike Cauldron {recipeMap} = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
-  Cauldron {recipes = Map.insert rep (SomeRecipe callStack (toRecipe aRecipe)) recipes}
+  Cauldron {recipeMap = Map.insert rep (SomeRecipe callStack (toRecipe recipelike)) recipeMap}
 
 -- | Tweak a 'Recipe' inside the 'Cauldron', if the recipe exists.
 adjust ::
@@ -417,18 +416,18 @@ adjust ::
   (Recipe m bean -> Recipe m bean) ->
   Cauldron m ->
   Cauldron m
-adjust f (Cauldron {recipes}) = withFrozenCallStack do
+adjust f (Cauldron {recipeMap}) = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
   Cauldron
-    { recipes =
+    { recipeMap =
         Map.adjust
           do
-            \(SomeRecipe _callStack (r :: Recipe m a)) ->
+            \(SomeRecipe {_callStack, _recipe = r :: Recipe m a}) ->
               case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
                 Nothing -> error "should never happen"
-                Just Refl -> SomeRecipe _callStack (f r)
+                Just Refl -> SomeRecipe { _callStack , _recipe = (f r) }
           rep
-          recipes
+          recipeMap
     }
 
 delete ::
@@ -436,8 +435,8 @@ delete ::
   TypeRep ->
   Cauldron m ->
   Cauldron m
-delete tr Cauldron {recipes} =
-  Cauldron {recipes = Map.delete tr recipes}
+delete tr Cauldron {recipeMap} =
+  Cauldron {recipeMap = Map.delete tr recipeMap}
 
 -- | Strategy for dealing with dependency cycles.
 --
@@ -552,7 +551,7 @@ data BeanConstructionStep
     SecondaryBean TypeRep
   deriving stock (Show, Eq, Ord)
 
--- | Build the beans using the recipes stored in the 'Cauldron'.
+-- | Build the beans using the recipeMap stored in the 'Cauldron'.
 --
 -- Any secondary beans that are registered by constructors are aggregated
 -- monoidally.
@@ -623,10 +622,10 @@ cauldronTreeRegs :: Tree (Cauldron m) -> (Map TypeRep (CallStack, Dynamic), Map 
 cauldronTreeRegs = foldMap cauldronRegs
 
 cauldronRegs :: Cauldron m -> (Map TypeRep (CallStack, Dynamic), Map TypeRep CallStack)
-cauldronRegs Cauldron {recipes} =
+cauldronRegs Cauldron {recipeMap} =
   Map.foldMapWithKey
     do \rep aRecipe -> (recipeRegs aRecipe, Map.singleton rep (getRecipeCallStack aRecipe))
-    recipes
+    recipeMap
 
 -- | Returns the accumulators, not the main bean
 recipeRegs :: SomeRecipe m -> Map TypeRep (CallStack, Dynamic)
@@ -655,9 +654,9 @@ checkMissingDeps accums treecipes = do
       Tree (Map TypeRep (SomeRecipe m), Cauldron m)
     decorate = unfoldTree
       do
-        \(acc, Node (current@Cauldron {recipes}) rest) ->
+        \(acc, Node (current@Cauldron {recipeMap}) rest) ->
           let -- current level has priority
-              newAcc = recipes `Map.union` acc
+              newAcc = recipeMap `Map.union` acc
               newSeeds = do
                 z <- rest
                 [(newAcc, z)]
@@ -678,8 +677,8 @@ checkMissingDepsCauldron accums available cauldron =
           else Left $ MissingDependencies stack tr missing
 
 demandsByConstructorsInCauldron :: Cauldron m -> [(CallStack, TypeRep, Set TypeRep)]
-demandsByConstructorsInCauldron Cauldron {recipes} = do
-  (tr, SomeRecipe _ (Recipe {bean, decos})) <- Map.toList recipes
+demandsByConstructorsInCauldron Cauldron {recipeMap} = do
+  (tr, SomeRecipe _ (Recipe {bean, decos})) <- Map.toList recipeMap
   ( let ConstructorReps {argReps = beanArgReps} = constructorReps bean
      in [(getConstructorCallStack bean, tr, beanArgReps)]
     )
@@ -703,14 +702,14 @@ buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) ->
       Right (plan, fire, cauldron)
 
 buildDepsCauldron :: Set TypeRep -> Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
-buildDepsCauldron secondary Cauldron {recipes} = do
+buildDepsCauldron secondary Cauldron {recipeMap} = do
   let makeTargetStep :: TypeRep -> BeanConstructionStep
       makeTargetStep rep =
         if rep `Set.member` secondary
           then SecondaryBean rep
           else PrimaryBean rep
   (flip Map.foldMapWithKey)
-    recipes
+    recipeMap
     \beanRep
      ( SomeRecipe
          recipeCallStack
@@ -793,9 +792,9 @@ followPlanStep ::
   Beans ->
   BeanConstructionStep ->
   m Beans
-followPlanStep makeBareView makeDecoView Cauldron {recipes} final super item =
+followPlanStep makeBareView makeDecoView Cauldron {recipeMap} final super item =
   case item of
-    BarePrimaryBean rep -> case fromJust do Map.lookup rep recipes of
+    BarePrimaryBean rep -> case fromJust do Map.lookup rep recipeMap of
       SomeRecipe _ (Recipe {bean = beanConstructor}) -> do
         let ConstructorReps {beanRep} = constructorReps beanConstructor
         -- We delete the beanRep before running the bean,
@@ -804,7 +803,7 @@ followPlanStep makeBareView makeDecoView Cauldron {recipes} final super item =
         -- There is a test for this.
         inserter <- followConstructor beanConstructor final (makeBareView beanRep super)
         pure do inserter super
-    PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipes of
+    PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipeMap of
       SomeRecipe _ (Recipe {decos}) -> do
         let decoCon = decos `Data.Sequence.index` index
         let ConstructorReps {beanRep} = constructorReps decoCon
@@ -1043,15 +1042,15 @@ getConstructorCallStack (Constructor stack _) = stack
 -- | For debugging purposes, 'SomeRecipe's remember the 'CallStack'
 -- of when they were created.
 getRecipeCallStack :: SomeRecipe m -> CallStack
-getRecipeCallStack (SomeRecipe _callStack _) = _callStack
+getRecipeCallStack (SomeRecipe {_callStack}) = _callStack
 
 -- | The set of all 'TypeRep' keys of the map.
 keysSet :: Cauldron m -> Set TypeRep
-keysSet Cauldron {recipes} = Map.keysSet recipes
+keysSet Cauldron {recipeMap} = Map.keysSet recipeMap
 
 -- | Restrict a 'Cauldron' to only those 'TypeRep's found in a 'Set'.
 restrictKeys :: Cauldron m -> Set TypeRep -> Cauldron m
-restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recipes trs}
+restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys recipeMap trs}
 
 -- $simplifygraph
 --
@@ -1069,7 +1068,7 @@ restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recip
 --
 -- 'Constructor's can produce, besides their \"primary\" bean result,
 -- \"secondary\" beans that are not reflected in the 'Constructor' signature.
--- Multiple constructors across different recipes can produce secondary beans of the
+-- Multiple constructors across different recipeMap can produce secondary beans of the
 -- same type.
 --
 -- Secondary beans are a bit special, in that:
