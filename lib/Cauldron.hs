@@ -239,7 +239,7 @@ recipe theRecipe = withFrozenCallStack do
   SomeRecipe callStack (toRecipe theRecipe)
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
-withRecipe :: forall m r. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
+withRecipe :: forall r m. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
 withRecipe f (SomeRecipe _callStack theRecipe) = f _callStack theRecipe
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
@@ -279,14 +279,14 @@ hoistSomeRecipe' f fds = withRecipe go
 -- Because the instructions aren't really run until the 'Cauldron' is 'cook'ed,
 -- they can be modified with functions like 'adjust', in order to change the
 -- base bean 'Constructor', or add or remove decorators.
-data Recipe m bean = Recipe 
-    { -- | How to build the bean itself.
-      bean :: Constructor m bean,
-      -- | A 'Data.Sequence.Sequence' of decorators that will wrap the bean. There might be no decorators.
-      --
-      -- See 'fromDecoList', 'Data.Sequence.|>' and 'Data.Sequence.<|'.
-      decos :: Seq (Constructor m bean)
-    } deriving stock Functor 
+data Recipe m bean = Recipe
+  { -- | How to build the bean itself.
+    bean :: Constructor m bean,
+    -- | A 'Data.Sequence.Sequence' of decorators that will wrap the bean. There might be no decorators.
+    --
+    -- See 'fromDecoList', 'Data.Sequence.|>' and 'Data.Sequence.<|'.
+    decos :: Seq (Constructor m bean)
+  }
 
 fromDecoList :: [Constructor m bean] -> Seq (Constructor m bean)
 fromDecoList = Data.Sequence.fromList
@@ -393,7 +393,7 @@ data ConstructorReps where
 -- Only one recipe is allowed for each bean type, so 'insert' for a
 -- bean will overwrite any previous recipe for that bean.
 insert ::
-  forall (bean :: Type) m recipe.
+  forall (bean :: Type) recipe m.
   (Typeable bean, ToRecipe recipe, HasCallStack) =>
   recipe m bean ->
   Cauldron m ->
@@ -971,43 +971,42 @@ unsafeTreeToNonEmpty = \case
 -- constructor will allocate resources with bracket-like operations, and in that
 -- case a monad like 'Cauldron.Managed.Managed' might be needed instead.
 data Constructor m bean = Constructor CallStack (Args (m (Regs bean)))
-  deriving stock (Functor)
 
 -- | Create a 'Constructor' from an 'Args' value that returns a 'bean'.
 --
 -- Usually, the 'Args' value will be created by 'wire'ing a constructor function.
-val_ :: (Applicative m, HasCallStack) => Args bean -> Constructor m bean
+val_ :: forall bean m. (Applicative m, HasCallStack) => Args bean -> Constructor m bean
 val_ x = Constructor callStack $ fmap (pure . pure) x
 
 -- | Like 'val_', but examines the @nested@ value returned by the 'Args' looking
 -- for (potentially nested) tuples.  All tuple components except the
 -- rightmost-innermost one are registered as secondary beans (if they have
 -- 'Monoid' instances, otherwise 'val' won't compile).
-val :: (Applicative m, Registrable nested bean, HasCallStack) => Args nested -> Constructor m bean
+val :: forall nested bean m. (Registrable nested bean, Applicative m, HasCallStack) => Args nested -> Constructor m bean
 val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity x)
 
 -- | Like 'val', but uses an alternative form of registering secondary beans.
 -- Less 'Registrable' typeclass magic, but more verbose.
-val' :: (Applicative m, HasCallStack) => Args (Regs bean) -> Constructor m bean
+val' :: forall bean m. (Applicative m, HasCallStack) => Args (Regs bean) -> Constructor m bean
 val' x = Constructor callStack $ fmap pure x
 
 -- | Create a 'Constructor' from an 'Args' value that returns an initialization
 -- effect that produces 'bean'.
 --
 -- Usually, the 'Args' value will be created by 'wire'ing an effectul constructor function.
-eff_ :: (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
+eff_ :: forall bean m. (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
 eff_ x = Constructor callStack $ fmap (fmap pure) x
 
 -- | Like 'eff_', but examines the @nested@ value produced by the action
 -- returned by the 'Args' looking for (potentially nested) tuples.  All tuple
 -- components except the rightmost-innermost one are registered as secondary
 -- beans (if they have 'Monoid' instances, otherwise 'eff' won't compile).
-eff :: (Monad m, Registrable nested bean, HasCallStack) => Args (m nested) -> Constructor m bean
+eff :: forall nested bean m. (Registrable nested bean, Monad m, HasCallStack) => Args (m nested) -> Constructor m bean
 eff x = withFrozenCallStack (eff' $ register x)
 
 -- | Like 'eff', but uses an alternative form of registering secondary beans.
 -- Less 'Registrable' typeclass magic, but more verbose.
-eff' :: (HasCallStack) => Args (m (Regs bean)) -> Constructor m bean
+eff' :: forall bean m. (HasCallStack) => Args (m (Regs bean)) -> Constructor m bean
 eff' = Constructor callStack
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
