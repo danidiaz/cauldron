@@ -131,6 +131,7 @@ module Cauldron
     prettyRecipeErrorLines,
 
     -- ** Drawing deps
+    getDependencyGraph,
     DependencyGraph,
     exportToDot,
     defaultStepToText,
@@ -512,10 +513,10 @@ cook ::
   (Monad m) =>
   Fire m ->
   Cauldron m ->
-  Either RecipeError (DependencyGraph, m Beans)
-cook fire cauldron = do
-  let result = cookTree (Node (fire, cauldron) [])
-  result <&> \(tg, m) -> (rootLabel tg, rootLabel <$> m)
+  Either RecipeError (m Beans)
+cook fire cauldron =
+  fmap @(Either RecipeError) (fmap @m rootLabel) $
+  cookTree (Node (fire, cauldron) []) 
 
 -- | Cook a nonempty list of 'Cauldron's.
 --
@@ -527,10 +528,10 @@ cookNonEmpty ::
   forall m.
   (Monad m) =>
   NonEmpty (Fire m, Cauldron m) ->
-  Either RecipeError (NonEmpty DependencyGraph, m (NonEmpty Beans))
+  Either RecipeError (m (NonEmpty Beans))
 cookNonEmpty nonemptyCauldronList = do
-  let result = cookTree (nonEmptyToTree nonemptyCauldronList)
-  result <&> \(ng, m) -> (unsafeTreeToNonEmpty ng, unsafeTreeToNonEmpty <$> m)
+  fmap @(Either RecipeError) (fmap @m unsafeTreeToNonEmpty) $
+    cookTree (nonEmptyToTree nonemptyCauldronList)
 
 -- | Cook a hierarchy of 'Cauldron's.
 --
@@ -542,18 +543,21 @@ cookTree ::
   forall m.
   (Monad m) =>
   Tree (Fire m, Cauldron m) ->
-  Either RecipeError (Tree DependencyGraph, m (Tree Beans))
+  Either RecipeError (m (Tree Beans))
 cookTree (treecipes) = do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans (snd <$> treecipes)
   () <- first MissingDependenciesError do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
   treeplan <- first DependencyCycleError do buildPlans (Map.keysSet accumMap) treecipes
-  Right
-    ( treeplan <&> \(graph, _) -> DependencyGraph {graph},
-      followPlan (fromDynList (Data.Foldable.toList accumMap)) (snd <$> treeplan)
-    )
+  Right $ followPlan (fromDynList (Data.Foldable.toList accumMap)) (treeplan)
 
 newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
   deriving stock (Show)
+
+getDependencyGraph :: Cauldron m -> DependencyGraph
+getDependencyGraph cauldron =
+  let (accumMap, _) = cauldronRegs cauldron
+      (_, deps) = buildDepsCauldron (Map.keysSet accumMap) cauldron
+   in DependencyGraph { graph = Graph.edges deps }
 
 checkNoDoubleDutyBeans ::
   Tree (Cauldron m) ->
@@ -637,7 +641,7 @@ demandsByConstructorsInCauldron Cauldron {recipes} = do
 newtype DependencyCycle = DependencyCycle (NonEmpty (BeanConstructionStep, Maybe CallStack))
   deriving stock (Show)
 
-buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either DependencyCycle (Tree (AdjacencyMap BeanConstructionStep, (Plan, Fire m, Cauldron m)))
+buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either DependencyCycle (Tree (Plan, Fire m, Cauldron m))
 buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) -> do
   let (locations, deps) = buildDepsCauldron secondary cauldron
   -- We may omit some dependency edges to allow for cyclic dependencies.
@@ -646,8 +650,7 @@ buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) ->
     Left recipeCycle ->
       Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
     Right (reverse -> plan) -> do
-      let completeGraph = Graph.edges deps
-      Right (completeGraph, (plan, fire, cauldron))
+      Right (plan, fire, cauldron)
 
 buildDepsCauldron :: Set TypeRep -> Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
 buildDepsCauldron secondary Cauldron {recipes} = do
@@ -900,7 +903,7 @@ defaultStepToText =
         BarePrimaryBean rep -> p rep <> Data.Text.pack "#bare"
         PrimaryBeanDeco rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
         PrimaryBean rep -> p rep
-        SecondaryBean rep -> p rep <> Data.Text.pack "#reg"
+        SecondaryBean rep -> p rep <> Data.Text.pack "#agg"
 
 nonEmptyToTree :: NonEmpty a -> Tree a
 nonEmptyToTree = \case

@@ -188,9 +188,11 @@ boringWiring = do
 -- graph we may want to draw.
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO Entrypoint)
-coolWiring fire = do
-  let cauldron :: Cauldron IO =
+coolWiring :: Either RecipeError (IO Entrypoint)
+coolWiring = fmap (fmap (fromJust . taste @Entrypoint)) do cook allowSelfDeps cauldron
+
+cauldron :: Cauldron IO
+cauldron :: Cauldron IO =
         fromRecipeList
           [ recipe @A $ val $ pure makeA,
             recipe @B $ val $ pure makeB,
@@ -218,7 +220,6 @@ coolWiring fire = do
                 },
             recipe @Entrypoint $ val do wire Entrypoint
           ]
-  fmap (fmap (fmap (fromJust . taste @Entrypoint))) do cook fire cauldron
 
 main :: IO ()
 main = do
@@ -230,15 +231,16 @@ main = do
     print z
     runInitializer
   -- wiring with Cauldron
-  case coolWiring allowSelfDeps of
+  let depGraph = getDependencyGraph cauldron
+  exportToDot defaultStepToText "beans.dot" depGraph
+  exportToDot defaultStepToText "beans-no-agg.dot" do removeSecondaryBeans do depGraph
+  exportToDot defaultStepToText "beans-no-agg-no-decos.dot" do removeDecos do removeSecondaryBeans do depGraph
+  exportToDot defaultStepToText "beans-simple.dot" do collapseToPrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
+  exportToDot defaultStepToText "beans-simple-with-decos.dot" do collapseToPrimaryBeans do removeSecondaryBeans do depGraph
+  case coolWiring of
     Left badBeans -> do
       putStrLn $ prettyRecipeError badBeans
-    Right (depGraph, action) -> do
-      exportToDot defaultStepToText "beans.dot" depGraph
-      exportToDot defaultStepToText "beans-no-agg.dot" do removeSecondaryBeans do depGraph
-      exportToDot defaultStepToText "beans-no-agg-no-decos.dot" do removeDecos do removeSecondaryBeans do depGraph
-      exportToDot defaultStepToText "beans-simple.dot" do collapseToPrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
-      exportToDot defaultStepToText "beans-simple-with-decos.dot" do collapseToPrimaryBeans do removeSecondaryBeans do depGraph
+    Right action -> do
       Entrypoint (Initializer {runInitializer}) (Inspector {inspect}) z <- action
       inspection <- inspect
       print inspection
