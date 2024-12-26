@@ -95,7 +95,7 @@ tests =
         ref <- newIORef []
         case cook allowSelfDeps (managedCauldron ref) of
           Left _ -> assertFailure "could not wire"
-          Right (_, beansAction) -> with beansAction \boiledBeans -> do
+          Right beansAction -> with beansAction \boiledBeans -> do
             let (Logger {logMessage}, (Weird {anotherWeirdOp}) :: Weird IO) = fromJust . taste $ boiledBeans
             logMessage "foo"
             anotherWeirdOp

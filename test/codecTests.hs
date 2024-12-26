@@ -118,7 +118,7 @@ tests =
           Left _ -> do
             -- putStrLn $ prettyRecipeError err
             assertFailure "could not wire"
-          Right (_, Identity bs) ->
+          Right (Identity bs) ->
             case taste bs of
               Nothing -> assertFailure "serializer not found"
               Just (Serializer {runSerializer}) -> do
@@ -129,7 +129,7 @@ tests =
           case cook fire cauldron of
             Left (DependencyCycleError _) -> pure ()
             Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
-            Right (_, _) -> assertFailure $ "Unexpected success when wiring" ++ name,
+            Right _ -> assertFailure $ "Unexpected success when wiring" ++ name,
       testCase "cyclic wiring with accums" do
         Data.Foldable.for_ @[]
           [ ("normal", cauldronAccums1, Acc 15),
@@ -140,7 +140,7 @@ tests =
               Left _err -> do
                 -- putStrLn $ prettyRecipeError err
                 assertFailure $ "could not wire " ++ name
-              Right (_, Identity bs) ->
+              Right (Identity bs) ->
                 case taste bs of
                   Nothing -> assertFailure $ "accum not found " ++ name
                   Just (acc :: Acc) -> do
@@ -154,7 +154,7 @@ tests =
             case cook allowDepCycles c of
               Left (DependencyCycleError _) -> pure ()
               Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
-              Right (_, _) -> assertFailure $ "Unexpected success when wiring" ++ name
+              Right _ -> assertFailure $ "Unexpected success when wiring" ++ name
     ]
 
 main :: IO ()

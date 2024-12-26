@@ -107,37 +107,39 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: F -> Z -> (Initializer, Z)
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-coolWiring :: Fire IO -> Either RecipeError (DependencyGraph, IO Entrypoint)
+coolWiring :: Fire IO -> Either RecipeError (IO Entrypoint)
 coolWiring fire = do
-  let cauldron :: Cauldron IO =
-        fromRecipeList
-          [ recipe $ val $ pure makeA,
-            recipe $ val $ pure makeB,
-            recipe $ val $ wire makeC,
-            recipe $ val $ wire makeD,
-            recipe $ val $ wire makeE,
-            recipe @F $ val $ wire makeF,
-            recipe @G
-              Recipe
-                { bean = val $ wire makeG,
-                  decos =
-                    fromDecoList
-                      [ val $ wire makeGDeco1
-                      ]
-                },
-            recipe @H $ val $ wire makeH,
-            recipe @Z
-              Recipe
-                { bean = val $ wire makeZ,
-                  decos =
-                    fromDecoList
-                      [ val $ wire makeZDeco1,
-                        val $ wire makeZDeco2
-                      ]
-                },
-            recipe @Entrypoint $ val $ wire Entrypoint
-          ]
-  fmap (fmap (fmap (fromJust . taste @Entrypoint))) do cook fire cauldron
+  fmap (fmap (fromJust . taste @Entrypoint)) $ cook fire cauldron
+
+cauldron :: Cauldron IO
+cauldron :: Cauldron IO =
+  fromRecipeList
+    [ recipe $ val $ pure makeA,
+      recipe $ val $ pure makeB,
+      recipe $ val $ wire makeC,
+      recipe $ val $ wire makeD,
+      recipe $ val $ wire makeE,
+      recipe @F $ val $ wire makeF,
+      recipe @G
+        Recipe
+          { bean = val $ wire makeG,
+            decos =
+              fromDecoList
+                [ val $ wire makeGDeco1
+                ]
+          },
+      recipe @H $ val $ wire makeH,
+      recipe @Z
+        Recipe
+          { bean = val $ wire makeZ,
+            decos =
+              fromDecoList
+                [ val $ wire makeZDeco1,
+                  val $ wire makeZDeco2
+                ]
+          },
+      recipe @Entrypoint $ val $ wire Entrypoint
+    ]
 
 data Entrypoint = Entrypoint Initializer Inspector Z
 

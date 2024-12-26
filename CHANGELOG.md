@@ -7,6 +7,9 @@
   Also make the internals of the library less dependent on n-ary tuples. Now
   they are more of an added layer for convenience.
 
+* The `cook` family of functions don't return a `DependencyGraph` anymore. Instead, the 
+  graph can be obtained at any moment using `getDependencyGraph`, even for non-wireable `Cauldron`s.
+
 * `BoiledBeans` is now just `Beans` and has its own module.
 
 * A new `Cauldron.Args` module which defines the `Args` applicative.
@@ -25,12 +28,11 @@
 
 * New `allowDepCycles` `Fire`.
 
-* Now `DependencyGraph` render all the dependencies, even when some are ignored during plan construction 
-  to allow for dependency cycles.
+* Now `DependencyGraph` renders all the dependencies, even those that are ignored during plan construction to allow for dependency cycles.
 
 * New `Monoid` instance for `DependencyGraph`.
 
-* `BadBeans` is now `RecipeError`.
+* `BadBeans` is now `RecipeError`. It has now an `Exception` instance and a pretty function.
 
 * Now `Constructor`s and `Recipe`s keep track of the `CallStack` of when they were created. This is used
   by errors to print the relevant code locations.

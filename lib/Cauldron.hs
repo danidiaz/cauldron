@@ -516,7 +516,7 @@ cook ::
   Either RecipeError (m Beans)
 cook fire cauldron =
   fmap @(Either RecipeError) (fmap @m rootLabel) $
-  cookTree (Node (fire, cauldron) []) 
+    cookTree (Node (fire, cauldron) [])
 
 -- | Cook a nonempty list of 'Cauldron's.
 --
@@ -557,7 +557,7 @@ getDependencyGraph :: Cauldron m -> DependencyGraph
 getDependencyGraph cauldron =
   let (accumMap, _) = cauldronRegs cauldron
       (_, deps) = buildDepsCauldron (Map.keysSet accumMap) cauldron
-   in DependencyGraph { graph = Graph.edges deps }
+   in DependencyGraph {graph = Graph.edges deps}
 
 checkNoDoubleDutyBeans ::
   Tree (Cauldron m) ->

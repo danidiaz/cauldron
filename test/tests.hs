@@ -13,7 +13,6 @@ import Cauldron
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer
-import Data.Foldable qualified
 import Data.Function ((&))
 import Data.Functor.Identity
 import Data.IORef
@@ -198,7 +197,7 @@ tests =
     [ testCase "value" do
         (_, traces) <- case cook' cauldron of
           Left _ -> assertFailure "could not wire"
-          Right (_, beansAction) -> runWriterT do
+          Right beansAction -> runWriterT do
             boiledBeans <- beansAction
             let (Initializer {runInitializer}, Repository {findById, store}) = fromJust . taste $ boiledBeans
             runInitializer
@@ -215,9 +214,9 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        (dgs, traces) <- case cookNonEmpty' cauldronNonEmpty of
+        ((), traces) <- case cookNonEmpty' cauldronNonEmpty of
           Left _ -> assertFailure "could not wire"
-          Right (dgs, beansAction) -> do
+          Right beansAction -> do
             runWriterT do
               _ Data.List.NonEmpty.:| [boiledBeans] <- beansAction
               let ( Initializer {runInitializer},
@@ -228,7 +227,7 @@ tests =
               store 1 "foo"
               _ <- findById 1
               anotherWeirdOp
-              pure dgs
+              pure ()
         assertEqual
           "traces"
           [ "logger constructor",
@@ -248,7 +247,7 @@ tests =
             "weirdOp 2"
           ]
           traces
-        case dgs of
+        case getDependencyGraph <$> cauldronNonEmpty of
           dg1 Data.List.NonEmpty.:| [dg2] -> do
             let _adj1 = toAdjacencyMap dg1
             let adj2 = toAdjacencyMap dg2
@@ -257,11 +256,11 @@ tests =
             when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
               assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
             pure ()
-          _ -> assertEqual "number of dependency graphs" 2 (Data.Foldable.length dgs),
+          _ -> assertFailure "should never happen, malformed test",
       testCase "tree of cauldrons" do
         case cookTree' treeOfCauldrons of
           Left err -> assertFailure $ "failed to build tree: " ++ show err
-          Right (_trees, Identity beans) -> case beans of
+          Right (Identity beans) -> case beans of
             Node bbase [Node bbranch1 [], Node bbranch2 []] ->
               assertEqual
                 "expected accs across brances"
@@ -271,7 +270,7 @@ tests =
       testCase "lonely beans get built" do
         (_, _) <- case cook' cauldronLonely of
           Left _ -> assertFailure "could not wire"
-          Right (_, beansAction) -> runWriterT do
+          Right beansAction -> runWriterT do
             boiledBeans <- beansAction
             let Lonely {soLonely} = fromJust . taste $ boiledBeans
             soLonely

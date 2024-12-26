@@ -193,33 +193,33 @@ coolWiring = fmap (fmap (fromJust . taste @Entrypoint)) do cook allowSelfDeps ca
 
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =
-        fromRecipeList
-          [ recipe @A $ val $ pure makeA,
-            recipe @B $ val $ pure makeB,
-            recipe @C $ val $ wire makeC,
-            recipe @D $ val $ wire makeD,
-            recipe @E $ val $ wire makeE,
-            recipe @F $ val $ wire makeF,
-            recipe @G $
-              Recipe
-                { bean = val $ wire makeG,
-                  decos =
-                    fromDecoList
-                      [ val $ wire makeGDeco1
-                      ]
-                },
-            recipe @H $ val $ wire makeH,
-            recipe @Z
-              Recipe
-                { bean = val do wire makeZ,
-                  decos =
-                    fromDecoList
-                      [ val $ wire makeZDeco1,
-                        val $ wire makeZDeco2
-                      ]
-                },
-            recipe @Entrypoint $ val do wire Entrypoint
-          ]
+  fromRecipeList
+    [ recipe @A $ val $ pure makeA,
+      recipe @B $ val $ pure makeB,
+      recipe @C $ val $ wire makeC,
+      recipe @D $ val $ wire makeD,
+      recipe @E $ val $ wire makeE,
+      recipe @F $ val $ wire makeF,
+      recipe @G $
+        Recipe
+          { bean = val $ wire makeG,
+            decos =
+              fromDecoList
+                [ val $ wire makeGDeco1
+                ]
+          },
+      recipe @H $ val $ wire makeH,
+      recipe @Z
+        Recipe
+          { bean = val do wire makeZ,
+            decos =
+              fromDecoList
+                [ val $ wire makeZDeco1,
+                  val $ wire makeZDeco2
+                ]
+          },
+      recipe @Entrypoint $ val do wire Entrypoint
+    ]
 
 main :: IO ()
 main = do
