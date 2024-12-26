@@ -69,9 +69,10 @@ module Cauldron
     delete,
     keysSet,
     restrictKeys,
-    hoistCauldron,
     fromRecipeList,
     toRecipeMap,
+    hoistCauldron,
+    hoistCauldron',
 
     -- * Recipes
     Recipe (..),
@@ -80,6 +81,7 @@ module Cauldron
     (Data.Sequence.|>),
     (Data.Sequence.<|),
     hoistRecipe,
+    hoistRecipe',
 
     -- ** How decorators work
     -- $decos
@@ -100,9 +102,10 @@ module Cauldron
     eff,
     eff',
     wire,
-    hoistConstructor,
     getConstructorArgs,
     getConstructorCallStack,
+    hoistConstructor,
+    hoistConstructor',
 
     -- ** Registering secondary beans
     -- $secondarybeans
@@ -211,6 +214,21 @@ instance IsList (Cauldron m) where
 hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
 hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$> recipes}
 
+-- | More general form of 'hoistCauldron'' that lets you modify the 'Args'
+-- inside all the 'Recipe's in the 'Cauldron'. See 'hoistRecipe''.
+hoistCauldron' ::
+  forall m n.
+  -- | Transformation to apply to the base constructor of each recipe.
+  (forall x. (Typeable x) => Args (m (Regs x)) -> Args (n (Regs x))) ->
+  -- | Transformation to apply to each decorator. Takes the decorator index as parameter.
+  (forall x. (Typeable x) => Int -> Args (m (Regs x)) -> Args (n (Regs x))) ->
+  Cauldron m ->
+  Cauldron n
+hoistCauldron' f fds Cauldron {recipes} =
+  Cauldron
+    { recipes = Map.map (hoistSomeRecipe' f fds) recipes
+    }
+
 -- | In order to put recipes producing different bean types into a container, we
 -- need to hide each recipe's bean type. This wrapper allows that.
 data SomeRecipe m where
@@ -243,6 +261,18 @@ toRecipeMap Cauldron {recipes} = recipes
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
 hoistSomeRecipe f (SomeRecipe stack bean) = SomeRecipe stack do hoistRecipe f bean
+
+hoistSomeRecipe' ::
+  forall m n.
+  (forall x. (Typeable x) => Args (m (Regs x)) -> Args (n (Regs x))) ->
+  (forall x. (Typeable x) => Int -> Args (m (Regs x)) -> Args (n (Regs x))) ->
+  SomeRecipe m ->
+  SomeRecipe n
+hoistSomeRecipe' f fds = withRecipe go
+  where
+    go :: forall bean. (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe n
+    go _callStack theRecipe =
+      SomeRecipe _callStack (hoistRecipe' (f @bean) (fds @bean) theRecipe)
 
 -- | Instructions for how to build a value of type @bean@ while possibly
 -- performing actions in the monad @m@.
@@ -283,6 +313,21 @@ hoistRecipe f (Recipe {bean, decos}) =
   Recipe
     { bean = hoistConstructor f bean,
       decos = hoistConstructor f <$> decos
+    }
+
+-- | More general form of 'hoistRecipe' that enables precise control over the inner `Args`
+-- of each constructor in the 'Recipe'.
+hoistRecipe' ::
+  -- | Transformation to apply to the base constructor.
+  (Args (m (Regs bean)) -> Args (n (Regs bean))) ->
+  -- | Transformation to apply to each decorator. Takes the decorator index as parameter.
+  (Int -> Args (m (Regs bean)) -> Args (n (Regs bean))) ->
+  Recipe m bean ->
+  Recipe n bean
+hoistRecipe' f fds (Recipe {bean, decos}) =
+  Recipe
+    { bean = hoistConstructor' f bean,
+      decos = Data.Sequence.mapWithIndex (\i deco -> hoistConstructor' (fds i) deco) decos
     }
 
 -- $decos
@@ -974,6 +1019,10 @@ runConstructor bss (Constructor _ args) = do
 -- | Change the monad in which the 'Constructor'\'s effects take place.
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
 hoistConstructor f (Constructor theStack theArgs) = Constructor theStack do fmap f theArgs
+
+-- | More general form of 'hoistConstructor' that enables precise control over the inner `Args`.
+hoistConstructor' :: (Args (m (Regs bean)) -> Args (n (Regs bean))) -> Constructor m bean -> Constructor n bean
+hoistConstructor' f (Constructor theStack theArgs) = Constructor theStack do f theArgs
 
 -- | Get the inner 'Args' value for the 'Constructor', typically for inspecting
 -- 'TypeRep's of its arguments/registrations.
