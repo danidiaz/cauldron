@@ -55,7 +55,7 @@
 --           recipe @B $ val $ wire makeB,
 --           recipe @C $ eff $ wire makeC -- we use eff because the constructor has IO effects
 --         ]
---       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
+--   action <- either throwIO pure $ cook forbidDepCycles cauldron
 --   beans <- action
 --   pure $ taste @C beans
 -- :}
@@ -88,7 +88,7 @@ module Cauldron
     SomeRecipe,
     recipe,
     withRecipe,
-    getRecipeCallStacks,
+    getRecipeCallStack,
 
     -- * Constructors
     -- $constructors
@@ -214,17 +214,16 @@ hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$>
 -- | In order to put recipes producing different bean types into a container, we
 -- need to hide each recipe's bean type. This wrapper allows that.
 data SomeRecipe m where
-  SomeRecipe :: (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> SomeRecipe m
+  SomeRecipe :: (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe m
 
 -- | Build a 'SomeRecipe' from a 'Recipe' or a 'Constructor'. See 'ToRecipe'.
 recipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe, HasCallStack) => recipe m bean -> SomeRecipe m
 recipe theRecipe = withFrozenCallStack do
-  let initialStacks = Data.List.NonEmpty.singleton callStack
-  SomeRecipe initialStacks (toRecipe theRecipe)
+  SomeRecipe callStack (toRecipe theRecipe)
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
-withRecipe :: forall m r. (forall bean. (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
-withRecipe f (SomeRecipe stacks theRecipe) = f stacks theRecipe
+withRecipe :: forall m r. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
+withRecipe f (SomeRecipe _callStack theRecipe) = f _callStack theRecipe
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
 fromRecipeList =
@@ -233,10 +232,10 @@ fromRecipeList =
     do empty
   where
     -- Here we take care to preserve the initial call stacks
-    inserter :: forall bean m. (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> Cauldron m -> Cauldron m
-    inserter stacks r Cauldron {recipes} =
+    inserter :: forall bean m. (Typeable bean) => CallStack -> Recipe m bean -> Cauldron m -> Cauldron m
+    inserter _callStack r Cauldron {recipes} =
       Cauldron
-        { recipes = Map.insert (typeRep (Proxy @bean)) (SomeRecipe stacks r) recipes
+        { recipes = Map.insert (typeRep (Proxy @bean)) (SomeRecipe _callStack r) recipes
         }
 
 toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
@@ -323,7 +322,7 @@ hoistRecipe f (Recipe {bean, decos}) =
 --               ]
 --           }
 --         ]
---       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
+--   action <- either throwIO pure $ cook forbidDepCycles cauldron
 --   beans <- action
 --   let Just Foo {sayFoo} = taste beans
 --   sayFoo
@@ -359,13 +358,12 @@ insert ::
   Cauldron m
 insert aRecipe Cauldron {recipes} = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
-  let initialStacks = Data.List.NonEmpty.singleton callStack
-  Cauldron {recipes = Map.insert rep (SomeRecipe initialStacks (toRecipe aRecipe)) recipes}
+  Cauldron {recipes = Map.insert rep (SomeRecipe callStack (toRecipe aRecipe)) recipes}
 
 -- | Tweak a 'Recipe' inside the 'Cauldron', if the recipe exists.
 adjust ::
   forall bean m.
-  (Typeable bean, HasCallStack) =>
+  (Typeable bean) =>
   (Recipe m bean -> Recipe m bean) ->
   Cauldron m ->
   Cauldron m
@@ -375,10 +373,10 @@ adjust f (Cauldron {recipes}) = withFrozenCallStack do
     { recipes =
         Map.adjust
           do
-            \(SomeRecipe stacks (r :: Recipe m a)) ->
+            \(SomeRecipe _callStack (r :: Recipe m a)) ->
               case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
                 Nothing -> error "should never happen"
-                Just Refl -> SomeRecipe (Data.List.NonEmpty.appendList stacks [callStack]) (f r)
+                Just Refl -> SomeRecipe _callStack (f r)
           rep
           recipes
     }
@@ -575,7 +573,7 @@ cauldronTreeRegs = foldMap cauldronRegs
 cauldronRegs :: Cauldron m -> (Map TypeRep (CallStack, Dynamic), Map TypeRep CallStack)
 cauldronRegs Cauldron {recipes} =
   Map.foldMapWithKey
-    do \rep aRecipe -> (recipeRegs aRecipe, Map.singleton rep (Data.List.NonEmpty.head $ getRecipeCallStacks aRecipe))
+    do \rep aRecipe -> (recipeRegs aRecipe, Map.singleton rep (getRecipeCallStack aRecipe))
     recipes
 
 -- | Returns the accumulators, not the main bean
@@ -692,7 +690,7 @@ buildDepsCauldron secondary Cauldron {recipes} = do
                 zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
         ( Map.fromList $
             [ (bareBean, getConstructorCallStack bean),
-              (boiledBean, Data.List.NonEmpty.head recipeCallStack)
+              (boiledBean, recipeCallStack)
             ]
               ++ do
                 (decoStep, decoCon) <- decos
@@ -987,10 +985,10 @@ getConstructorArgs (Constructor _ theArgs) = theArgs
 getConstructorCallStack :: Constructor m bean -> CallStack
 getConstructorCallStack (Constructor stack _) = stack
 
--- | For debugging purposes, 'SomeRecipe's remember the 'CallStack's
--- of when they were created or 'adjust'ed.
-getRecipeCallStacks :: SomeRecipe m -> NonEmpty CallStack
-getRecipeCallStacks (SomeRecipe stacks _) = stacks
+-- | For debugging purposes, 'SomeRecipe's remember the 'CallStack'
+-- of when they were created.
+getRecipeCallStack :: SomeRecipe m -> CallStack
+getRecipeCallStack (SomeRecipe _callStack _) = _callStack
 
 -- | The set of all 'TypeRep' keys of the map.
 keysSet :: Cauldron m -> Set TypeRep
@@ -1069,11 +1067,10 @@ restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recip
 --           recipe @V $ val $ wire makeV,
 --           recipe @W $ val $ wire W
 --         ]
---       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
---   beans <- action
+--   Identity beans <- either throwIO pure $ cook forbidDepCycles cauldron
 --   pure $ taste @W beans
 -- :}
--- Identity (Just (W (Sum {getSum = 8})))
+-- Just (W (Sum {getSum = 8}))
 
 -- $setup
 -- >>> :set -XBlockArguments
@@ -1082,3 +1079,5 @@ restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recip
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
 -- >>> import Data.Monoid
+-- >>> import Data.Either (either)
+-- >>> import Control.Exception (throwIO)
