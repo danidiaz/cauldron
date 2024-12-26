@@ -279,16 +279,14 @@ hoistSomeRecipe' f fds = withRecipe go
 -- Because the instructions aren't really run until the 'Cauldron' is 'cook'ed,
 -- they can be modified with functions like 'adjust', in order to change the
 -- base bean 'Constructor', or add or remove decorators.
-data Recipe m bean where
-  Recipe ::
+data Recipe m bean = Recipe 
     { -- | How to build the bean itself.
       bean :: Constructor m bean,
       -- | A 'Data.Sequence.Sequence' of decorators that will wrap the bean. There might be no decorators.
       --
       -- See 'fromDecoList', 'Data.Sequence.|>' and 'Data.Sequence.<|'.
       decos :: Seq (Constructor m bean)
-    } ->
-    Recipe m bean
+    } deriving stock Functor 
 
 fromDecoList :: [Constructor m bean] -> Seq (Constructor m bean)
 fromDecoList = Data.Sequence.fromList
