@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+
 module Cauldron.Managed
   ( -- * The Managed monad for handling resources
     Managed,
