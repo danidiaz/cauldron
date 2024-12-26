@@ -227,7 +227,13 @@ manyMemptys reps =
 -- caused undesirable strictness when doing weird things like reading values
 -- \"from the future\".
 --
--- If more safety is needed, one can perform additional checks with the help of 'getArgsReps'.
+-- >>> :{
+-- runArgs (taste Cauldron.Beans.empty) (arg @Int)
+-- :}
+-- *** Exception: LazilyReadBeanMissing Int
+--
+-- If more safety is needed, one can perform additional preliminary checks with
+-- the help of 'getArgsReps'.
 newtype LazilyReadBeanMissing = LazilyReadBeanMissing TypeRep
   deriving stock (Show)
   deriving anyclass (Exception)

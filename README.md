@@ -66,7 +66,7 @@ Having more than one constructor for the same bean type is disallowed. The
 wiring is *type-directed*, so there can't be any ambiguity about which bean
 constructor to use.
 
-## Registering secondary beans
+## Monoidally aggregated secondary beans
 
 More complex constructors can return—besides a "primary" bean as seen in the
 previous section—one or more "secondary" beans. For example:
@@ -94,10 +94,6 @@ the bean as a regular argument. Here, `makeDebuggingServer` receives the
 ```
 makeDebuggingServer :: Inspector -> IO DebuggingServer
 ```
-
-Constructors that produce secondary beans require a bit more work from the
-**cauldron** user. He must tell the library which is the primary bean and which
-are the secondary ones, because it's not detected automatically.
 
 ## Decorators
 
@@ -162,5 +158,3 @@ Some features I'm not yet sure how to mimic:
 # See also
 
 - [registry](https://hackage.haskell.org/package/registry) is a more mature and useable library for dependency injection in Haskell. See [this explanatory video](https://www.youtube.com/watch?v=fFCcvsbCrH8).
-
-- [di library for Python](https://python-dependency-injector.ets-labs.org/). [tweet](https://twitter.com/mr_le_fox/status/1754132600459784364).
