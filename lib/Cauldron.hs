@@ -231,16 +231,17 @@ hoistCauldron' f fds Cauldron {recipeMap} =
 -- | In order to put recipes producing different bean types into a container, we
 -- need to hide each recipe's bean type. This wrapper allows that.
 data SomeRecipe m where
-  SomeRecipe :: (Typeable bean) => { _recipeCallStack :: CallStack , _recipe :: Recipe m bean } -> SomeRecipe m
+  SomeRecipe :: (Typeable bean) => {_recipeCallStack :: CallStack, _recipe :: Recipe m bean} -> SomeRecipe m
 
 -- | Build a 'SomeRecipe' from a 'Recipe' or a 'Constructor'. See 'ToRecipe'.
 --
 -- Useful in combination with 'fromRecipeList'.
-recipe :: forall bean m recipelike . (Typeable bean, ToRecipe recipelike, HasCallStack) =>
-       -- | A 'Recipe' or a 'Constructor'.
-       recipelike m bean ->
-       -- |
-       SomeRecipe m
+recipe ::
+  forall bean m recipelike.
+  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
+  -- | A 'Recipe' or a 'Constructor'.
+  recipelike m bean ->
+  SomeRecipe m
 recipe theRecipe = withFrozenCallStack do
   SomeRecipe callStack (toRecipe theRecipe)
 
@@ -265,7 +266,7 @@ toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
 toRecipeMap Cauldron {recipeMap} = recipeMap
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
-hoistSomeRecipe f (SomeRecipe { _recipeCallStack, _recipe}) = SomeRecipe {_recipeCallStack, _recipe = hoistRecipe f _recipe }
+hoistSomeRecipe f r@SomeRecipe {_recipe} = r {_recipe = hoistRecipe f _recipe}
 
 hoistSomeRecipe' ::
   forall m n.
@@ -277,7 +278,7 @@ hoistSomeRecipe' f fds = withRecipe go
   where
     go :: forall bean. (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe n
     go _recipeCallStack theRecipe =
-      SomeRecipe { _recipeCallStack, _recipe =  hoistRecipe' (f @bean) (fds @bean) theRecipe }
+      SomeRecipe {_recipeCallStack, _recipe = hoistRecipe' (f @bean) (fds @bean) theRecipe}
 
 -- | Instructions for how to build a value of type @bean@ while possibly
 -- performing actions in the monad @m@.
@@ -399,10 +400,10 @@ data ConstructorReps where
 -- Only one recipe is allowed for each bean type, so 'insert' for a
 -- bean will overwrite any previous recipe for that bean.
 insert ::
-  forall (bean :: Type) m recipelike .  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
+  forall (bean :: Type) m recipelike.
+  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
   -- | A 'Recipe' or a 'Constructor'.
   recipelike m bean ->
-  -- |
   Cauldron m ->
   Cauldron m
 insert recipelike Cauldron {recipeMap} = withFrozenCallStack do
@@ -422,10 +423,10 @@ adjust f (Cauldron {recipeMap}) = withFrozenCallStack do
     { recipeMap =
         Map.adjust
           do
-            \(SomeRecipe {_recipeCallStack, _recipe = r :: Recipe m a}) ->
+            \r@SomeRecipe {_recipe = _recipe :: Recipe m a} ->
               case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
                 Nothing -> error "should never happen"
-                Just Refl -> SomeRecipe { _recipeCallStack , _recipe = (f r) }
+                Just Refl -> r {_recipe = f _recipe}
           rep
           recipeMap
     }
@@ -711,44 +712,44 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
   (flip Map.foldMapWithKey)
     recipeMap
     \beanRep
-     SomeRecipe {
-         _recipeCallStack,
-         _recipe = Recipe
+     SomeRecipe
+       { _recipeCallStack,
+         _recipe =
+           Recipe
              { bean = bean :: Constructor m bean,
                decos = decoCons
              }
-          
-           }
-       -> do
-        let bareBean = BarePrimaryBean beanRep
-            boiledBean = PrimaryBean beanRep
-            decos = do
-              (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
-              [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
-            beanDeps = do
-              constructorEdges makeTargetStep bareBean (do constructorReps bean)
-            decoDeps = do
-              (decoStep, decoCon) <- decos
-              constructorEdges makeTargetStep decoStep (removeBeanFromArgs do constructorReps decoCon)
-            full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [boiledBean]
-            innerDeps =
-              -- This explicit dependency between the completed bean and its
-              -- "bare" undecorated form is not strictly required. It will
-              -- always exist in an indirect manner, through the decorators.
-              -- But it might be useful when rendering the dep graph.
-              (PrimaryBean beanRep, BarePrimaryBean beanRep)
-                :
-                -- The chain completed bean -> decorators -> bare bean.
-                zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
-        ( Map.fromList $
-            [ (bareBean, getConstructorCallStack bean),
-              (boiledBean, _recipeCallStack)
-            ]
-              ++ do
+       } ->
+        do
+          let bareBean = BarePrimaryBean beanRep
+              boiledBean = PrimaryBean beanRep
+              decos = do
+                (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
+                [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
+              beanDeps = do
+                constructorEdges makeTargetStep bareBean (do constructorReps bean)
+              decoDeps = do
                 (decoStep, decoCon) <- decos
-                [(decoStep, getConstructorCallStack decoCon)],
-          beanDeps ++ decoDeps ++ innerDeps
-          )
+                constructorEdges makeTargetStep decoStep (removeBeanFromArgs do constructorReps decoCon)
+              full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [boiledBean]
+              innerDeps =
+                -- This explicit dependency between the completed bean and its
+                -- "bare" undecorated form is not strictly required. It will
+                -- always exist in an indirect manner, through the decorators.
+                -- But it might be useful when rendering the dep graph.
+                (PrimaryBean beanRep, BarePrimaryBean beanRep)
+                  :
+                  -- The chain completed bean -> decorators -> bare bean.
+                  zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
+          ( Map.fromList $
+              [ (bareBean, getConstructorCallStack bean),
+                (boiledBean, _recipeCallStack)
+              ]
+                ++ do
+                  (decoStep, decoCon) <- decos
+                  [(decoStep, getConstructorCallStack decoCon)],
+            beanDeps ++ decoDeps ++ innerDeps
+            )
 
 constructorEdges ::
   (TypeRep -> BeanConstructionStep) ->
@@ -978,8 +979,8 @@ unsafeTreeToNonEmpty = \case
 -- mutable references that the bean will use internally. Sometimes the
 -- constructor will allocate resources with bracket-like operations, and in that
 -- case a monad like 'Cauldron.Managed.Managed' might be needed instead.
-data Constructor m bean = Constructor { 
-    _constructorCallStack :: CallStack ,
+data Constructor m bean = Constructor
+  { _constructorCallStack :: CallStack,
     _args :: Args (m (Regs bean))
   }
 
@@ -1027,11 +1028,11 @@ runConstructor bss (Constructor {_args}) = do
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
-hoistConstructor f (Constructor { _constructorCallStack, _args}) = Constructor { _constructorCallStack, _args = fmap f _args}
+hoistConstructor f c@Constructor {_args} = c {_args = fmap f _args}
 
 -- | More general form of 'hoistConstructor' that enables precise control over the inner `Args`.
 hoistConstructor' :: (Args (m (Regs bean)) -> Args (n (Regs bean))) -> Constructor m bean -> Constructor n bean
-hoistConstructor' f (Constructor { _constructorCallStack, _args}) = Constructor { _constructorCallStack, _args = f _args }
+hoistConstructor' f c@Constructor {_args} = c {_args = f _args}
 
 -- | Get the inner 'Args' value for the 'Constructor', typically for inspecting
 -- 'TypeRep's of its arguments/registrations.

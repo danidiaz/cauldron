@@ -65,10 +65,10 @@ data Y = Y deriving (Show)
 
 data Z = Z deriving (Show)
 
-newtype Inspector = Inspector {inspect :: IO [String]}
+newtype Inspector = Inspector {_inspect :: IO [String]}
   deriving newtype (Semigroup, Monoid)
 
-newtype Initializer = Initializer {runInitializer :: IO ()}
+newtype Initializer = Initializer {_runInitializer :: IO ()}
   deriving newtype (Semigroup, Monoid)
 
 makeA :: A
