@@ -1009,17 +1009,68 @@ restrictKeys Cauldron {recipes} trs = Cauldron {recipes = Map.restrictKeys recip
 -- $secondarybeans
 --
 -- There is an exception to the 'Cauldron' rule that each bean type can only
--- have a single 'Recipe' in the 'Cauldron'.
--- 
+-- be produced by a single 'Recipe' in the 'Cauldron'.
+--
 -- 'Constructor's can produce, besides their \"primary\" bean result,
 -- \"secondary\" beans that are not reflected in the 'Constructor' signature.
--- Multiple constructors in different recipes can produce secondary beans of the
+-- Multiple constructors across different recipes can produce secondary beans of the
 -- same type.
 --
--- secondary beans [can be depended] are a bit special, in that:
--- - The must have 'Monoid' instances.
--- TBD 
--- 
+-- Secondary beans are a bit special, in that:
+--
+-- * The value that is \"seen"\ by a 'Constructor' that depends on a secondary bean
+--   is the aggregation of /all/ values produced for that bean in the 'Cauldron'. This
+--   means that secondary beans must have 'Monoid' instances, to enable aggregation.
+--
+-- * When calculating build plan steps for a 'Cauldron', 'Constructor's that depend on a
+--   secondary bean come after /all/ of the 'Constructor's that produce that secondary bean.
+--
+-- * Secondary beans can't be decorated.
+--
+-- * A bean type can't be primary and secondary at the same time. See 'DoubleDutyBeansError'.
+--
+-- What are secondary beans useful for?
+--
+-- * Exposing some uniform control or inspection interface for certain beans.
+--
+-- * Registering tasks or workers that must be run after application initialization.
+--
+-- The simplest way of registering secondary beans is to pass an 'Args' value returning a tuple
+-- to the 'val' (for pure constructors) or 'eff' (for effectful constructors) functions. Components
+-- of the tuple other than the rightmost component are considered secondary beans:
+--
+-- >>> :{
+-- con :: Constructor Identity String
+-- con = val $ pure (Sum @Int, All False, "foo")
+-- effCon :: Constructor IO String
+-- effCon = eff $ pure $ pure @IO (Sum @Int, All False, "foo")
+-- :}
+--
+-- Example of how secondary bean values are accumulated:
+--
+-- >>> :{
+-- data U = U deriving Show
+-- data V = V deriving Show
+-- makeU :: (Sum Int, U)
+-- makeU = (Sum 1, U)
+-- makeV :: U -> (Sum Int, V)
+-- makeV = \_ -> (Sum 7, V)
+-- newtype W = W (Sum Int) deriving Show -- depends on the secondary bean
+-- :}
+--
+-- >>> :{
+-- do
+--   let cauldron :: Cauldron Identity
+--       cauldron = [
+--           recipe @U $ val $ wire makeU,
+--           recipe @V $ val $ wire makeV,
+--           recipe @W $ val $ wire W
+--         ]
+--       Right (_ :: DependencyGraph, action) = cook forbidDepCycles cauldron
+--   beans <- action
+--   pure $ taste @W beans
+-- :}
+-- Identity (Just (W (Sum {getSum = 8})))
 
 -- $setup
 -- >>> :set -XBlockArguments
