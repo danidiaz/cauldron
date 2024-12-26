@@ -214,10 +214,9 @@ instance IsList (Cauldron m) where
 hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
 hoistCauldron f (Cauldron {recipes}) = Cauldron {recipes = hoistSomeRecipe f <$> recipes}
 
--- | More general form of 'hoistCauldron'' that lets you modify the 'Args'
+-- | More general form of 'hoistCauldron' that lets you modify the 'Args'
 -- inside all the 'Recipe's in the 'Cauldron'. See 'hoistRecipe''.
 hoistCauldron' ::
-  forall m n.
   -- | Transformation to apply to the base constructor of each recipe.
   (forall x. (Typeable x) => Args (m (Regs x)) -> Args (n (Regs x))) ->
   -- | Transformation to apply to each decorator. Takes the decorator index as parameter.
