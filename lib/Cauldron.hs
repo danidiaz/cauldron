@@ -231,7 +231,7 @@ hoistCauldron' f fds Cauldron {recipeMap} =
 -- | In order to put recipes producing different bean types into a container, we
 -- need to hide each recipe's bean type. This wrapper allows that.
 data SomeRecipe m where
-  SomeRecipe :: (Typeable bean) => { _callStack :: CallStack , _recipe :: Recipe m bean } -> SomeRecipe m
+  SomeRecipe :: (Typeable bean) => { _recipeCallStack :: CallStack , _recipe :: Recipe m bean } -> SomeRecipe m
 
 -- | Build a 'SomeRecipe' from a 'Recipe' or a 'Constructor'. See 'ToRecipe'.
 --
@@ -246,7 +246,7 @@ recipe theRecipe = withFrozenCallStack do
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
 withRecipe :: forall r m. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
-withRecipe f (SomeRecipe {_callStack, _recipe}) = f _callStack _recipe
+withRecipe f (SomeRecipe {_recipeCallStack, _recipe}) = f _recipeCallStack _recipe
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
 fromRecipeList =
@@ -256,16 +256,16 @@ fromRecipeList =
   where
     -- Here we take care to preserve the initial call stacks
     inserter :: forall bean m. (Typeable bean) => CallStack -> Recipe m bean -> Cauldron m -> Cauldron m
-    inserter _callStack _recipe Cauldron {recipeMap} =
+    inserter _recipeCallStack _recipe Cauldron {recipeMap} =
       Cauldron
-        { recipeMap = Map.insert (typeRep (Proxy @bean)) (SomeRecipe _callStack _recipe) recipeMap
+        { recipeMap = Map.insert (typeRep (Proxy @bean)) (SomeRecipe {_recipeCallStack, _recipe}) recipeMap
         }
 
 toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
 toRecipeMap Cauldron {recipeMap} = recipeMap
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
-hoistSomeRecipe f (SomeRecipe { _callStack, _recipe}) = SomeRecipe {_callStack, _recipe = hoistRecipe f _recipe }
+hoistSomeRecipe f (SomeRecipe { _recipeCallStack, _recipe}) = SomeRecipe {_recipeCallStack, _recipe = hoistRecipe f _recipe }
 
 hoistSomeRecipe' ::
   forall m n.
@@ -276,8 +276,8 @@ hoistSomeRecipe' ::
 hoistSomeRecipe' f fds = withRecipe go
   where
     go :: forall bean. (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe n
-    go _callStack theRecipe =
-      SomeRecipe { _callStack, _recipe =  hoistRecipe' (f @bean) (fds @bean) theRecipe }
+    go _recipeCallStack theRecipe =
+      SomeRecipe { _recipeCallStack, _recipe =  hoistRecipe' (f @bean) (fds @bean) theRecipe }
 
 -- | Instructions for how to build a value of type @bean@ while possibly
 -- performing actions in the monad @m@.
@@ -422,10 +422,10 @@ adjust f (Cauldron {recipeMap}) = withFrozenCallStack do
     { recipeMap =
         Map.adjust
           do
-            \(SomeRecipe {_callStack, _recipe = r :: Recipe m a}) ->
+            \(SomeRecipe {_recipeCallStack, _recipe = r :: Recipe m a}) ->
               case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
                 Nothing -> error "should never happen"
-                Just Refl -> SomeRecipe { _callStack , _recipe = (f r) }
+                Just Refl -> SomeRecipe { _recipeCallStack , _recipe = (f r) }
           rep
           recipeMap
     }
@@ -711,14 +711,15 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
   (flip Map.foldMapWithKey)
     recipeMap
     \beanRep
-     ( SomeRecipe
-         recipeCallStack
-         ( Recipe
+     SomeRecipe {
+         _recipeCallStack,
+         _recipe = Recipe
              { bean = bean :: Constructor m bean,
                decos = decoCons
              }
-           )
-       ) -> do
+          
+           }
+       -> do
         let bareBean = BarePrimaryBean beanRep
             boiledBean = PrimaryBean beanRep
             decos = do
@@ -741,7 +742,7 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
                 zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
         ( Map.fromList $
             [ (bareBean, getConstructorCallStack bean),
-              (boiledBean, recipeCallStack)
+              (boiledBean, _recipeCallStack)
             ]
               ++ do
                 (decoStep, decoCon) <- decos
@@ -977,7 +978,10 @@ unsafeTreeToNonEmpty = \case
 -- mutable references that the bean will use internally. Sometimes the
 -- constructor will allocate resources with bracket-like operations, and in that
 -- case a monad like 'Cauldron.Managed.Managed' might be needed instead.
-data Constructor m bean = Constructor CallStack (Args (m (Regs bean)))
+data Constructor m bean = Constructor { 
+    _constructorCallStack :: CallStack ,
+    _args :: Args (m (Regs bean))
+  }
 
 -- | Create a 'Constructor' from an 'Args' value that returns a 'bean'.
 --
@@ -1017,32 +1021,32 @@ eff' :: forall bean m. (HasCallStack) => Args (m (Regs bean)) -> Constructor m b
 eff' = Constructor callStack
 
 runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
-runConstructor bss (Constructor _ args) = do
-  regs <- args & runArgs (Data.Foldable.asum (taste <$> bss))
-  pure (runRegs (getRegsReps args) regs)
+runConstructor bss (Constructor {_args}) = do
+  regs <- _args & runArgs (Data.Foldable.asum (taste <$> bss))
+  pure (runRegs (getRegsReps _args) regs)
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
 hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
-hoistConstructor f (Constructor theStack theArgs) = Constructor theStack do fmap f theArgs
+hoistConstructor f (Constructor { _constructorCallStack, _args}) = Constructor { _constructorCallStack, _args = fmap f _args}
 
 -- | More general form of 'hoistConstructor' that enables precise control over the inner `Args`.
 hoistConstructor' :: (Args (m (Regs bean)) -> Args (n (Regs bean))) -> Constructor m bean -> Constructor n bean
-hoistConstructor' f (Constructor theStack theArgs) = Constructor theStack do f theArgs
+hoistConstructor' f (Constructor { _constructorCallStack, _args}) = Constructor { _constructorCallStack, _args = f _args }
 
 -- | Get the inner 'Args' value for the 'Constructor', typically for inspecting
 -- 'TypeRep's of its arguments/registrations.
 getConstructorArgs :: Constructor m bean -> Args (m (Regs bean))
-getConstructorArgs (Constructor _ theArgs) = theArgs
+getConstructorArgs (Constructor {_args}) = _args
 
 -- | For debugging purposes, 'Constructor's remember the 'CallStack'
 -- of when they were created.
 getConstructorCallStack :: Constructor m bean -> CallStack
-getConstructorCallStack (Constructor stack _) = stack
+getConstructorCallStack (Constructor {_constructorCallStack}) = _constructorCallStack
 
 -- | For debugging purposes, 'SomeRecipe's remember the 'CallStack'
 -- of when they were created.
 getRecipeCallStack :: SomeRecipe m -> CallStack
-getRecipeCallStack (SomeRecipe {_callStack}) = _callStack
+getRecipeCallStack (SomeRecipe {_recipeCallStack}) = _recipeCallStack
 
 -- | The set of all 'TypeRep' keys of the map.
 keysSet :: Cauldron m -> Set TypeRep
