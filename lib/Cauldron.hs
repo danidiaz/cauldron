@@ -86,7 +86,7 @@ module Cauldron
     -- ** How decorators work
     -- $decos
 
-    -- ** Hiding a recipe's bean type
+    -- ** Hiding a 'Recipe''s bean type
     SomeRecipe,
     recipe,
     withRecipe,
@@ -234,7 +234,14 @@ data SomeRecipe m where
   SomeRecipe :: (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe m
 
 -- | Build a 'SomeRecipe' from a 'Recipe' or a 'Constructor'. See 'ToRecipe'.
-recipe :: forall bean recipe m. (Typeable bean, ToRecipe recipe, HasCallStack) => recipe m bean -> SomeRecipe m
+--
+-- Useful in combination with 'fromRecipeList'.
+recipe ::
+  forall bean m recipelike.
+  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
+  -- | A 'Recipe' or a 'Constructor'.
+  recipelike m bean ->
+  SomeRecipe m
 recipe theRecipe = withFrozenCallStack do
   SomeRecipe callStack (toRecipe theRecipe)
 
@@ -393,9 +400,10 @@ data ConstructorReps where
 -- Only one recipe is allowed for each bean type, so 'insert' for a
 -- bean will overwrite any previous recipe for that bean.
 insert ::
-  forall (bean :: Type) recipe m.
-  (Typeable bean, ToRecipe recipe, HasCallStack) =>
-  recipe m bean ->
+  forall (bean :: Type) m recipelike.
+  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
+  -- | A 'Recipe' or a 'Constructor'.
+  recipelike m bean ->
   Cauldron m ->
   Cauldron m
 insert aRecipe Cauldron {recipes} = withFrozenCallStack do
