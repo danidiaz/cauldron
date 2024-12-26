@@ -23,6 +23,7 @@ module Cauldron.Args
     runArgs,
     getArgsReps,
     contramapArgs,
+
     -- ** Reducing 'arg' boilerplate with 'wire'
     Wireable (wire),
 
@@ -69,7 +70,7 @@ import Type.Reflection qualified
 data Args a = Args
   { _argReps :: Set SomeTypeRep,
     _regReps :: Set SomeMonoidTypeRep,
-    _runArgs :: (forall t. Typeable t => Maybe t) -> a
+    _runArgs :: (forall t. (Typeable t) => Maybe t) -> a
   }
   deriving stock (Functor)
 
@@ -125,24 +126,22 @@ runArgs f (Args _ _ _runArgs) =
 getArgsReps :: Args a -> Set TypeRep
 getArgsReps (Args {_argReps}) = _argReps
 
-
 -- | Tweak the look-by-type function that is eventually passed to 'runArgs'.
 --
 -- Unlikely to be commonly useful.
 --
 -- >>> :{
 -- let tweak :: forall t. Typeable t => Maybe t -> Maybe t
---     tweak _ = case Type.Reflection.typeRep @t  
---                    `Type.Reflection.eqTypeRep` 
+--     tweak _ = case Type.Reflection.typeRep @t
+--                    `Type.Reflection.eqTypeRep`
 --                    Type.Reflection.typeRep @Int of
 --                  Just HRefl -> Just 5
 --                  Nothing -> Nothing
 --  in runArgs (taste Cauldron.Beans.empty) $ contramapArgs tweak $ arg @Int
 -- :}
 -- 5
---
-contramapArgs :: (forall t. Typeable t => Maybe t -> Maybe t) -> Args a -> Args a
-contramapArgs tweak args@Args{_runArgs} = args { _runArgs = \f -> _runArgs (tweak f)}
+contramapArgs :: (forall t. (Typeable t) => Maybe t -> Maybe t) -> Args a -> Args a
+contramapArgs tweak args@Args {_runArgs} = args {_runArgs = \f -> _runArgs (tweak f)}
 
 -- | Inspect ahead of time the types of registrations that might be contained in
 -- the result value of an 'Args'.
