@@ -593,6 +593,8 @@ cookTree (treecipes) = do
 newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
   deriving stock (Show)
 
+-- | Get a graph of dependencies between 'BeanConstructionStep's. The graph can
+-- be obtained even if the 'Cauldron' can't be 'cook'ed successfully.
 getDependencyGraph :: Cauldron m -> DependencyGraph
 getDependencyGraph cauldron =
   let (accumMap, _) = cauldronRegs cauldron
