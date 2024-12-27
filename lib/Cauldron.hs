@@ -240,21 +240,18 @@ recipe theRecipe = withFrozenCallStack do
   SomeRecipe callStack (toRecipe theRecipe)
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
-withRecipe :: forall r m. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
-withRecipe f (SomeRecipe {_recipeCallStack, _recipe}) = f _recipeCallStack _recipe
+withRecipe :: forall r m. (forall bean. (Typeable bean) => Recipe m bean -> r) -> SomeRecipe m -> r
+withRecipe f (SomeRecipe {_recipe}) = f _recipe
+
+getRecipeRep :: SomeRecipe m -> TypeRep
+getRecipeRep = withRecipe go
+  where
+  go :: forall bean m . Typeable bean => Recipe m bean -> TypeRep
+  go _ = typeRep (Proxy @bean)
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
 fromRecipeList =
-  foldl
-    do \c sr -> withRecipe inserter sr c
-    do empty
-  where
-    -- Here we take care to preserve the initial call stacks
-    inserter :: forall bean m. (Typeable bean) => CallStack -> Recipe m bean -> Cauldron m -> Cauldron m
-    inserter _recipeCallStack _recipe Cauldron {recipeMap} =
-      Cauldron
-        { recipeMap = Map.insert (typeRep (Proxy @bean)) (SomeRecipe {_recipeCallStack, _recipe}) recipeMap
-        }
+  foldMap \sr -> Cauldron { recipeMap = Map.singleton (getRecipeRep sr) sr}
 
 toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
 toRecipeMap Cauldron {recipeMap} = recipeMap
@@ -268,11 +265,10 @@ hoistSomeRecipe' ::
   (forall x. (Typeable x) => Int -> Args (m (Regs x)) -> Args (n (Regs x))) ->
   SomeRecipe m ->
   SomeRecipe n
-hoistSomeRecipe' f fds = withRecipe go
+hoistSomeRecipe' f fds sr = withRecipe go sr
   where
-    go :: forall bean. (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe n
-    go _recipeCallStack theRecipe =
-      SomeRecipe {_recipeCallStack, _recipe = hoistRecipe' (f @bean) (fds @bean) theRecipe}
+    go :: forall bean. (Typeable bean) => Recipe m bean -> SomeRecipe n
+    go r = sr { _recipe = hoistRecipe' (f @bean) (fds @bean) r }
 
 -- | Instructions for how to build a value of type @bean@ while possibly
 -- performing actions in the monad @m@.
@@ -698,6 +694,8 @@ buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) ->
 
 buildDepsCauldron :: Set TypeRep -> Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
 buildDepsCauldron secondary Cauldron {recipeMap} = do
+  -- Are we depending on a primary bean, or on a monoidally aggregated secondary bean?
+  -- I wonder if we could make this more uniform, it's kind of annoying to have to make this decision here...
   let makeTargetStep :: TypeRep -> BeanConstructionStep
       makeTargetStep rep =
         if rep `Set.member` secondary
@@ -721,7 +719,7 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
                 (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
                 [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
               beanDeps = do
-                constructorEdges makeTargetStep bareBean (do constructorReps bean)
+                constructorEdges makeTargetStep bareBean (constructorReps bean)
               decoDeps = do
                 (decoStep, decoCon) <- decos
                 constructorEdges makeTargetStep decoStep (removeBeanFromArgs do constructorReps decoCon)
