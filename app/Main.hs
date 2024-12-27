@@ -187,7 +187,7 @@ boringWiring = do
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
 coolWiring :: Either RecipeError (IO Entrypoint)
-coolWiring = fmap (fmap (fromJust . taste @Entrypoint)) do cook allowSelfDeps cauldron
+coolWiring = fmap (fmap (fromJust . taste @Entrypoint)) $ cook allowSelfDeps cauldron
 
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =
@@ -207,13 +207,13 @@ cauldron :: Cauldron IO =
     recipe @H $ val $ wire makeH,
     recipe @Z
       Recipe
-        { bean = val do wire makeZ,
+        { bean = val $ wire makeZ,
           decos =
             [ val $ wire makeZDeco1,
               val $ wire makeZDeco2
             ]
         },
-    recipe @Entrypoint $ val do wire Entrypoint
+    recipe @Entrypoint $ val $ wire Entrypoint
   ]
 
 main :: IO ()
@@ -228,10 +228,10 @@ main = do
   -- wiring with Cauldron
   let depGraph = getDependencyGraph cauldron
   exportToDot defaultStepToText "beans.dot" depGraph
-  exportToDot defaultStepToText "beans-no-agg.dot" do removeSecondaryBeans do depGraph
-  exportToDot defaultStepToText "beans-no-agg-no-decos.dot" do removeDecos do removeSecondaryBeans do depGraph
-  exportToDot defaultStepToText "beans-simple.dot" do collapseToPrimaryBeans do removeDecos do removeSecondaryBeans do depGraph
-  exportToDot defaultStepToText "beans-simple-with-decos.dot" do collapseToPrimaryBeans do removeSecondaryBeans do depGraph
+  exportToDot defaultStepToText "beans-no-agg.dot" $ removeSecondaryBeans $ depGraph
+  exportToDot defaultStepToText "beans-no-agg-no-decos.dot" $ removeDecos $ removeSecondaryBeans $ depGraph
+  exportToDot defaultStepToText "beans-simple.dot" $ collapseToPrimaryBeans $ removeDecos $ removeSecondaryBeans $ depGraph
+  exportToDot defaultStepToText "beans-simple-with-decos.dot" $ collapseToPrimaryBeans $ removeSecondaryBeans $ depGraph
   case coolWiring of
     Left badBeans -> do
       putStrLn $ prettyRecipeError badBeans

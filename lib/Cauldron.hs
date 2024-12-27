@@ -189,7 +189,7 @@ newtype Cauldron m where
   Cauldron :: {recipeMap :: Map TypeRep (SomeRecipe m)} -> Cauldron m
 
 empty :: Cauldron m
-empty = Cauldron {recipeMap = Map.empty}
+empty = Cauldron Map.empty
 
 -- | Union of two 'Cauldron's, right-biased: prefers 'Recipe's from the /right/ cauldron when
 -- both contain the same key. (Note that 'Data.Map.Map' is left-biased.)
@@ -197,7 +197,7 @@ instance Semigroup (Cauldron m) where
   Cauldron {recipeMap = r1} <> Cauldron {recipeMap = r2} = Cauldron do Map.unionWith (flip const) r1 r2
 
 instance Monoid (Cauldron m) where
-  mempty = Cauldron do Map.empty
+  mempty = Cauldron Map.empty
 
 instance IsList (Cauldron m) where
   type Item (Cauldron m) = SomeRecipe m
@@ -246,12 +246,12 @@ withRecipe f (SomeRecipe {_recipe}) = f _recipe
 getRecipeRep :: SomeRecipe m -> TypeRep
 getRecipeRep = withRecipe go
   where
-  go :: forall bean m . Typeable bean => Recipe m bean -> TypeRep
-  go _ = typeRep (Proxy @bean)
+    go :: forall bean m. (Typeable bean) => Recipe m bean -> TypeRep
+    go _ = typeRep (Proxy @bean)
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
 fromRecipeList =
-  foldMap \sr -> Cauldron { recipeMap = Map.singleton (getRecipeRep sr) sr}
+  foldMap \sr -> Cauldron {recipeMap = Map.singleton (getRecipeRep sr) sr}
 
 toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
 toRecipeMap Cauldron {recipeMap} = recipeMap
@@ -268,7 +268,7 @@ hoistSomeRecipe' ::
 hoistSomeRecipe' f fds sr = withRecipe go sr
   where
     go :: forall bean. (Typeable bean) => Recipe m bean -> SomeRecipe n
-    go r = sr { _recipe = hoistRecipe' (f @bean) (fds @bean) r }
+    go r = sr {_recipe = hoistRecipe' (f @bean) (fds @bean) r}
 
 -- | Instructions for how to build a value of type @bean@ while possibly
 -- performing actions in the monad @m@.
@@ -299,7 +299,7 @@ instance ToRecipe Recipe where
 
 -- | 'Constructor' is converted to a 'Recipe' without decorators.
 instance ToRecipe Constructor where
-  toRecipe c = Recipe {bean = c, decos = Data.Sequence.empty}
+  toRecipe bean = Recipe {bean, decos = Data.Sequence.empty}
 
 -- | Change the monad used by the bean\'s main 'Constructor' and its decos.
 hoistRecipe :: (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
@@ -411,14 +411,14 @@ adjust f (Cauldron {recipeMap}) = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
   Cauldron
     { recipeMap =
-        Map.adjust
-          do
-            \r@SomeRecipe {_recipe = _recipe :: Recipe m a} ->
-              case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
-                Nothing -> error "should never happen"
-                Just Refl -> r {_recipe = f _recipe}
-          rep
-          recipeMap
+        recipeMap
+          & Map.adjust
+            do
+              \r@SomeRecipe {_recipe = _recipe :: Recipe m a} ->
+                case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
+                  Nothing -> error "should never happen"
+                  Just Refl -> r {_recipe = f _recipe}
+            rep
     }
 
 delete ::
@@ -701,47 +701,50 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
         if rep `Set.member` secondary
           then SecondaryBean rep
           else PrimaryBean rep
-  (flip Map.foldMapWithKey)
-    recipeMap
-    \beanRep
-     SomeRecipe
-       { _recipeCallStack,
-         _recipe =
-           Recipe
-             { bean = bean :: Constructor m bean,
-               decos = decoCons
-             }
-       } ->
-        do
-          let bareBean = BarePrimaryBean beanRep
-              boiledBean = PrimaryBean beanRep
-              decos = do
-                (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decoCons)
-                [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
-              beanDeps = do
-                constructorEdges makeTargetStep bareBean (constructorReps bean)
-              decoDeps = do
-                (decoStep, decoCon) <- decos
-                constructorEdges makeTargetStep decoStep (removeBeanFromArgs do constructorReps decoCon)
-              full = bareBean Data.List.NonEmpty.:| (fst <$> decos) ++ [boiledBean]
-              innerDeps =
-                -- This explicit dependency between the completed bean and its
-                -- "bare" undecorated form is not strictly required. It will
-                -- always exist in an indirect manner, through the decorators.
-                -- But it might be useful when rendering the dep graph.
-                (PrimaryBean beanRep, BarePrimaryBean beanRep)
-                  :
-                  -- The chain completed bean -> decorators -> bare bean.
-                  zip (Data.List.NonEmpty.tail full) (Data.List.NonEmpty.toList full)
-          ( Map.fromList $
-              [ (bareBean, getConstructorCallStack bean),
-                (boiledBean, _recipeCallStack)
-              ]
-                ++ do
-                  (decoStep, decoCon) <- decos
-                  [(decoStep, getConstructorCallStack decoCon)],
-            beanDeps ++ decoDeps ++ innerDeps
-            )
+  recipeMap
+    & Map.foldMapWithKey
+      \beanRep
+       SomeRecipe
+         { _recipeCallStack,
+           _recipe =
+             Recipe
+               { bean = bean :: Constructor m bean,
+                 decos
+               }
+         } ->
+          do
+            let bareBean = BarePrimaryBean beanRep
+                boiledBean = PrimaryBean beanRep
+                decoSteps = do
+                  (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decos)
+                  [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
+                beanDeps = do
+                  constructorEdges makeTargetStep bareBean (constructorReps bean)
+                decoDeps = do
+                  (decoStep, decoCon) <- decoSteps
+                  -- We remove the bean because from the args becase, in the
+                  -- case of decos, we want to depend on the in-the-making
+                  -- version of the bean, not the completed bean.
+                  constructorEdges makeTargetStep decoStep (removeBeanFromArgs do constructorReps decoCon)
+                innerSteps = bareBean Data.List.NonEmpty.:| (fst <$> decoSteps) ++ [boiledBean]
+                innerDeps =
+                  -- This explicit dependency between the completed bean and its
+                  -- "bare" undecorated form is not strictly required. It will
+                  -- always exist in an indirect manner, through the decorators.
+                  -- But it might be useful when rendering the dep graph.
+                  (PrimaryBean beanRep, BarePrimaryBean beanRep)
+                    :
+                    -- The dep chain of completed bean -> decorators -> bare bean.
+                    zip (Data.List.NonEmpty.tail innerSteps) (Data.List.NonEmpty.toList innerSteps)
+            ( Map.fromList $
+                [ (bareBean, getConstructorCallStack bean),
+                  (boiledBean, _recipeCallStack)
+                ]
+                  ++ do
+                    (decoStep, decoCon) <- decoSteps
+                    [(decoStep, getConstructorCallStack decoCon)],
+              beanDeps ++ decoDeps ++ innerDeps
+              )
 
 constructorEdges ::
   (TypeRep -> BeanConstructionStep) ->
@@ -768,14 +771,14 @@ followPlan ::
   Beans ->
   (Tree (Plan, Fire m, Cauldron m)) ->
   m (Tree Beans)
-followPlan initial treecipes =
-  let secondaryBeanReps = Cauldron.Beans.keysSet initial
+followPlan initialBeans treecipes =
+  let secondaryBeanReps = Cauldron.Beans.keysSet initialBeans
    in unfoldTreeM
-        ( \(initial', Node (plan, Fire {followPlanCauldron}, cauldron) rest) -> do
-            newInitial' <- followPlanCauldron cauldron secondaryBeanReps initial' plan
-            pure (newInitial', (,) newInitial' <$> rest)
+        ( \(previousStageBeans, Node (plan, Fire {followPlanCauldron}, cauldron) rest) -> do
+            currentStageBeans <- followPlanCauldron cauldron secondaryBeanReps previousStageBeans plan
+            pure (currentStageBeans, (,) currentStageBeans <$> rest)
         )
-        (initial, treecipes)
+        (initialBeans, treecipes)
 
 followPlanStep ::
   (Monad m) =>
@@ -789,27 +792,27 @@ followPlanStep ::
 followPlanStep makeBareView makeDecoView Cauldron {recipeMap} final super item =
   case item of
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipeMap of
-      SomeRecipe _ (Recipe {bean = beanConstructor}) -> do
-        let ConstructorReps {beanRep} = constructorReps beanConstructor
+      SomeRecipe {_recipe = Recipe {bean}} -> do
+        let ConstructorReps {beanRep} = constructorReps bean
         -- We delete the beanRep before running the bean,
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
         -- There is a test for this.
-        inserter <- followConstructor beanConstructor final (makeBareView beanRep super)
+        inserter <- followConstructor bean final (makeBareView beanRep super)
         pure do inserter super
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipeMap of
-      SomeRecipe _ (Recipe {decos}) -> do
-        let decoCon = decos `Data.Sequence.index` index
-        let ConstructorReps {beanRep} = constructorReps decoCon
+      SomeRecipe {_recipe = Recipe {decos}} -> do
+        let deco = decos `Data.Sequence.index` index
+        let ConstructorReps {beanRep} = constructorReps deco
         -- Unlike before, we don't delete the beanRep before running the constructor.
-        inserter <- followConstructor decoCon final (makeDecoView beanRep super)
+        inserter <- followConstructor deco final (makeDecoView beanRep super)
         pure do inserter super
     -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
     -- 'PrimaryBeanDeco' steps.
-    PrimaryBean _ -> pure super
+    PrimaryBean {} -> pure super
     -- \| We do nothing here, secondary beans are built as a byproduct
     -- of primary beans and decorators.
-    SecondaryBean _ -> pure super
+    SecondaryBean {} -> pure super
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
