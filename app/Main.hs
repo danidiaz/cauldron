@@ -226,18 +226,20 @@ main = do
     print z
     runInitializer
   -- wiring with Cauldron
-  let depGraph = getDependencyGraph cauldron
-  exportToDot defaultStepToText "beans.dot" depGraph
-  exportToDot defaultStepToText "beans-no-agg.dot" $ removeSecondaryBeans $ depGraph
-  exportToDot defaultStepToText "beans-no-agg-no-decos.dot" $ removeDecos $ removeSecondaryBeans $ depGraph
-  exportToDot defaultStepToText "beans-simple.dot" $ collapseToPrimaryBeans $ removeDecos $ removeSecondaryBeans $ depGraph
-  exportToDot defaultStepToText "beans-simple-with-decos.dot" $ collapseToPrimaryBeans $ removeSecondaryBeans $ depGraph
-  case coolWiring of
+  merr <- case coolWiring of
     Left badBeans -> do
       putStrLn $ prettyRecipeError badBeans
+      pure $ Just badBeans
     Right action -> do
       Entrypoint (Initializer {runInitializer}) (Inspector {inspect}) z <- action
       inspection <- inspect
       print inspection
       print z
       runInitializer
+      pure $ Nothing
+  let depGraph = getDependencyGraph cauldron
+  exportToDot (defaultStyle merr) "beans.dot" depGraph
+  exportToDot (defaultStyle merr) "beans-no-agg.dot" $ removeSecondaryBeans $ depGraph
+  exportToDot (defaultStyle merr) "beans-no-agg-no-decos.dot" $ removeDecos $ removeSecondaryBeans $ depGraph
+  exportToDot (defaultStyle merr) "beans-simple.dot" $ collapseToPrimaryBeans $ removeDecos $ removeSecondaryBeans $ depGraph
+  exportToDot (defaultStyle merr) "beans-simple-with-decos.dot" $ collapseToPrimaryBeans $ removeSecondaryBeans $ depGraph

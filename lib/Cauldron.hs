@@ -131,7 +131,8 @@ module Cauldron
     getDependencyGraph,
     DependencyGraph,
     exportToDot,
-    defaultStepToText,
+    defaultStyle,
+    setVertexName,
     BeanConstructionStep (..),
     toAdjacencyMap,
 
@@ -940,13 +941,25 @@ collapseToPrimaryBeans DependencyGraph {graph} = do
   DependencyGraph {graph = Graph.vertices vertices `Graph.overlay` Graph.edges edgesWithoutSelfLoops}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
-exportToDot :: (BeanConstructionStep -> Data.Text.Text) -> FilePath -> DependencyGraph -> IO ()
-exportToDot prettyRep filepath DependencyGraph {graph} = do
-  let dot =
-        Dot.export
-          do Dot.defaultStyle prettyRep
-          graph
+exportToDot :: Dot.Style BeanConstructionStep Data.Text.Text -> FilePath -> DependencyGraph -> IO ()
+exportToDot style filepath DependencyGraph {graph} = do
+  let dot = Dot.export style graph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
+
+defaultStyle :: Maybe RecipeError -> Dot.Style BeanConstructionStep Data.Text.Text
+defaultStyle merr =
+  (Dot.defaultStyle defaultStepToText)
+    { Dot.vertexAttributes = \step -> case (step, merr) of
+        (BarePrimaryBean rep, Just (MissingDependenciesError (MissingDependencies _ _ missing)))
+          | Set.member rep missing ->
+              -- https://graphviz.org/docs/attr-types/style/
+              -- https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-Export-Dot.html
+              [Data.Text.pack "style" Dot.:= Data.Text.pack "dashed"]
+        _ -> []
+    }
+
+setVertexName :: (BeanConstructionStep -> Data.Text.Text) -> Dot.Style BeanConstructionStep Data.Text.Text -> Dot.Style BeanConstructionStep Data.Text.Text
+setVertexName vertexName style = style {Dot.vertexName}
 
 defaultStepToText :: BeanConstructionStep -> Data.Text.Text
 defaultStepToText =
