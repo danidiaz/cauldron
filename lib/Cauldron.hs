@@ -950,7 +950,7 @@ defaultStyle :: Maybe RecipeError -> Dot.Style BeanConstructionStep Data.Text.Te
 defaultStyle merr =
   (Dot.defaultStyle defaultStepToText)
     { Dot.vertexAttributes = \step -> case (step, merr) of
-        (BarePrimaryBean rep, Just (MissingDependenciesError (MissingDependencies _ _ missing)))
+        (PrimaryBean rep, Just (MissingDependenciesError (MissingDependencies _ _ missing)))
           | Set.member rep missing ->
               -- https://graphviz.org/docs/attr-types/style/
               -- https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-Export-Dot.html
