@@ -150,7 +150,7 @@ import Algebra.Graph.Export.Dot qualified as Dot
 import Cauldron.Args
 import Cauldron.Beans (SomeMonoidTypeRep (..))
 import Cauldron.Beans qualified
-import Control.Exception (Exception)
+import Control.Exception (Exception (..))
 import Control.Monad.Fix
 import Data.Bifunctor (first)
 import Data.ByteString qualified
@@ -840,7 +840,9 @@ data RecipeError
   | -- | Dependency cycles are disallowed by some 'Fire's.
     DependencyCycleError DependencyCycle
   deriving stock (Show)
-  deriving anyclass (Exception)
+
+instance Exception RecipeError where
+  displayException = prettyRecipeError
 
 prettyRecipeError :: RecipeError -> String
 prettyRecipeError = Data.List.intercalate "\n" . prettyRecipeErrorLines
