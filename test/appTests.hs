@@ -119,7 +119,8 @@ cauldron :: Cauldron IO =
       recipe $ val $ wire makeC,
       recipe $ val $ wire makeD,
       recipe $ val $ wire makeE,
-      recipe @F $ val $ wire makeF,
+      -- The type app in val checks the specificity, see val definition.
+      recipe @F $ val @F $ wire makeF,
       recipe @G
         Recipe
           { bean = val $ wire makeG,

@@ -185,6 +185,7 @@ import Type.Reflection qualified
 -- ultimately produces. Only one recipe is allowed for each bean type.
 -- Parameterized by the monad @m@ in which the recipe 'Constructor's might have
 -- effects.
+type Cauldron :: (Type -> Type) -> Type
 newtype Cauldron m where
   Cauldron :: {recipeMap :: Map TypeRep (SomeRecipe m)} -> Cauldron m
 
@@ -224,6 +225,7 @@ hoistCauldron' f fds Cauldron {recipeMap} =
 
 -- | In order to put recipes producing different bean types into a container, we
 -- need to hide each recipe's bean type. This wrapper allows that.
+type SomeRecipe :: (Type -> Type) -> Type
 data SomeRecipe m where
   SomeRecipe :: (Typeable bean) => {_recipeCallStack :: CallStack, _recipe :: Recipe m bean} -> SomeRecipe m
 
@@ -231,8 +233,8 @@ data SomeRecipe m where
 --
 -- Useful in combination with 'fromRecipeList'.
 recipe ::
-  forall bean m recipelike.
-  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
+  forall {recipelike} {m} bean.
+  (ToRecipe recipelike, Typeable bean, HasCallStack) =>
   -- | A 'Recipe' or a 'Constructor'.
   recipelike m bean ->
   SomeRecipe m
@@ -240,7 +242,7 @@ recipe theRecipe = withFrozenCallStack do
   SomeRecipe callStack (toRecipe theRecipe)
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
-withRecipe :: forall r m. (forall bean. (Typeable bean) => Recipe m bean -> r) -> SomeRecipe m -> r
+withRecipe :: forall {m} r. (forall bean. (Typeable bean) => Recipe m bean -> r) -> SomeRecipe m -> r
 withRecipe f (SomeRecipe {_recipe}) = f _recipe
 
 getRecipeRep :: SomeRecipe m -> TypeRep
@@ -276,6 +278,7 @@ hoistSomeRecipe' f fds sr = withRecipe go sr
 -- Because the instructions aren't really run until the 'Cauldron' is 'cook'ed,
 -- they can be modified with functions like 'adjust', in order to change the
 -- base bean 'Constructor', or add or remove decorators.
+type Recipe :: (Type -> Type) -> Type -> Type
 data Recipe m bean = Recipe
   { -- | How to build the bean itself.
     bean :: Constructor m bean,
@@ -290,6 +293,7 @@ fromDecoList = Data.Sequence.fromList
 
 -- | Convenience typeclass that allows passing either 'Recipe's or 'Constructor's
 -- to the 'insert' and 'recipe' functions.
+type ToRecipe :: ((Type -> Type) -> Type -> Type) -> Constraint
 class ToRecipe recipelike where
   toRecipe :: recipelike m bean -> Recipe m bean
 
@@ -390,7 +394,7 @@ data ConstructorReps where
 -- Only one recipe is allowed for each bean type, so 'insert' for a
 -- bean will overwrite any previous recipe for that bean.
 insert ::
-  forall (bean :: Type) m recipelike.
+  forall {recipelike} {m} (bean :: Type).
   (Typeable bean, ToRecipe recipelike, HasCallStack) =>
   -- | A 'Recipe' or a 'Constructor'.
   recipelike m bean ->
@@ -402,7 +406,7 @@ insert recipelike Cauldron {recipeMap} = withFrozenCallStack do
 
 -- | Tweak a 'Recipe' inside the 'Cauldron', if the recipe exists.
 adjust ::
-  forall bean m.
+  forall {m} bean.
   (Typeable bean) =>
   (Recipe m bean -> Recipe m bean) ->
   Cauldron m ->
@@ -516,7 +520,7 @@ allowDepCycles =
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
 
 -- | This function DOESN'T return the bean rep itself in the argreps.
-constructorReps :: forall bean m. (Typeable bean) => Constructor m bean -> ConstructorReps
+constructorReps :: forall {m} bean. (Typeable bean) => Constructor m bean -> ConstructorReps
 constructorReps (getConstructorArgs -> c) =
   ConstructorReps
     { beanRep = typeRep (Proxy @bean),
@@ -991,7 +995,7 @@ val_ x = Constructor callStack $ fmap (pure . pure) x
 -- for (potentially nested) tuples.  All tuple components except the
 -- rightmost-innermost one are registered as secondary beans (if they have
 -- 'Monoid' instances, otherwise 'val' won't compile).
-val :: forall nested bean m. (Registrable nested bean, Applicative m, HasCallStack) => Args nested -> Constructor m bean
+val :: forall {nested} bean m. (Registrable nested bean, Applicative m, HasCallStack) => Args nested -> Constructor m bean
 val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity x)
 
 -- | Like 'val', but uses an alternative form of registering secondary beans.
@@ -1010,7 +1014,7 @@ eff_ x = Constructor callStack $ fmap (fmap pure) x
 -- returned by the 'Args' looking for (potentially nested) tuples.  All tuple
 -- components except the rightmost-innermost one are registered as secondary
 -- beans (if they have 'Monoid' instances, otherwise 'eff' won't compile).
-eff :: forall nested bean m. (Registrable nested bean, Monad m, HasCallStack) => Args (m nested) -> Constructor m bean
+eff :: forall {nested} bean m. (Registrable nested bean, Monad m, HasCallStack) => Args (m nested) -> Constructor m bean
 eff x = withFrozenCallStack (eff' $ register x)
 
 -- | Like 'eff', but uses an alternative form of registering secondary beans.
