@@ -130,7 +130,7 @@ module Cauldron
     -- ** Visualizing dependencies between beans.
     getDependencyGraph,
     DependencyGraph,
-    exportToDot,
+    writeAsDot,
     defaultStyle,
     setVertexName,
     BeanConstructionStep (..),
@@ -941,23 +941,51 @@ collapseToPrimaryBeans DependencyGraph {graph} = do
   DependencyGraph {graph = Graph.vertices vertices `Graph.overlay` Graph.edges edgesWithoutSelfLoops}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
-exportToDot :: Dot.Style BeanConstructionStep Data.Text.Text -> FilePath -> DependencyGraph -> IO ()
-exportToDot style filepath DependencyGraph {graph} = do
+writeAsDot :: Dot.Style BeanConstructionStep Data.Text.Text -> FilePath -> DependencyGraph -> IO ()
+writeAsDot style filepath DependencyGraph {graph} = do
   let dot = Dot.export style graph
   Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
 
+-- | Default DOT rendering style to use with 'writeAsDot'.
+-- When a 'RecipeError' exists, is highlights the problematic 'BeanConstructionStep's.
 defaultStyle :: Maybe RecipeError -> Dot.Style BeanConstructionStep Data.Text.Text
 defaultStyle merr =
+  -- https://graphviz.org/docs/attr-types/style/
+  -- https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-Export-Dot.html
   (Dot.defaultStyle defaultStepToText)
-    { Dot.vertexAttributes = \step -> case (step, merr) of
-        (PrimaryBean rep, Just (MissingDependenciesError (MissingDependencies _ _ missing)))
-          | Set.member rep missing ->
-              -- https://graphviz.org/docs/attr-types/style/
-              -- https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-Export-Dot.html
-              [Data.Text.pack "style" Dot.:= Data.Text.pack "dashed"]
-        _ -> []
+    { Dot.vertexAttributes = \step -> case merr of
+        Nothing -> []
+        Just (MissingDependenciesError (MissingDependencies _ _ missing)) ->
+          case step of
+            PrimaryBean rep
+              | Set.member rep missing ->
+                  [ Data.Text.pack "style" Dot.:= Data.Text.pack "dashed",
+                    Data.Text.pack "color" Dot.:= Data.Text.pack "red"
+                  ]
+            _ -> []
+        Just (DoubleDutyBeansError (DoubleDutyBeans (Map.keysSet -> bs))) ->
+          case step of
+            PrimaryBean rep
+              | Set.member rep bs ->
+                  [ Data.Text.pack "style" Dot.:= Data.Text.pack "bold",
+                    Data.Text.pack "color" Dot.:= Data.Text.pack "green"
+                  ]
+            SecondaryBean rep
+              | Set.member rep bs ->
+                  [ Data.Text.pack "style" Dot.:= Data.Text.pack "bold",
+                    Data.Text.pack "color" Dot.:= Data.Text.pack "green"
+                  ]
+            _ -> []
+        Just (DependencyCycleError (DependencyCycle (Set.fromList . Data.Foldable.toList . fmap fst -> cycleStepSet))) ->
+          if Set.member step cycleStepSet
+            then
+              [ Data.Text.pack "style" Dot.:= Data.Text.pack "bold",
+                Data.Text.pack "color" Dot.:= Data.Text.pack "blue"
+              ]
+            else []
     }
 
+-- | Change the default way of how 'BeanConstructionStep's are rendered to text.
 setVertexName :: (BeanConstructionStep -> Data.Text.Text) -> Dot.Style BeanConstructionStep Data.Text.Text -> Dot.Style BeanConstructionStep Data.Text.Text
 setVertexName vertexName style = style {Dot.vertexName}
 
@@ -1078,7 +1106,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- interested.
 --
 -- These functions help simplify 'DependencyGraph's before passing them to
--- 'exportToDot'. They can be composed between themselves.
+-- 'writeAsDot'. They can be composed between themselves.
 
 -- $secondarybeans
 --

@@ -238,8 +238,8 @@ main = do
       runInitializer
       pure $ Nothing
   let depGraph = getDependencyGraph cauldron
-  exportToDot (defaultStyle merr) "beans.dot" depGraph
-  exportToDot (defaultStyle merr) "beans-no-agg.dot" $ removeSecondaryBeans $ depGraph
-  exportToDot (defaultStyle merr) "beans-no-agg-no-decos.dot" $ removeDecos $ removeSecondaryBeans $ depGraph
-  exportToDot (defaultStyle merr) "beans-simple.dot" $ collapseToPrimaryBeans $ removeDecos $ removeSecondaryBeans $ depGraph
-  exportToDot (defaultStyle merr) "beans-simple-with-decos.dot" $ collapseToPrimaryBeans $ removeSecondaryBeans $ depGraph
+  writeAsDot (defaultStyle merr) "beans.dot" depGraph
+  writeAsDot (defaultStyle merr) "beans-no-agg.dot" $ removeSecondaryBeans $ depGraph
+  writeAsDot (defaultStyle merr) "beans-no-agg-no-decos.dot" $ removeDecos $ removeSecondaryBeans $ depGraph
+  writeAsDot (defaultStyle merr) "beans-simple.dot" $ collapseToPrimaryBeans $ removeDecos $ removeSecondaryBeans $ depGraph
+  writeAsDot (defaultStyle merr) "beans-simple-with-decos.dot" $ collapseToPrimaryBeans $ removeSecondaryBeans $ depGraph
