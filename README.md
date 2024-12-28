@@ -22,8 +22,9 @@ It expects the bean constructors to conform to a certain shape.
 
 To be honest, you probably shouldn't use this library. I have noticed that using
 **cauldron** is actually *more* verbose that manually doing the wiring yourself.
-Perhaps it would start to pay for complex beans with many dependencies, but
-I'm not sure.
+Perhaps it would start to pay for complex beans with many dependencies, but I'm
+not sure. See [here](https://hachyderm.io/@DiazCarrete/113732149622045046) for a
+comparison of cauldron vs. manual in wiring a not-completely trivial app.
 
 Another possible objection to this library is that wiring errors are detected at
 runtime. I don't find that to be a problem though: the wiring happens at the
