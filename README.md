@@ -116,6 +116,8 @@ makeServerDecorator :: Logger -> Server -> IO (Initializer,Server)
 
 See [this example application](/app/Main.hs) with dummy components.
 
+For a slightly more realistic example, see [here](https://github.com/danidiaz/comments-project/blob/8206c50b9af2097e2246cec0992d489029b84686/comments/lib/Comments/Main.hs#L36).
+
 # Similarities with the [Java Spring framework IoC container](https://docs.spring.io/spring-framework/reference/core/beans.html)
 
 Some features of this library have loose analogues in how Java Spring handles
