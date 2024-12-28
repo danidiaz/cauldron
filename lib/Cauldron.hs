@@ -836,8 +836,7 @@ followConstructor c final super = do
 
 -- | Sometimes the 'cook'ing process goes wrong.
 data RecipeError
-  = -- | The 'Cauldron' identified by 'PathToCauldron' has beans
-    -- that depend on beans that can't be found either in the current 'Cauldron' or its ancestors.
+  = -- | A 'Constructor' depends on beans that can't be found either in the current 'Cauldron' or its ancestors.
     MissingDependenciesError MissingDependencies
   | -- | Beans that work both as primary beans and as secondary beans
     -- are disallowed.
@@ -1115,7 +1114,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 --
 -- 'Constructor's can produce, besides their \"primary\" bean result,
 -- \"secondary\" beans that are not reflected in the 'Constructor' signature.
--- Multiple constructors across different recipeMap can produce secondary beans of the
+-- Multiple constructors across different 'Recipe's can produce secondary beans of the
 -- same type.
 --
 -- Secondary beans are a bit special, in that:
