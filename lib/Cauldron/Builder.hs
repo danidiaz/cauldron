@@ -5,6 +5,7 @@
 
 module Cauldron.Builder
   ( Builder,
+    execBuilder,
     add,
     MonadBuilder (..),
   )
@@ -30,6 +31,9 @@ instance Monad (Builder m) where
   (Builder c1 a) >>= k =
     let Builder c2 r = k a
      in Builder (c1 <> c2) r
+
+execBuilder :: Builder m a -> Cauldron m
+execBuilder (Builder c _) = c
 
 add ::
   forall {recipelike} {m} (bean :: Type).
