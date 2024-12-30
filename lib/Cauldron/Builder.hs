@@ -43,7 +43,7 @@ add ::
   Builder m (Args bean)
 add recipelike = Builder (Cauldron.empty & Cauldron.insert recipelike) (arg @bean)
 
-class (Applicative (ArgsWrapper b), Monad (ConstructorEff b)) => MonadBuilder b where
+class (Monad b, Applicative (ArgsWrapper b), Monad (ConstructorEff b)) => MonadBuilder b where
   type ArgsWrapper b :: Type -> Type
   type ConstructorEff b :: Type -> Type
   addVal :: (Typeable a) => ArgsWrapper b a -> b (ArgsWrapper b a)
