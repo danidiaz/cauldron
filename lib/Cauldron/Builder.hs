@@ -8,12 +8,14 @@ module Cauldron.Builder
     execBuilder,
     add,
     MonadBuilder (..),
+    addIOEff_,
   )
 where
 
 import Cauldron
 import Cauldron.Args
 import Cauldron.Managed
+import Control.Monad.IO.Class
 import Data.Dynamic
 import Data.Function ((&))
 import Data.Functor.Identity
@@ -43,32 +45,38 @@ add ::
   Builder m (Args bean)
 add recipelike = Builder (Cauldron.empty & Cauldron.insert recipelike) (arg @bean)
 
-class (Monad b, Applicative (ArgsWrapper b), Monad (ConstructorEff b)) => MonadBuilder b where
-  type ArgsWrapper b :: Type -> Type
-  type ConstructorEff b :: Type -> Type
-  addVal :: (Typeable a) => ArgsWrapper b a -> b (ArgsWrapper b a)
-  addEff :: (Typeable a) => ArgsWrapper b (ConstructorEff b a) -> b (ArgsWrapper b a)
+class (Monad m, Applicative (ArgsApplicative m), Monad (ConstructorMonad m)) => MonadBuilder m where
+  type ArgsApplicative m :: Type -> Type
+  type ConstructorMonad m :: Type -> Type
+  addVal_ :: (Typeable bean) => ArgsApplicative m bean -> m (ArgsApplicative m bean)
+  addEff_ :: (Typeable bean) => ArgsApplicative m (ConstructorMonad m bean) -> m (ArgsApplicative m bean)
+
+addIOEff_ ::
+  (MonadBuilder m, MonadIO (ConstructorMonad m), Typeable bean) =>
+  ArgsApplicative m (IO bean) ->
+  m (ArgsApplicative m bean)
+addIOEff_ args = addEff_ $ liftIO <$> args
 
 instance (Monad m) => MonadBuilder (Builder m) where
-  type ArgsWrapper (Builder m) = Args
-  type ConstructorEff (Builder m) = m
-  addVal :: (Monad m, Typeable a) => Args a -> Builder m (Args a)
-  addVal v = add (val_ v)
-  addEff :: (Monad m, Typeable a) => Args (m a) -> Builder m (Args a)
-  addEff action = add (eff_ action)
+  type ArgsApplicative (Builder m) = Args
+  type ConstructorMonad (Builder m) = m
+  addVal_ :: (Typeable bean) => Args bean -> Builder m (Args bean)
+  addVal_ v = add (val_ v)
+  addEff_ :: (Typeable bean) => Args (m bean) -> Builder m (Args bean)
+  addEff_ action = add (eff_ action)
 
 instance MonadBuilder IO where
-  type ArgsWrapper IO = Identity
-  type ConstructorEff IO = IO
-  addVal :: (Typeable a) => Identity a -> IO (Identity a)
-  addVal = pure
-  addEff :: (Typeable a) => Identity (IO a) -> IO (Identity a)
-  addEff = sequence
+  type ArgsApplicative IO = Identity
+  type ConstructorMonad IO = IO
+  addVal_ :: (Typeable bean) => Identity bean -> IO (Identity bean)
+  addVal_ = pure
+  addEff_ :: (Typeable bean) => Identity (IO bean) -> IO (Identity bean)
+  addEff_ = sequence
 
 instance MonadBuilder Managed where
-  type ArgsWrapper Managed = Identity
-  type ConstructorEff Managed = Managed
-  addVal :: (Typeable a) => Identity a -> Managed (Identity a)
-  addVal = pure
-  addEff :: (Typeable a) => Identity (Managed a) -> Managed (Identity a)
-  addEff = sequence
+  type ArgsApplicative Managed = Identity
+  type ConstructorMonad Managed = Managed
+  addVal_ :: (Typeable a) => Identity a -> Managed (Identity a)
+  addVal_ = pure
+  addEff_ :: (Typeable a) => Identity (Managed a) -> Managed (Identity a)
+  addEff_ = sequence
