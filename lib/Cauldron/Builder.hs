@@ -128,7 +128,7 @@ execBuilder (Builder c m _) =
         then Left $ DuplicateBeans beanDefinitions
         else Right c
 
--- | Because cauldron inject dependencies based on their types, a do-notation block which
+-- | Because 'Cauldron's inject dependencies based on their types, a do-notation block which
 -- binds two or more values of the same type would be ambiguous.
 --
 -- >>> :{
