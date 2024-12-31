@@ -5,20 +5,20 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
 module Main (main) where
 
 import Cauldron
 import Cauldron.Builder
+import Control.Exception (throwIO)
 import Data.Foldable qualified
+import Data.Function ((&))
 import Data.Functor.Identity
 import Data.Monoid
 import Test.Tasty
 import Test.Tasty.HUnit
-import Control.Exception (throwIO)
-import Data.Function ((&))
 
 data Foo
   = EndFoo
@@ -147,16 +147,16 @@ tests =
   testGroup
     "All"
     [ testCase "successful cyclic wiring" do makeBasicTest cauldron,
-      testCase "successful cyclic wiring - builder" do 
+      testCase "successful cyclic wiring - builder" do
         c <- builder & execBuilder & either throwIO pure
         makeBasicTest c,
-      testCase "successful cyclic wiring - builder 2" do 
+      testCase "successful cyclic wiring - builder 2" do
         c <- builder2 & execBuilder & either throwIO pure
         makeBasicTest c,
-      testCase "successful cyclic wiring - builder 3" do 
+      testCase "successful cyclic wiring - builder 3" do
         c <- builder3 & execBuilder & either throwIO pure
         makeBasicTest c,
-      testCase "should fail builder exec" do 
+      testCase "should fail builder exec" do
         builderDupErr & execBuilder & \case
           Left _ -> pure ()
           Right _ -> assertFailure "Builder should have failed with duplicate beans error",
@@ -192,19 +192,19 @@ tests =
               Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
               Right _ -> assertFailure $ "Unexpected success when wiring" ++ name
     ]
-    where
+  where
     makeBasicTest :: Cauldron Identity -> IO ()
     makeBasicTest theCauldron =
-        case cook allowDepCycles theCauldron of
-          Left _ -> do
-            -- putStrLn $ prettyRecipeError err
-            assertFailure "could not wire"
-          Right (Identity bs) ->
-            case taste bs of
-              Nothing -> assertFailure "serializer not found"
-              Just (Serializer {runSerializer}) -> do
-                let value = FooToBar (BarToFoo (FooToBar (BarToBaz EndBaz)))
-                assertEqual "experted result" ".FooToBar.BarToFoo.FooToBar.BarToBar.EndBaz" (runSerializer value)
+      case cook allowDepCycles theCauldron of
+        Left _ -> do
+          -- putStrLn $ prettyRecipeError err
+          assertFailure "could not wire"
+        Right (Identity bs) ->
+          case taste bs of
+            Nothing -> assertFailure "serializer not found"
+            Just (Serializer {runSerializer}) -> do
+              let value = FooToBar (BarToFoo (FooToBar (BarToBaz EndBaz)))
+              assertEqual "experted result" ".FooToBar.BarToFoo.FooToBar.BarToBar.EndBaz" (runSerializer value)
 
 main :: IO ()
 main = defaultMain tests

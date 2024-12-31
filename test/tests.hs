@@ -163,6 +163,17 @@ cauldronNonEmpty =
         ]
     ]
 
+cauldronNonEmptyWrongOrder :: NonEmpty (Cauldron M)
+cauldronNonEmptyWrongOrder = do
+  Data.List.NonEmpty.fromList
+    [ fromRecipeList
+        [ recipe @(Weird M) $ eff $ wire makeWeird
+        ],
+      fromRecipeList
+        [ recipe @(Logger M) $ eff $ pure makeLogger
+        ]
+    ]
+
 cauldronLonely :: Cauldron M
 cauldronLonely =
   fromRecipeList
@@ -257,13 +268,18 @@ tests =
               assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
             pure ()
           _ -> assertFailure "should never happen, malformed test",
+      testCase "value sequential - parents can't see beans in children" do
+        case cookNonEmpty' cauldronNonEmptyWrongOrder of
+          Left (MissingDependenciesError _) -> pure ()
+          Left _ -> assertFailure "Unexpected error"
+          Right _ -> assertFailure "parent cauldron sees bean in child cauldron",
       testCase "tree of cauldrons" do
         case cookTree' treeOfCauldrons of
           Left err -> assertFailure $ "failed to build tree: " ++ show err
           Right (Identity beans) -> case beans of
             Node bbase [Node bbranch1 [], Node bbranch2 []] ->
               assertEqual
-                "expected accs across brances"
+                "expected accs across branches"
                 (Just (Sum 1), Just (Sum 8), Just (Sum 12))
                 (taste @(Sum Int) bbase, taste @(Sum Int) bbranch1, taste @(Sum Int) bbranch2)
             _ -> assertFailure $ "tree has unexpected shape",

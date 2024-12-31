@@ -1,18 +1,20 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE BlockArguments #-}
 
 module Cauldron.Builder
   ( Builder,
     add,
     execBuilder,
+
     -- * Two beans of the same type are forbidden
     DuplicateBeans (..),
     prettyDuplicateBeans,
     prettyDuplicateBeansLines,
+
     -- * Being polymorphic on the wiring monad
     MonadWiring (..),
     _ioEff_,
@@ -22,11 +24,15 @@ where
 import Cauldron
 import Cauldron.Args
 import Cauldron.Managed
+import Control.Exception (Exception (..))
+import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Data.Dynamic
+import Data.Foldable qualified
 import Data.Function ((&))
 import Data.Functor.Identity
 import Data.Kind
+import Data.List qualified
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Sequence (Seq)
@@ -34,10 +40,6 @@ import Data.Sequence qualified
 import Data.Typeable
 import GHC.Exception (CallStack, prettyCallStackLines)
 import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
-import qualified Data.Foldable
-import qualified Data.List
-import Control.Exception (Exception(..))
-import Control.Monad.Fix
 
 data Builder m a = Builder (Cauldron m) (Map TypeRep (Seq CallStack)) a
   deriving stock (Functor)
@@ -56,25 +58,24 @@ instance Monad (Builder m) where
      in Builder (c1 <> c2) (combineCallStackMaps m1 m2) r
 
 instance MonadFix (Builder m) where
-  mfix f = 
+  mfix f =
     let b = f a
         ~(Builder _ _ a) = b
      in b
 
 execBuilder :: Builder m a -> Either DuplicateBeans (Cauldron m)
-execBuilder (Builder c m _) = 
-  let beanDefinitions =  
-        m 
-        & Map.mapMaybe \case
-            c1 Data.Sequence.:<| c2 Data.Sequence.:<| rest -> Just (c1,c2, Data.Foldable.toList rest)
+execBuilder (Builder c m _) =
+  let beanDefinitions =
+        m
+          & Map.mapMaybe \case
+            c1 Data.Sequence.:<| c2 Data.Sequence.:<| rest -> Just (c1, c2, Data.Foldable.toList rest)
             _ -> Nothing
-
    in if (not $ Data.Foldable.null beanDefinitions)
         then Left $ DuplicateBeans beanDefinitions
         else Right c
 
-data DuplicateBeans = DuplicateBeans (Map TypeRep (CallStack, CallStack, [ CallStack ]))
-  deriving stock Show
+data DuplicateBeans = DuplicateBeans (Map TypeRep (CallStack, CallStack, [CallStack]))
+  deriving stock (Show)
 
 instance Exception DuplicateBeans where
   displayException = prettyDuplicateBeans
@@ -83,18 +84,17 @@ prettyDuplicateBeans :: DuplicateBeans -> String
 prettyDuplicateBeans = Data.List.intercalate "\n" . prettyDuplicateBeansLines
 
 prettyDuplicateBeansLines :: DuplicateBeans -> [String]
-prettyDuplicateBeansLines (DuplicateBeans beanMap) = 
-    [ "Some bean types defined more than once in builder:"
-    ]
-      ++ ( beanMap & Map.foldMapWithKey \rep (c1, c2, rest) ->
-             (
-             [ "- Bean type " ++ show rep ++ "was definied in these locations: "
-             ] ++
-             ((c1:c2:rest) & foldMap \location -> 
-              (("\t" ++) <$> prettyCallStackLines location)
-              )
-             )
-         )
+prettyDuplicateBeansLines (DuplicateBeans beanMap) =
+  [ "Some bean types defined more than once in builder:"
+  ]
+    ++ ( beanMap & Map.foldMapWithKey \rep (c1, c2, rest) ->
+           ( [ "- Bean type " ++ show rep ++ "was definied in these locations: "
+             ]
+               ++ ( (c1 : c2 : rest) & foldMap \location ->
+                      (("\t" ++) <$> prettyCallStackLines location)
+                  )
+           )
+       )
 
 add ::
   forall {recipelike} {m} (bean :: Type).
