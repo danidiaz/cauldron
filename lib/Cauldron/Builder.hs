@@ -7,7 +7,7 @@ module Cauldron.Builder
   ( Builder,
     execBuilder,
     add,
-    MonadBuilder (..),
+    MonadWiring (..),
     _ioEff_,
   )
 where
@@ -59,19 +59,19 @@ add recipelike =
     (Map.singleton (typeRep (Proxy @bean)) (Data.Sequence.singleton callStack))
     (arg @bean)
 
-class (Monad m, Applicative (ArgsApplicative m), Monad (ConstructorMonad m)) => MonadBuilder m where
+class (Monad m, Applicative (ArgsApplicative m), Monad (ConstructorMonad m)) => MonadWiring m where
   type ArgsApplicative m :: Type -> Type
   type ConstructorMonad m :: Type -> Type
   _val_ :: (Typeable bean, HasCallStack) => ArgsApplicative m bean -> m (ArgsApplicative m bean)
   _eff_ :: (Typeable bean, HasCallStack) => ArgsApplicative m (ConstructorMonad m bean) -> m (ArgsApplicative m bean)
 
 _ioEff_ ::
-  (MonadBuilder m, MonadIO (ConstructorMonad m), Typeable bean, HasCallStack) =>
+  (MonadWiring m, MonadIO (ConstructorMonad m), Typeable bean, HasCallStack) =>
   ArgsApplicative m (IO bean) ->
   m (ArgsApplicative m bean)
 _ioEff_ args = withFrozenCallStack $ _eff_ $ liftIO <$> args
 
-instance (Monad m) => MonadBuilder (Builder m) where
+instance (Monad m) => MonadWiring (Builder m) where
   type ArgsApplicative (Builder m) = Args
   type ConstructorMonad (Builder m) = m
   _val_ :: (Typeable bean, HasCallStack) => Args bean -> Builder m (Args bean)
@@ -79,7 +79,7 @@ instance (Monad m) => MonadBuilder (Builder m) where
   _eff_ :: (Typeable bean, HasCallStack) => Args (m bean) -> Builder m (Args bean)
   _eff_ action = withFrozenCallStack $ add (eff_ action)
 
-instance MonadBuilder IO where
+instance MonadWiring IO where
   type ArgsApplicative IO = Identity
   type ConstructorMonad IO = IO
   _val_ :: Identity bean -> IO (Identity bean)
@@ -87,7 +87,7 @@ instance MonadBuilder IO where
   _eff_ :: Identity (IO bean) -> IO (Identity bean)
   _eff_ = sequence
 
-instance MonadBuilder Managed where
+instance MonadWiring Managed where
   type ArgsApplicative Managed = Identity
   type ConstructorMonad Managed = Managed
   _val_ :: Identity a -> Managed (Identity a)
