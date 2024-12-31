@@ -8,7 +8,7 @@ module Cauldron.Builder
     execBuilder,
     add,
     MonadBuilder (..),
-    addIOEff_,
+    _ioEff_,
   )
 where
 
@@ -62,35 +62,35 @@ add recipelike =
 class (Monad m, Applicative (ArgsApplicative m), Monad (ConstructorMonad m)) => MonadBuilder m where
   type ArgsApplicative m :: Type -> Type
   type ConstructorMonad m :: Type -> Type
-  addVal_ :: (Typeable bean, HasCallStack) => ArgsApplicative m bean -> m (ArgsApplicative m bean)
-  addEff_ :: (Typeable bean, HasCallStack) => ArgsApplicative m (ConstructorMonad m bean) -> m (ArgsApplicative m bean)
+  _val_ :: (Typeable bean, HasCallStack) => ArgsApplicative m bean -> m (ArgsApplicative m bean)
+  _eff_ :: (Typeable bean, HasCallStack) => ArgsApplicative m (ConstructorMonad m bean) -> m (ArgsApplicative m bean)
 
-addIOEff_ ::
+_ioEff_ ::
   (MonadBuilder m, MonadIO (ConstructorMonad m), Typeable bean, HasCallStack) =>
   ArgsApplicative m (IO bean) ->
   m (ArgsApplicative m bean)
-addIOEff_ args = withFrozenCallStack $ addEff_ $ liftIO <$> args
+_ioEff_ args = withFrozenCallStack $ _eff_ $ liftIO <$> args
 
 instance (Monad m) => MonadBuilder (Builder m) where
   type ArgsApplicative (Builder m) = Args
   type ConstructorMonad (Builder m) = m
-  addVal_ :: (Typeable bean, HasCallStack) => Args bean -> Builder m (Args bean)
-  addVal_ v = withFrozenCallStack $ add (val_ v)
-  addEff_ :: (Typeable bean, HasCallStack) => Args (m bean) -> Builder m (Args bean)
-  addEff_ action = withFrozenCallStack $ add (eff_ action)
+  _val_ :: (Typeable bean, HasCallStack) => Args bean -> Builder m (Args bean)
+  _val_ v = withFrozenCallStack $ add (val_ v)
+  _eff_ :: (Typeable bean, HasCallStack) => Args (m bean) -> Builder m (Args bean)
+  _eff_ action = withFrozenCallStack $ add (eff_ action)
 
 instance MonadBuilder IO where
   type ArgsApplicative IO = Identity
   type ConstructorMonad IO = IO
-  addVal_ :: Identity bean -> IO (Identity bean)
-  addVal_ = pure
-  addEff_ :: Identity (IO bean) -> IO (Identity bean)
-  addEff_ = sequence
+  _val_ :: Identity bean -> IO (Identity bean)
+  _val_ = pure
+  _eff_ :: Identity (IO bean) -> IO (Identity bean)
+  _eff_ = sequence
 
 instance MonadBuilder Managed where
   type ArgsApplicative Managed = Identity
   type ConstructorMonad Managed = Managed
-  addVal_ :: Identity a -> Managed (Identity a)
-  addVal_ = pure
-  addEff_ :: Identity (Managed a) -> Managed (Identity a)
-  addEff_ = sequence
+  _val_ :: Identity a -> Managed (Identity a)
+  _val_ = pure
+  _eff_ :: Identity (Managed a) -> Managed (Identity a)
+  _eff_ = sequence

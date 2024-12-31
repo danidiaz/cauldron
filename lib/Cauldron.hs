@@ -93,7 +93,9 @@ module Cauldron
     val,
     val',
     eff_,
+    ioEff_,
     eff,
+    ioEff,
     eff',
     wire,
     getConstructorArgs,
@@ -153,6 +155,7 @@ import Cauldron.Beans (SomeMonoidTypeRep (..))
 import Cauldron.Beans qualified
 import Control.Exception (Exception (..))
 import Control.Monad.Fix
+import Control.Monad.IO.Class
 import Data.Bifunctor (first)
 import Data.ByteString qualified
 import Data.Dynamic
@@ -1039,7 +1042,7 @@ val :: forall {nested} bean m. (Registrable nested bean, Applicative m, HasCallS
 val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity x)
 
 -- | Like 'val', but uses an alternative form of registering secondary beans.
--- Less 'Registrable' typeclass magic, but more verbose.
+-- Less 'Registrable' typeclass magic, but more verbose. Likely not what you want.
 val' :: forall bean m. (Applicative m, HasCallStack) => Args (Regs bean) -> Constructor m bean
 val' x = Constructor callStack $ fmap pure x
 
@@ -1050,6 +1053,10 @@ val' x = Constructor callStack $ fmap pure x
 eff_ :: forall bean m. (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
 eff_ x = Constructor callStack $ fmap (fmap pure) x
 
+-- | Like 'eff_', but lifts 'IO' constructor effects into a general 'MonadIO'.
+ioEff_ :: forall bean m. (MonadIO m, HasCallStack) => Args (IO bean) -> Constructor m bean
+ioEff_ args = withFrozenCallStack (hoistConstructor liftIO (eff_ args))
+
 -- | Like 'eff_', but examines the @nested@ value produced by the action
 -- returned by the 'Args' looking for (potentially nested) tuples.  All tuple
 -- components except the rightmost-innermost one are registered as secondary
@@ -1057,8 +1064,12 @@ eff_ x = Constructor callStack $ fmap (fmap pure) x
 eff :: forall {nested} bean m. (Registrable nested bean, Monad m, HasCallStack) => Args (m nested) -> Constructor m bean
 eff x = withFrozenCallStack (eff' $ register x)
 
+-- | Like 'eff', but lifts 'IO' constructor effects into a general 'MonadIO'.
+ioEff :: forall {nested} bean m. (Registrable nested bean, MonadIO m, HasCallStack) => Args (IO nested) -> Constructor m bean
+ioEff args = withFrozenCallStack (hoistConstructor liftIO (eff args))
+
 -- | Like 'eff', but uses an alternative form of registering secondary beans.
--- Less 'Registrable' typeclass magic, but more verbose.
+-- Less 'Registrable' typeclass magic, but more verbose. Likely not what you want.
 eff' :: forall bean m. (HasCallStack) => Args (m (Regs bean)) -> Constructor m bean
 eff' = Constructor callStack
 
