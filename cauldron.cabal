@@ -46,10 +46,10 @@ library
     hs-source-dirs:   lib
     exposed-modules:  
         Cauldron
-        Cauldron.Builder
         Cauldron.Beans
         Cauldron.Args
         Cauldron.Managed
+        Cauldron.Builder
 
 executable cauldron-example-wiring
     import:           common-base

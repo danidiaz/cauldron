@@ -6,15 +6,19 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE RecursiveDo #-}
 
 module Main (main) where
 
 import Cauldron
+import Cauldron.Builder
 import Data.Foldable qualified
 import Data.Functor.Identity
 import Data.Monoid
 import Test.Tasty
 import Test.Tasty.HUnit
+import Control.Exception (throwIO)
+import Data.Function ((&))
 
 data Foo
   = EndFoo
@@ -67,6 +71,35 @@ cauldron =
       recipe @(Serializer Baz) $ val $ wire makeBazSerializer
     ]
 
+builder :: Builder Identity ()
+builder = mdo
+  foo <- _val_ $ makeFooSerializer <$> bar
+  bar <- _val_ $ makeBarSerializer <$> foo <*> baz
+  baz <- _val_ $ makeBazSerializer <$> foo
+  pure ()
+
+builder2 :: Builder Identity ()
+builder2 = mdo
+  _ <- _val_ $ wire makeFooSerializer
+  _ <- _val_ $ wire makeBarSerializer
+  _ <- _val_ $ wire makeBazSerializer
+  pure ()
+
+builder3 :: Builder Identity ()
+builder3 = mdo
+  foo <- add $ val_ $ wire makeFooSerializer
+  _ <- add $ val_ $ makeBarSerializer <$> foo <*> baz
+  baz <- add $ val_ $ wire makeBazSerializer
+  pure ()
+
+builderDupErr :: Builder Identity ()
+builderDupErr = mdo
+  foo1 <- _val_ $ makeFooSerializer <$> bar
+  foo2 <- _val_ $ makeFooSerializer <$> bar
+  bar <- _val_ $ makeBarSerializer <$> foo1 <*> baz
+  baz <- _val_ $ makeBazSerializer <$> foo2
+  pure ()
+
 newtype Acc = Acc Int
   deriving stock (Show)
   deriving stock (Eq)
@@ -113,17 +146,20 @@ tests :: TestTree
 tests =
   testGroup
     "All"
-    [ testCase "successful cyclic wiring" do
-        case cook allowDepCycles cauldron of
-          Left _ -> do
-            -- putStrLn $ prettyRecipeError err
-            assertFailure "could not wire"
-          Right (Identity bs) ->
-            case taste bs of
-              Nothing -> assertFailure "serializer not found"
-              Just (Serializer {runSerializer}) -> do
-                let value = FooToBar (BarToFoo (FooToBar (BarToBaz EndBaz)))
-                assertEqual "experted result" ".FooToBar.BarToFoo.FooToBar.BarToBar.EndBaz" (runSerializer value),
+    [ testCase "successful cyclic wiring" do makeBasicTest cauldron,
+      testCase "successful cyclic wiring - builder" do 
+        c <- builder & execBuilder & either throwIO pure
+        makeBasicTest c,
+      testCase "successful cyclic wiring - builder 2" do 
+        c <- builder2 & execBuilder & either throwIO pure
+        makeBasicTest c,
+      testCase "successful cyclic wiring - builder 3" do 
+        c <- builder3 & execBuilder & either throwIO pure
+        makeBasicTest c,
+      testCase "should fail builder exec" do 
+        builderDupErr & execBuilder & \case
+          Left _ -> pure ()
+          Right _ -> assertFailure "Builder should have failed with duplicate beans error",
       testCase "should fail cycle wiring" do
         Data.Foldable.for_ @[] [("forbid", forbidDepCycles), ("selfdeps", allowSelfDeps)] \(name, fire) ->
           case cook fire cauldron of
@@ -156,6 +192,19 @@ tests =
               Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
               Right _ -> assertFailure $ "Unexpected success when wiring" ++ name
     ]
+    where
+    makeBasicTest :: Cauldron Identity -> IO ()
+    makeBasicTest theCauldron =
+        case cook allowDepCycles theCauldron of
+          Left _ -> do
+            -- putStrLn $ prettyRecipeError err
+            assertFailure "could not wire"
+          Right (Identity bs) ->
+            case taste bs of
+              Nothing -> assertFailure "serializer not found"
+              Just (Serializer {runSerializer}) -> do
+                let value = FooToBar (BarToFoo (FooToBar (BarToBaz EndBaz)))
+                assertEqual "experted result" ".FooToBar.BarToFoo.FooToBar.BarToBar.EndBaz" (runSerializer value)
 
 main :: IO ()
 main = defaultMain tests
