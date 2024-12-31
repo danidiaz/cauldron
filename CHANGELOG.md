@@ -1,5 +1,10 @@
 # Revision history for cauldron
 
+## 0.6.1.0
+
+* `ioEff` added to `Cauldron`.
+* New module `Cauldron.Builder`.
+
 ## 0.6.0.0
 
 * Remove sop-core dependency, incorporate just the needed functionality into the library.

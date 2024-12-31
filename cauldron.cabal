@@ -1,6 +1,6 @@
 cabal-version:      3.4
 name:               cauldron
-version:            0.6.0.0
+version:            0.6.1.0
 synopsis:           Dependency injection library
 description:        Dependency injection library that wires things at runtime.
 license:            BSD-3-Clause
