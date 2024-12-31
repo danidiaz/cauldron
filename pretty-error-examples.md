@@ -40,3 +40,21 @@ Forbidden dependency cycle between bean construction steps:
 	CallStack (from HasCallStack):
 	  val, called at app/Main.hs:205:26 in cauldron-0.4.0.0-inplace-cauldron-example-wiring:Main
 ```
+
+```
+Some bean types defined more than once in builder:
+- Bean type Serializer Baz was defined in these locations: 
+	CallStack (from HasCallStack):
+	  a type signature in an instance, called at lib/Cauldron/Builder.hs:126:12 in cauldron-0.6.1.0-inplace:Cauldron.Builder
+	  _val_, called at test/codecTests.hs:100:10 in cauldron-0.6.1.0-inplace-codec-tests:Main
+	CallStack (from HasCallStack):
+	  a type signature in an instance, called at lib/Cauldron/Builder.hs:126:12 in cauldron-0.6.1.0-inplace:Cauldron.Builder
+	  _val_, called at test/codecTests.hs:101:8 in cauldron-0.6.1.0-inplace-codec-tests:Main
+- Bean type Serializer Foo was defined in these locations: 
+	CallStack (from HasCallStack):
+	  a type signature in an instance, called at lib/Cauldron/Builder.hs:126:12 in cauldron-0.6.1.0-inplace:Cauldron.Builder
+	  _val_, called at test/codecTests.hs:97:11 in cauldron-0.6.1.0-inplace-codec-tests:Main
+	CallStack (from HasCallStack):
+	  a type signature in an instance, called at lib/Cauldron/Builder.hs:126:12 in cauldron-0.6.1.0-inplace:Cauldron.Builder
+	  _val_, called at test/codecTests.hs:98:11 in cauldron-0.6.1.0-inplace-codec-tests:Main
+```

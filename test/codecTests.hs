@@ -98,6 +98,7 @@ builderDupErr = mdo
   foo2 <- _val_ $ makeFooSerializer <$> bar
   bar <- _val_ $ makeBarSerializer <$> foo1 <*> baz
   baz <- _val_ $ makeBazSerializer <$> foo2
+  _ <- _val_ $ makeBazSerializer <$> foo2
   pure ()
 
 newtype Acc = Acc Int
@@ -158,7 +159,9 @@ tests =
         makeBasicTest c,
       testCase "should fail builder exec" do
         builderDupErr & execBuilder & \case
-          Left _ -> pure ()
+          Left _ -> do
+            -- appendFile "/tmp/foo.txt" $ prettyDuplicateBeans err
+            pure ()
           Right _ -> assertFailure "Builder should have failed with duplicate beans error",
       testCase "should fail cycle wiring" do
         Data.Foldable.for_ @[] [("forbid", forbidDepCycles), ("selfdeps", allowSelfDeps)] \(name, fire) ->

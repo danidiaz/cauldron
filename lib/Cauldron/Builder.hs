@@ -88,7 +88,7 @@ prettyDuplicateBeansLines (DuplicateBeans beanMap) =
   [ "Some bean types defined more than once in builder:"
   ]
     ++ ( beanMap & Map.foldMapWithKey \rep (c1, c2, rest) ->
-           ( [ "- Bean type " ++ show rep ++ "was definied in these locations: "
+           ( [ "- Bean type " ++ show rep ++ " was defined in these locations:"
              ]
                ++ ( (c1 : c2 : rest) & foldMap \location ->
                       (("\t" ++) <$> prettyCallStackLines location)
