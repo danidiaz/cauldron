@@ -695,10 +695,10 @@ buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) ->
   let (locations, deps) = buildDepsCauldron secondary cauldron
   -- We may omit some dependency edges to allow for cyclic dependencies.
   let graph = Graph.edges $ filter (not . shouldOmitDependency) deps
-  case Graph.topSort graph of
+  case Graph.reverseTopSort graph of
     Left recipeCycle ->
       Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
-    Right (reverse -> plan) -> do
+    Right plan -> do
       Right (plan, fire, cauldron)
 
 buildDepsCauldron :: Set TypeRep -> Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
