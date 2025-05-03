@@ -1,6 +1,6 @@
 cabal-version:      3.4
 name:               cauldron
-version:            0.6.1.0
+version:            0.7.0.0
 synopsis:           Dependency injection library
 description:        Dependency injection library that wires things at runtime.
 license:            BSD-3-Clause
@@ -26,7 +26,7 @@ common common-base
 common common-lib
     import: common-base
     build-depends:
-      containers >= 0.5.0 && < 0.8,
+      containers >= 0.5.0 && < 0.9,
       text >= 2.0 && < 2.2,
 
 common common-tests
@@ -35,13 +35,12 @@ common common-tests
       tasty           ^>= 1.5,
       tasty-hunit     ^>= 0.10,
       transformers >= 0.5 && < 0.7,
-      algebraic-graphs ^>= 0.7,
       cauldron,
+      cauldron:graph,
 
 library
     import:           common-lib
     build-depends:
-        algebraic-graphs ^>= 0.7,
         bytestring >= 0.10.0 && < 0.13,
         cauldron:graph,
     hs-source-dirs:   lib
@@ -58,6 +57,8 @@ library graph
     exposed-modules:  
         Cauldron.Graph.AdjacencyMap
         Cauldron.Graph.AdjacencyMap.Algorithm
+        Cauldron.Graph.Export
+        Cauldron.Graph.Export.Dot
 
 executable cauldron-example-wiring
     import:           common-base

@@ -8,7 +8,7 @@
 
 module Main (main) where
 
-import Algebra.Graph.AdjacencyMap
+import Cauldron.Graph.AdjacencyMap
 import Cauldron
 import Control.Monad
 import Control.Monad.IO.Class
