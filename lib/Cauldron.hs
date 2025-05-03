@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 
 -- | This is a library for performing dependency injection. It's an alternative
 -- to manually wiring your functions and passing all required parameters
@@ -146,9 +147,9 @@ module Cauldron
   )
 where
 
-import Algebra.Graph.AdjacencyMap (AdjacencyMap)
-import Algebra.Graph.AdjacencyMap qualified as Graph
-import Algebra.Graph.AdjacencyMap.Algorithm qualified as Graph
+import Cauldron.Graph.AdjacencyMap (AdjacencyMap)
+import Cauldron.Graph.AdjacencyMap qualified as Graph
+import Cauldron.Graph.AdjacencyMap.Algorithm qualified as Graph
 import Algebra.Graph.Export.Dot qualified as Dot
 import Cauldron.Args
 import Cauldron.Beans (SomeMonoidTypeRep (..))
@@ -1192,3 +1193,4 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- >>> import Data.Monoid
 -- >>> import Data.Either (either)
 -- >>> import Control.Exception (throwIO)
+
