@@ -147,9 +147,9 @@ module Cauldron
   )
 where
 
-import Cauldron.Graph.AdjacencyMap (AdjacencyMap)
-import Cauldron.Graph.AdjacencyMap qualified as Graph
-import Cauldron.Graph.AdjacencyMap.Algorithm qualified as Graph
+import Cauldron.Graph (AdjacencyMap)
+import Cauldron.Graph qualified as Graph
+import Cauldron.Graph.Algorithm qualified as Graph
 import Cauldron.Graph.Export.Dot qualified as Dot
 import Cauldron.Args
 import Cauldron.Beans (SomeMonoidTypeRep (..))
