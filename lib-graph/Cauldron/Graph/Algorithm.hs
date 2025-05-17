@@ -12,6 +12,7 @@ import Data.Sequence qualified
 import Data.Set qualified
 import Data.Map.Strict qualified
 import Data.Foldable qualified
+import Data.Function ((&))
 
 reverseTopSort :: Ord a => AdjacencyMap a -> Either (NonEmpty a) [a] 
 reverseTopSort g = do
@@ -36,13 +37,16 @@ findCycleInSCC g scc@(start :| _) = go start (Data.Set.singleton start) (Data.Se
     sccSet = Data.Set.fromList . Data.Foldable.toList $ scc
     isInScc = (`Data.Set.member` sccSet)
     am = adjacencyMap $ Cauldron.Graph.induce isInScc g
-    go current visited cycleAcc =
-      case Data.Set.toList <$> Data.Map.Strict.lookup current am of
+    firstChildOf v = 
+      case Data.Set.toList <$> Data.Map.Strict.lookup v am of
         Nothing -> error "findCycleInSCC: node not in adjacency map"
+        -- In a SCC, all vertices should have at least one outgoing edge!
         Just [] -> error "findCycleInSCC: SCC node with no outgoing edge"
-        Just (child:_) ->
-          if child `Data.Set.member` visited
+        Just (child:_) -> child
+    go current visited cycleAcc =
+        let child = firstChildOf current
+         in if child `Data.Set.member` visited
             then
-              Data.List.NonEmpty.fromList $ Data.Foldable.toList $ Data.Sequence.takeWhileL (/= child) cycleAcc
+              Data.List.NonEmpty.fromList $ Data.Foldable.toList $ Data.Sequence.dropWhileL (/= child) cycleAcc
             else
-              go child (Data.Set.insert child visited) (cycleAcc Data.Sequence.|> child)
+              go child (visited & Data.Set.insert child) (cycleAcc Data.Sequence.|> child)

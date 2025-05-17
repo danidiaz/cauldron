@@ -29,6 +29,7 @@ import Data.Tree
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
+import Data.Foldable qualified
 
 type M = WriterT [Text] IO
 
@@ -305,7 +306,11 @@ tests =
         pure (),
       testCase "cauldron with cycle" do
         case cook' cauldronWithCycle of
-          Left (DependencyCycleError _) -> pure ()
+          Left (DependencyCycleError (DependencyCycle vs)) -> 
+            if Data.Foldable.length vs == 2 
+              then pure ()
+              else do
+                assertEqual "cycle of the expected length" 2 (Data.Foldable.length vs)
           _ -> assertFailure "dependency cycle not detected"
         pure ()
     ]
