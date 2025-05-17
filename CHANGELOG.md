@@ -1,5 +1,9 @@
 # Revision history for cauldron
 
+## 0.7.0.0
+
+* Remove dependency on algebraic-graphs, copying those parts of the code that we used.
+
 ## 0.6.1.0
 
 * `ioEff` added to `Cauldron`.
