@@ -1,13 +1,5 @@
 # Revision history for cauldron
 
-## 0.7.0.0
-
-* Removed dependency on "algebraic-graphs" by copying some code from that
-  library and using the graph algorithms from "containers".
-
-* `DependencyCycle` is now `StronglyConnectedComponent`, and the order of the
-  steps doesn't necessarily follow the order of the cycle.
-
 ## 0.6.1.0
 
 * `ioEff` added to `Cauldron`.

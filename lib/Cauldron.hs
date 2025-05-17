@@ -126,7 +126,7 @@ module Cauldron
     RecipeError (..),
     MissingDependencies (..),
     DoubleDutyBeans (..),
-    StronglyConnectedComponent (..),
+    DependencyCycle (..),
     prettyRecipeError,
     prettyRecipeErrorLines,
 
@@ -687,19 +687,17 @@ demandsByConstructorsInCauldron Cauldron {recipeMap} = do
       let ConstructorReps {argReps = decoArgReps} = constructorReps decoCon
        in [(getConstructorCallStack decoCon, tr, decoArgReps)]
 
--- | A group of one or more 'BeanConstructionStep's connected by a forbidden cycle.
--- The order in which the 'BeanConstructionStep's are given doesn't necessarily follow the cycle.
-newtype StronglyConnectedComponent = StronglyConnectedComponent (NonEmpty (BeanConstructionStep, Maybe CallStack))
+newtype DependencyCycle = DependencyCycle (NonEmpty (BeanConstructionStep, Maybe CallStack))
   deriving stock (Show)
 
-buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either StronglyConnectedComponent (Tree (Plan, Fire m, Cauldron m))
+buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either DependencyCycle (Tree (Plan, Fire m, Cauldron m))
 buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) -> do
   let (locations, deps) = buildDepsCauldron secondary cauldron
   -- We may omit some dependency edges to allow for cyclic dependencies.
   let graph = Graph.edges $ filter (not . shouldOmitDependency) deps
   case Graph.reverseTopSort graph of
     Left recipeCycle ->
-      Left $ StronglyConnectedComponent $ recipeCycle <&> \step -> (step, Map.lookup step locations)
+      Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
     Right plan -> do
       Right (plan, fire, cauldron)
 
@@ -848,7 +846,7 @@ data RecipeError
     -- are disallowed.
     DoubleDutyBeansError DoubleDutyBeans
   | -- | Dependency cycles are disallowed by some 'Fire's.
-    DependencyCycleError StronglyConnectedComponent
+    DependencyCycleError DependencyCycle
   deriving stock (Show)
 
 instance Exception RecipeError where
@@ -882,8 +880,8 @@ prettyRecipeErrorLines = \case
                   ]
                ++ (("\t" ++) <$> prettyCallStackLines primCS)
          )
-  DependencyCycleError (StronglyConnectedComponent theCycle) ->
-    [ "A forbidden cycle connects these bean construction steps:"
+  DependencyCycleError (DependencyCycle theCycle) ->
+    [ "Forbidden dependency cycle between bean construction steps:"
     ]
       ++ ( flip foldMap theCycle \(step, mstack) ->
              [ "- " ++ case step of
@@ -981,7 +979,7 @@ defaultStyle merr =
                     Data.Text.pack "color" Dot.:= Data.Text.pack "green"
                   ]
             _ -> []
-        Just (DependencyCycleError (StronglyConnectedComponent (Set.fromList . Data.Foldable.toList . fmap fst -> cycleStepSet))) ->
+        Just (DependencyCycleError (DependencyCycle (Set.fromList . Data.Foldable.toList . fmap fst -> cycleStepSet))) ->
           if Set.member step cycleStepSet
             then
               [ Data.Text.pack "style" Dot.:= Data.Text.pack "bold",
