@@ -307,10 +307,8 @@ tests =
       testCase "cauldron with cycle" do
         case cook' cauldronWithCycle of
           Left (DependencyCycleError (DependencyCycle vs)) -> 
-            if Data.Foldable.length vs == 2 
-              then pure ()
-              else do
-                assertEqual "cycle of the expected length" 2 (Data.Foldable.length vs)
+              -- Why not a cycle of length 3? Because there also are bare versions for each bean.
+              assertEqual "cycle of the expected length" 4 (Data.Foldable.length vs)
           _ -> assertFailure "dependency cycle not detected"
         pure ()
     ]
