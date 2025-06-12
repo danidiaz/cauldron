@@ -185,6 +185,7 @@ import GHC.Exception (CallStack, prettyCallStackLines)
 import GHC.IsList
 import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
 import Type.Reflection qualified
+import Data.String (IsString(..))
 
 -- | A map of bean recipes, indexed by the 'TypeRep' of the bean each recipe
 -- ultimately produces. Only one recipe is allowed for each bean type.
@@ -951,7 +952,7 @@ writeAsDot style filepath DependencyGraph {graph} = do
 
 -- | Default DOT rendering style to use with 'writeAsDot'.
 -- When a 'RecipeError' exists, is highlights the problematic 'BeanConstructionStep's.
-defaultStyle :: Maybe RecipeError -> Dot.Style BeanConstructionStep Data.Text.Text
+defaultStyle :: (Monoid s, IsString s) => Maybe RecipeError -> Dot.Style BeanConstructionStep s
 defaultStyle merr =
   -- https://graphviz.org/docs/attr-types/style/
   -- https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-Export-Dot.html
@@ -962,28 +963,28 @@ defaultStyle merr =
           case step of
             PrimaryBean rep
               | Set.member rep missing ->
-                  [ Data.Text.pack "style" Dot.:= Data.Text.pack "dashed",
-                    Data.Text.pack "color" Dot.:= Data.Text.pack "red"
+                  [ fromString "style" Dot.:= fromString "dashed",
+                    fromString "color" Dot.:= fromString "red"
                   ]
             _ -> []
         Just (DoubleDutyBeansError (DoubleDutyBeans (Map.keysSet -> bs))) ->
           case step of
             PrimaryBean rep
               | Set.member rep bs ->
-                  [ Data.Text.pack "style" Dot.:= Data.Text.pack "bold",
-                    Data.Text.pack "color" Dot.:= Data.Text.pack "green"
+                  [ fromString "style" Dot.:= fromString "bold",
+                    fromString "color" Dot.:= fromString "green"
                   ]
             SecondaryBean rep
               | Set.member rep bs ->
-                  [ Data.Text.pack "style" Dot.:= Data.Text.pack "bold",
-                    Data.Text.pack "color" Dot.:= Data.Text.pack "green"
+                  [ fromString "style" Dot.:= fromString "bold",
+                    fromString "color" Dot.:= fromString "green"
                   ]
             _ -> []
         Just (DependencyCycleError (DependencyCycle (Set.fromList . Data.Foldable.toList . fmap fst -> cycleStepSet))) ->
           if Set.member step cycleStepSet
             then
-              [ Data.Text.pack "style" Dot.:= Data.Text.pack "bold",
-                Data.Text.pack "color" Dot.:= Data.Text.pack "blue"
+              [ fromString "style" Dot.:= fromString "bold",
+                fromString "color" Dot.:= fromString "blue"
               ]
             else []
     }
@@ -992,14 +993,14 @@ defaultStyle merr =
 setVertexName :: (BeanConstructionStep -> Data.Text.Text) -> Dot.Style BeanConstructionStep Data.Text.Text -> Dot.Style BeanConstructionStep Data.Text.Text
 setVertexName vertexName style = style {Dot.vertexName}
 
-defaultStepToText :: BeanConstructionStep -> Data.Text.Text
+defaultStepToText :: IsString s => BeanConstructionStep -> s
 defaultStepToText =
-  let p rep = Data.Text.pack do show rep
+  let p rep = show rep
    in \case
-        BarePrimaryBean rep -> p rep <> Data.Text.pack "#bare"
-        PrimaryBeanDeco rep index -> p rep <> Data.Text.pack ("#deco#" ++ show index)
-        PrimaryBean rep -> p rep
-        SecondaryBean rep -> p rep <> Data.Text.pack "#agg"
+        BarePrimaryBean rep -> fromString $ p rep ++ "#bare"
+        PrimaryBeanDeco rep index -> fromString $ p rep ++ "#deco#" ++ show index
+        PrimaryBean rep -> fromString $ p rep
+        SecondaryBean rep -> fromString $ p rep ++ "#agg"
 
 nonEmptyToTree :: NonEmpty a -> Tree a
 nonEmptyToTree = \case
