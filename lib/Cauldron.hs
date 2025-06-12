@@ -600,31 +600,6 @@ recipeRegs (SomeRecipe _ (Recipe {bean, decos})) = do
 data MissingDependencies = MissingDependencies CallStack TypeRep (Set TypeRep)
   deriving stock (Show)
 
--- checkMissingDeps ::
---   -- | accums
---   Set TypeRep ->
---   Cauldron m ->
---   Either MissingDependencies ()
--- checkMissingDeps accums treecipes = do
---   let decoratedTreecipes = decorate (Map.empty, treecipes)
---       missing =
---         decoratedTreecipes <&> \(available, requested) ->
---           do checkMissingDepsCauldron accums (Map.keysSet available) requested
---   sequence_ missing
---   where
---     decorate ::
---       (Map TypeRep (SomeRecipe m), Tree (Cauldron m)) ->
---       Tree (Map TypeRep (SomeRecipe m), Cauldron m)
---     decorate = unfoldTree
---       do
---         \(acc, Node (current@Cauldron {recipeMap}) rest) ->
---           let -- current level has priority
---               newAcc = recipeMap `Map.union` acc
---               newSeeds = do
---                 z <- rest
---                 [(newAcc, z)]
---            in ((newAcc, current), newSeeds)
-
 checkMissingDeps ::
   -- | accums
   Set TypeRep ->
