@@ -640,18 +640,6 @@ buildPlan Fire {shouldOmitDependency} secondary cauldron = do
     Right plan -> do
       Right plan
 
-
--- buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either DependencyCycle (Tree (Plan, Fire m, Cauldron m))
--- buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) -> do
---   let (locations, deps) = buildDepsCauldron secondary cauldron
---   -- We may omit some dependency edges to allow for cyclic dependencies.
---   let graph = Graph.edges $ filter (not . shouldOmitDependency) deps
---   case Graph.reverseTopSort graph of
---     Left recipeCycle ->
---       Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
---     Right plan -> do
---       Right (plan, fire, cauldron)
-
 buildDepsCauldron :: Set TypeRep -> Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
 buildDepsCauldron secondary Cauldron {recipeMap} = do
   -- Are we depending on a primary bean, or on a monoidally aggregated secondary bean?
