@@ -24,12 +24,14 @@ import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.Proxy
 import Data.Set qualified
-import Data.Text (Text)
 import Data.Tree
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
 import Data.Foldable qualified
+
+
+type Text = String
 
 type M = WriterT [Text] IO
 

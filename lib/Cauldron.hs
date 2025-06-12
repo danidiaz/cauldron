@@ -158,7 +158,6 @@ import Control.Exception (Exception (..))
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Data.Bifunctor (first)
-import Data.ByteString qualified
 import Data.Dynamic
 import Data.Foldable qualified
 import Data.Function ((&))
@@ -176,8 +175,6 @@ import Data.Sequence (Seq)
 import Data.Sequence qualified
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Text qualified
-import Data.Text.Encoding qualified
 import Data.Tree
 import Data.Type.Equality (testEquality)
 import Data.Typeable
@@ -186,6 +183,7 @@ import GHC.IsList
 import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
 import Type.Reflection qualified
 import Data.String (IsString(..))
+import System.IO qualified
 
 -- | A map of bean recipes, indexed by the 'TypeRep' of the bean each recipe
 -- ultimately produces. Only one recipe is allowed for each bean type.
@@ -945,10 +943,12 @@ collapseToPrimaryBeans DependencyGraph {graph} = do
   DependencyGraph {graph = Graph.vertices vertices `Graph.overlay` Graph.edges edgesWithoutSelfLoops}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
-writeAsDot :: Dot.Style BeanConstructionStep Data.Text.Text -> FilePath -> DependencyGraph -> IO ()
+writeAsDot :: Dot.Style BeanConstructionStep String -> FilePath -> DependencyGraph -> IO ()
 writeAsDot style filepath DependencyGraph {graph} = do
   let dot = Dot.export style graph
-  Data.ByteString.writeFile filepath (Data.Text.Encoding.encodeUtf8 dot)
+  System.IO.withFile filepath System.IO.WriteMode $ \handle -> do
+    System.IO.hSetEncoding handle System.IO.utf8  
+    System.IO.hPutStrLn handle dot
 
 -- | Default DOT rendering style to use with 'writeAsDot'.
 -- When a 'RecipeError' exists, is highlights the problematic 'BeanConstructionStep's.
@@ -990,7 +990,7 @@ defaultStyle merr =
     }
 
 -- | Change the default way of how 'BeanConstructionStep's are rendered to text.
-setVertexName :: (BeanConstructionStep -> Data.Text.Text) -> Dot.Style BeanConstructionStep Data.Text.Text -> Dot.Style BeanConstructionStep Data.Text.Text
+setVertexName :: IsString s => (BeanConstructionStep -> s) -> Dot.Style BeanConstructionStep s -> Dot.Style BeanConstructionStep s
 setVertexName vertexName style = style {Dot.vertexName}
 
 defaultStepToText :: IsString s => BeanConstructionStep -> s

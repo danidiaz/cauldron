@@ -10,9 +10,10 @@ import Cauldron
 import Cauldron.Managed
 import Data.IORef
 import Data.Maybe (fromJust)
-import Data.Text (Text)
 import Test.Tasty
 import Test.Tasty.HUnit
+
+type Text = String
 
 newtype Logger m = Logger
   { logMessage :: Text -> m ()

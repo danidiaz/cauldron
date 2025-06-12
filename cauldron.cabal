@@ -27,7 +27,6 @@ common common-lib
     import: common-base
     build-depends:
       containers >= 0.5.0 && < 0.9,
-      text >= 2.0 && < 2.2,
 
 common common-tests
     import: common-lib
@@ -41,7 +40,6 @@ common common-tests
 library
     import:           common-lib
     build-depends:
-        bytestring >= 0.10.0 && < 0.13,
         cauldron:graph,
     hs-source-dirs:   lib
     exposed-modules:  
