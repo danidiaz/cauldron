@@ -109,8 +109,6 @@ module Cauldron
 
     -- * Cooking the beans
     cook,
-    cookNonEmpty,
-    cookTree,
 
     -- ** How loopy can we get?
     Fire,
@@ -175,7 +173,6 @@ import Data.Sequence (Seq)
 import Data.Sequence qualified
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Tree
 import Data.Type.Equality (testEquality)
 import Data.Typeable
 import GHC.Exception (CallStack, prettyCallStackLines)
@@ -560,41 +557,11 @@ cook ::
   Fire m ->
   Cauldron m ->
   Either RecipeError (m Beans)
-cook fire cauldron =
-  fmap @(Either RecipeError) (fmap @m rootLabel) $
-    cookTree (Node (fire, cauldron) [])
-
--- | Cook a nonempty list of 'Cauldron's.
---
--- 'Cauldron's later in the list can see the beans in all previous 'Cauldron's,
--- but not vice versa.
---
--- Beans in a 'Cauldron' have priority over the same beans in previous 'Cauldron's.
-cookNonEmpty ::
-  forall m.
-  (Monad m) =>
-  NonEmpty (Fire m, Cauldron m) ->
-  Either RecipeError (m (NonEmpty Beans))
-cookNonEmpty nonemptyCauldronList = do
-  fmap @(Either RecipeError) (fmap @m unsafeTreeToNonEmpty) $
-    cookTree (nonEmptyToTree nonemptyCauldronList)
-
--- | Cook a hierarchy of 'Cauldron's.
---
--- 'Cauldron's down in the branches can see the beans of their ancestor
--- 'Cauldron's, but not vice versa.
---
--- Beans in a 'Cauldron' have priority over the same beans in ancestor 'Cauldron's.
-cookTree ::
-  forall m.
-  (Monad m) =>
-  Tree (Fire m, Cauldron m) ->
-  Either RecipeError (m (Tree Beans))
-cookTree (treecipes) = do
-  accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans (snd <$> treecipes)
-  () <- first MissingDependenciesError do checkMissingDeps (Map.keysSet accumMap) (snd <$> treecipes)
-  treeplan <- first DependencyCycleError do buildPlans (Map.keysSet accumMap) treecipes
-  Right $ followPlan (fromDynList (Data.Foldable.toList accumMap)) (treeplan)
+cook fire cauldron = do
+  accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
+  () <- first MissingDependenciesError do checkMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
+  plan <- first DependencyCycleError do buildPlan fire (Map.keysSet accumMap) cauldron
+  Right $ followPlan fire cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
 
 newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
   deriving stock (Show)
@@ -608,17 +575,14 @@ getDependencyGraph cauldron =
    in DependencyGraph {graph = Graph.edges deps}
 
 checkNoDoubleDutyBeans ::
-  Tree (Cauldron m) ->
+  Cauldron m ->
   Either DoubleDutyBeans (Map TypeRep Dynamic)
-checkNoDoubleDutyBeans treecipes = do
-  let (accumMap, beanSet) = cauldronTreeRegs treecipes
+checkNoDoubleDutyBeans cauldron = do
+  let (accumMap, beanSet) = cauldronRegs cauldron
   let common = Map.intersectionWith (,) (fst <$> accumMap) beanSet
   if not (Map.null common)
     then Left $ DoubleDutyBeans common
     else Right $ snd <$> accumMap
-
-cauldronTreeRegs :: Tree (Cauldron m) -> (Map TypeRep (CallStack, Dynamic), Map TypeRep CallStack)
-cauldronTreeRegs = foldMap cauldronRegs
 
 cauldronRegs :: Cauldron m -> (Map TypeRep (CallStack, Dynamic), Map TypeRep CallStack)
 cauldronRegs Cauldron {recipeMap} =
@@ -636,39 +600,39 @@ recipeRegs (SomeRecipe _ (Recipe {bean, decos})) = do
 data MissingDependencies = MissingDependencies CallStack TypeRep (Set TypeRep)
   deriving stock (Show)
 
-checkMissingDeps ::
-  -- | accums
-  Set TypeRep ->
-  Tree (Cauldron m) ->
-  Either MissingDependencies ()
-checkMissingDeps accums treecipes = do
-  let decoratedTreecipes = decorate (Map.empty, treecipes)
-      missing =
-        decoratedTreecipes <&> \(available, requested) ->
-          do checkMissingDepsCauldron accums (Map.keysSet available) requested
-  sequence_ missing
-  where
-    decorate ::
-      (Map TypeRep (SomeRecipe m), Tree (Cauldron m)) ->
-      Tree (Map TypeRep (SomeRecipe m), Cauldron m)
-    decorate = unfoldTree
-      do
-        \(acc, Node (current@Cauldron {recipeMap}) rest) ->
-          let -- current level has priority
-              newAcc = recipeMap `Map.union` acc
-              newSeeds = do
-                z <- rest
-                [(newAcc, z)]
-           in ((newAcc, current), newSeeds)
+-- checkMissingDeps ::
+--   -- | accums
+--   Set TypeRep ->
+--   Cauldron m ->
+--   Either MissingDependencies ()
+-- checkMissingDeps accums treecipes = do
+--   let decoratedTreecipes = decorate (Map.empty, treecipes)
+--       missing =
+--         decoratedTreecipes <&> \(available, requested) ->
+--           do checkMissingDepsCauldron accums (Map.keysSet available) requested
+--   sequence_ missing
+--   where
+--     decorate ::
+--       (Map TypeRep (SomeRecipe m), Tree (Cauldron m)) ->
+--       Tree (Map TypeRep (SomeRecipe m), Cauldron m)
+--     decorate = unfoldTree
+--       do
+--         \(acc, Node (current@Cauldron {recipeMap}) rest) ->
+--           let -- current level has priority
+--               newAcc = recipeMap `Map.union` acc
+--               newSeeds = do
+--                 z <- rest
+--                 [(newAcc, z)]
+--            in ((newAcc, current), newSeeds)
 
-checkMissingDepsCauldron ::
+checkMissingDeps ::
   -- | accums
   Set TypeRep ->
   -- | available at this level
   Set TypeRep ->
   Cauldron m ->
   Either MissingDependencies ()
-checkMissingDepsCauldron accums available cauldron =
+checkMissingDeps accums available cauldron =
   Data.Foldable.for_ (demandsByConstructorsInCauldron cauldron) \(stack, tr, demanded) ->
     let missing = Set.filter (`Set.notMember` (available `Set.union` accums)) demanded
      in if Set.null missing
@@ -689,8 +653,9 @@ demandsByConstructorsInCauldron Cauldron {recipeMap} = do
 newtype DependencyCycle = DependencyCycle (NonEmpty (BeanConstructionStep, Maybe CallStack))
   deriving stock (Show)
 
-buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either DependencyCycle (Tree (Plan, Fire m, Cauldron m))
-buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) -> do
+
+buildPlan :: Fire m -> Set TypeRep -> Cauldron m -> Either DependencyCycle Plan
+buildPlan Fire {shouldOmitDependency} secondary cauldron = do
   let (locations, deps) = buildDepsCauldron secondary cauldron
   -- We may omit some dependency edges to allow for cyclic dependencies.
   let graph = Graph.edges $ filter (not . shouldOmitDependency) deps
@@ -698,7 +663,19 @@ buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) ->
     Left recipeCycle ->
       Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
     Right plan -> do
-      Right (plan, fire, cauldron)
+      Right plan
+
+
+-- buildPlans :: Set TypeRep -> Tree (Fire m, Cauldron m) -> Either DependencyCycle (Tree (Plan, Fire m, Cauldron m))
+-- buildPlans secondary = traverse \(fire@Fire {shouldOmitDependency}, cauldron) -> do
+--   let (locations, deps) = buildDepsCauldron secondary cauldron
+--   -- We may omit some dependency edges to allow for cyclic dependencies.
+--   let graph = Graph.edges $ filter (not . shouldOmitDependency) deps
+--   case Graph.reverseTopSort graph of
+--     Left recipeCycle ->
+--       Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
+--     Right plan -> do
+--       Right (plan, fire, cauldron)
 
 buildDepsCauldron :: Set TypeRep -> Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
 buildDepsCauldron secondary Cauldron {recipeMap} = do
@@ -774,19 +751,20 @@ constructorEdges makeTargetStep item (ConstructorReps {argReps, regReps}) =
         [(repStep, item)]
     )
 
+-- | Can we get rid of this function in favor of followPlanCaudron?
 followPlan ::
-  (Monad m) =>
+  Monad m =>
+  Fire m ->
+  Cauldron m ->
   Beans ->
-  (Tree (Plan, Fire m, Cauldron m)) ->
-  m (Tree Beans)
-followPlan initialBeans treecipes =
-  let secondaryBeanReps = Cauldron.Beans.keysSet initialBeans
-   in unfoldTreeM
-        ( \(previousStageBeans, Node (plan, Fire {followPlanCauldron}, cauldron) rest) -> do
-            currentStageBeans <- followPlanCauldron cauldron secondaryBeanReps previousStageBeans plan
-            pure (currentStageBeans, (,) currentStageBeans <$> rest)
-        )
-        (initialBeans, treecipes)
+  Plan -> 
+  m Beans
+followPlan Fire {followPlanCauldron} cauldron initialBeans plan =
+  let -- the very first initial beans are the accumulators?
+      secondaryBeanReps = Cauldron.Beans.keysSet initialBeans
+   in do
+            currentStageBeans <- followPlanCauldron cauldron secondaryBeanReps initialBeans plan
+            pure currentStageBeans
 
 followPlanStep ::
   (Monad m) =>
@@ -1002,16 +980,6 @@ defaultStepToText =
         PrimaryBean rep -> fromString $ p rep
         SecondaryBean rep -> fromString $ p rep ++ "#agg"
 
-nonEmptyToTree :: NonEmpty a -> Tree a
-nonEmptyToTree = \case
-  a Data.List.NonEmpty.:| [] -> Node a []
-  a Data.List.NonEmpty.:| (b : rest) -> Node a [nonEmptyToTree (b Data.List.NonEmpty.:| rest)]
-
-unsafeTreeToNonEmpty :: Tree a -> NonEmpty a
-unsafeTreeToNonEmpty = \case
-  Node a [] -> a Data.List.NonEmpty.:| []
-  Node a [b] -> Data.List.NonEmpty.cons a (unsafeTreeToNonEmpty b)
-  _ -> error "tree not list-shaped"
 
 -- | A way of building value of type @bean@, potentially requiring some
 -- dependencies, potentially returning some secondary beans

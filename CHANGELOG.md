@@ -3,6 +3,7 @@
 ## 0.7.0.0
 
 * Remove dependency on algebraic-graphs, copying those parts of the code that we used.
+* Remove `cookTree` and `cookNonEmpty`.
 
 ## 0.6.1.0
 
