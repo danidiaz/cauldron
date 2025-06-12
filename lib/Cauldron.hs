@@ -116,10 +116,6 @@ module Cauldron
     allowSelfDeps,
     allowDepCycles,
 
-    -- ** Tasting the results
-    Beans,
-    taste,
-
     -- ** When things go wrong
     RecipeError (..),
     MissingDependencies (..),
@@ -552,16 +548,25 @@ data BeanConstructionStep
 -- Any secondary beans that are registered by constructors are aggregated
 -- monoidally.
 cook ::
-  forall m.
-  (Monad m) =>
+  forall {m} bean.
+  (Monad m, Typeable bean) =>
   Fire m ->
   Cauldron m ->
-  Either RecipeError (m Beans)
+  Either RecipeError (m bean)
 cook fire cauldron = do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
+  () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) cauldron
   () <- first MissingDependenciesError do checkMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
   plan <- first DependencyCycleError do buildPlan fire (Map.keysSet accumMap) cauldron
-  Right $ followPlan fire cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
+  Right $ do
+    beans <- followPlan fire cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
+    pure $ fromJust $ taste @bean beans
+
+checkEntryPointPresent :: TypeRep -> Cauldron m -> Either TypeRep ()
+checkEntryPointPresent tr cauldron =  
+  if Set.member tr (Cauldron.keysSet cauldron)
+    then Right ()
+    else Left tr
 
 newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
   deriving stock (Show)
@@ -780,7 +785,9 @@ followConstructor c final super = do
 
 -- | Sometimes the 'cook'ing process goes wrong.
 data RecipeError
-  = -- | A 'Constructor' depends on beans that can't be found either in the current 'Cauldron' or its ancestors.
+  = MissingEntrypointError TypeRep 
+  |  
+    -- | A 'Constructor' depends on beans that can't be found either in the current 'Cauldron' or its ancestors.
     MissingDependenciesError MissingDependencies
   | -- | Beans that work both as primary beans and as secondary beans
     -- are disallowed.
@@ -797,6 +804,8 @@ prettyRecipeError = Data.List.intercalate "\n" . prettyRecipeErrorLines
 
 prettyRecipeErrorLines :: RecipeError -> [String]
 prettyRecipeErrorLines = \case
+  MissingEntrypointError tr ->
+     ["Missing entrypoint: " ++ show tr]
   MissingDependenciesError
     (MissingDependencies constructorCallStack constructorResultRep missingDependenciesReps) ->
       [ "This constructor for a value of type "
@@ -900,6 +909,8 @@ defaultStyle merr =
   (Dot.defaultStyle defaultStepToText)
     { Dot.vertexAttributes = \step -> case merr of
         Nothing -> []
+        Just (MissingEntrypointError _) ->
+            []
         Just (MissingDependenciesError (MissingDependencies _ _ missing)) ->
           case step of
             PrimaryBean rep
