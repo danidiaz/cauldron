@@ -96,7 +96,7 @@ tests =
         case cook allowSelfDeps (managedCauldron ref) of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> with beansAction \boiledBeans -> do
-            let (Logger {logMessage}, (Weird {anotherWeirdOp}) :: Weird IO) = fromJust . taste $ boiledBeans
+            let (Logger {logMessage}, (Weird {anotherWeirdOp}) :: Weird IO) = boiledBeans
             logMessage "foo"
             anotherWeirdOp
             pure ()

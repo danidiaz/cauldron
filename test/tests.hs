@@ -15,7 +15,6 @@ import Data.Function ((&))
 import Data.IORef
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.Proxy
 import Data.Set qualified
@@ -173,7 +172,7 @@ tests =
           Left _ -> assertFailure "could not wire"
           Right beansAction -> runWriterT do
             boiledBeans <- beansAction
-            let (Initializer {runInitializer}, Repository {findById, store}) = fromJust . taste $ boiledBeans
+            let (Initializer {runInitializer}, Repository {findById, store}) = boiledBeans
             runInitializer
             store 1 "foo"
             _ <- findById 1
@@ -188,7 +187,7 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        ((), traces) <- case cook' cauldronX of
+        ((), traces) <- case cook allowSelfDeps cauldronX of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
             runWriterT do
@@ -196,7 +195,7 @@ tests =
               let ( Initializer {runInitializer},
                     Repository {findById, store},
                     Weird {anotherWeirdOp}
-                    ) = fromJust . taste $ boiledBeans
+                    ) :: (Initializer, Repository M, Weird M) = boiledBeans
               runInitializer
               store 1 "foo"
               _ <- findById 1
@@ -232,11 +231,11 @@ tests =
         --  pure ()
           ,
       testCase "lonely beans get built" do
-        (_, _) <- case cook' cauldronLonely of
+        (_, _) <- case cook allowSelfDeps cauldronLonely of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> runWriterT do
             boiledBeans <- beansAction
-            let Lonely {soLonely} = fromJust . taste $ boiledBeans
+            let Lonely {soLonely} = boiledBeans
             soLonely
             pure ()
         pure (),

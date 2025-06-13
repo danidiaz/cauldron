@@ -9,7 +9,6 @@
 module Main (main) where
 
 import Cauldron
-import Data.Maybe (fromJust)
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -109,7 +108,7 @@ makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
 coolWiring :: Fire IO -> Either RecipeError (IO Entrypoint)
 coolWiring fire = do
-  fmap (fmap (fromJust . taste @Entrypoint)) $ cook fire cauldron
+  cook fire cauldron
 
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =

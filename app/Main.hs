@@ -10,7 +10,6 @@
 module Main where
 
 import Cauldron
-import Data.Maybe (fromJust)
 
 {-
   HERE ARE A BUNCH OF DATATYPES.
@@ -187,7 +186,7 @@ boringWiring = do
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
 coolWiring :: Either RecipeError (IO Entrypoint)
-coolWiring = fmap (fmap (fromJust . taste @Entrypoint)) $ cook allowSelfDeps cauldron
+coolWiring = cook allowSelfDeps cauldron
 
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =
