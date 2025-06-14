@@ -14,12 +14,11 @@
 
 module Cauldron.Args
   ( -- * Arguments
-    Args,
+    Args(..),
     arg,
     runArgs,
     getArgsReps,
     contramapArgs,
-
     -- ** Reducing 'arg' boilerplate with 'wire'
     Wireable (wire),
 

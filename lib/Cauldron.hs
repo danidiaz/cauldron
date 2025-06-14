@@ -109,6 +109,7 @@ module Cauldron
 
     -- * Cooking the beans
     cook,
+    cookToConstructor,
 
     -- ** How loopy can we get?
     Fire,
@@ -438,6 +439,7 @@ data Fire m = Fire
     followPlanCauldron ::
       Cauldron m ->
       Set TypeRep ->
+      (forall t. (Typeable t) => Maybe t) ->
       Beans ->
       Plan ->
       m Beans
@@ -452,7 +454,7 @@ forbidDepCycles :: (Monad m) => Fire m
 forbidDepCycles =
   Fire
     { shouldOmitDependency = \_ -> False,
-      followPlanCauldron = \cauldron _secondaryBeanReps initial plan ->
+      followPlanCauldron = \cauldron _secondaryBeanReps _previous initial plan ->
         Data.Foldable.foldlM
           do followPlanStep (\_ -> id) (\_ -> id) cauldron mempty
           initial
@@ -476,7 +478,7 @@ allowSelfDeps =
     { shouldOmitDependency = \case
         (BarePrimaryBean bean, PrimaryBean anotherBean) | bean == anotherBean -> True
         _ -> False,
-      followPlanCauldron = \cauldron _secondaryBeanReps initial plan ->
+      followPlanCauldron = \cauldron _secondaryBeanReps _previous initial plan ->
         mfix do
           \final ->
             Data.Foldable.foldlM
@@ -502,7 +504,7 @@ allowDepCycles =
         (BarePrimaryBean _, PrimaryBean _) -> True
         (PrimaryBeanDeco _ _, PrimaryBean _) -> True
         _ -> False,
-      followPlanCauldron = \cauldron secondaryBeanReps initial plan -> do
+      followPlanCauldron = \cauldron secondaryBeanReps _previous initial plan -> do
         let makeBareView _ = (`Cauldron.Beans.restrictKeys` secondaryBeanReps)
         let makeDecoView tr = (`Cauldron.Beans.restrictKeys` (Set.insert tr secondaryBeanReps))
         mfix do
@@ -556,12 +558,36 @@ cook ::
 cook fire cauldron = do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
   -- Right now we don't allow entrypoints that are accumulators. Should we?
-  () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) cauldron
-  () <- first MissingDependenciesError do checkMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
-  plan <- first DependencyCycleError do buildPlan fire (Map.keysSet accumMap) cauldron
+  () <- first MissingEntrypointError $ checkEntryPointPresent (typeRep (Proxy @bean)) cauldron
+  () <- first MissingDependenciesError $ checkMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
+  plan <- first DependencyCycleError $ buildPlan fire (Map.keysSet accumMap) cauldron
   Right $ do
-    beans <- followPlan fire cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
+    beans <- followPlan fire Nothing cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
     pure $ fromJust $ taste @bean beans
+
+cookToConstructor ::
+  forall {m} bean.
+  (Monad m, Typeable bean) =>
+  Fire m ->
+  Cauldron m ->
+  Either RecipeError (Constructor m bean)
+cookToConstructor fire cauldron = do
+  accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
+  -- Right now we don't allow entrypoints that are accumulators. Should we?
+  () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) cauldron
+  plan <- first DependencyCycleError do buildPlan fire (Map.keysSet accumMap) cauldron
+  let deps = collectMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
+  Right $ Constructor
+    {
+      _constructorCallStack = callStack,
+      _args = Args {
+        _argReps = deps,
+        _regReps = Set.empty,
+        _runArgs = \previous -> do
+          beans <- followPlan fire previous cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
+          pure $ pure $ fromJust $ taste @bean beans
+      }
+    }
 
 checkEntryPointPresent :: TypeRep -> Cauldron m -> Either TypeRep ()
 checkEntryPointPresent tr cauldron =  
@@ -607,18 +633,30 @@ data MissingDependencies = MissingDependencies CallStack TypeRep (Set TypeRep)
   deriving stock (Show)
 
 checkMissingDeps ::
+  [MissingDependencies] ->
+  Either MissingDependencies ()
+checkMissingDeps = \case
+  [] -> Right ()
+  ds : _ -> Left ds
+
+collectMissingDeps ::
+  [MissingDependencies] ->
+  Set TypeRep
+collectMissingDeps = Set.unions . fmap (\(MissingDependencies _ _ missing) ->  missing)
+
+missingDeps :: 
   -- | accums
   Set TypeRep ->
   -- | available at this level
   Set TypeRep ->
   Cauldron m ->
-  Either MissingDependencies ()
-checkMissingDeps accums available cauldron =
-  Data.Foldable.for_ (demandsByConstructorsInCauldron cauldron) \(stack, tr, demanded) ->
+  [MissingDependencies]
+missingDeps accums available cauldron =
+  demandsByConstructorsInCauldron cauldron & Data.Foldable.foldMap \(stack, tr, demanded) ->
     let missing = Set.filter (`Set.notMember` (available `Set.union` accums)) demanded
      in if Set.null missing
-          then Right ()
-          else Left $ MissingDependencies stack tr missing
+          then []
+          else [MissingDependencies stack tr missing]
 
 demandsByConstructorsInCauldron :: Cauldron m -> [(CallStack, TypeRep, Set TypeRep)]
 demandsByConstructorsInCauldron Cauldron {recipeMap} = do
@@ -724,15 +762,16 @@ constructorEdges makeTargetStep item (ConstructorReps {argReps, regReps}) =
 followPlan ::
   Monad m =>
   Fire m ->
+  (forall t. (Typeable t) => Maybe t) ->
   Cauldron m ->
   Beans ->
   Plan -> 
   m Beans
-followPlan Fire {followPlanCauldron} cauldron initialBeans plan =
+followPlan Fire {followPlanCauldron} previous cauldron initialBeans plan =
   let -- the very first initial beans are the accumulators?
       secondaryBeanReps = Cauldron.Beans.keysSet initialBeans
    in do
-            currentStageBeans <- followPlanCauldron cauldron secondaryBeanReps initialBeans plan
+            currentStageBeans <- followPlanCauldron cauldron secondaryBeanReps previous initialBeans plan
             pure currentStageBeans
 
 followPlanStep ::
