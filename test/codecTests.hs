@@ -111,12 +111,17 @@ newtype Bcc = Bcc Int
   deriving stock (Eq)
   deriving (Semigroup, Monoid) via Sum Int
 
+-- | Because we don't allow cook to extract accumulators, we need to declare a separate entrypoint. 
+newtype Entrypoint = Entrypoint Acc
+
 cauldronAccums1 :: Cauldron Identity
 cauldronAccums1 =
   fromRecipeList
     [ recipe @(Serializer Foo) $ val $ wire $ \sb -> (Acc 5, makeFooSerializer sb),
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
-      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
+      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf),
+      recipe @Entrypoint $ val $ wire $ Entrypoint
+
     ]
 
 cauldronAccums2 :: Cauldron Identity
@@ -124,7 +129,8 @@ cauldronAccums2 =
   fromRecipeList
     [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> makeFooSerializer sb,
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
-      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
+      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf),
+      recipe @Entrypoint $ val $ wire $ Entrypoint
     ]
 
 cauldronAccumsOops1 :: Cauldron Identity
@@ -165,7 +171,7 @@ tests =
           Right _ -> assertFailure "Builder should have failed with duplicate beans error",
       testCase "should fail cycle wiring" do
         Data.Foldable.for_ @[] [("forbid", forbidDepCycles), ("selfdeps", allowSelfDeps)] \(name, fire) ->
-          case cook @Foo fire cauldron of
+          case cook @(Serializer Foo) fire cauldron of
             Left (DependencyCycleError _) -> pure ()
             Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
             Right _ -> assertFailure $ "Unexpected success when wiring" ++ name,
@@ -175,11 +181,11 @@ tests =
             ("someConsume", cauldronAccums2, Acc 10)
           ]
           \(name, c, expected) ->
-            case cook allowDepCycles c of
+            case cook @Entrypoint allowDepCycles c of
               Left _err -> do
                 -- putStrLn $ prettyRecipeError err
                 assertFailure $ "could not wire " ++ name
-              Right (Identity acc) ->
+              Right (Identity (Entrypoint acc)) ->
                     assertEqual "experted result" expected acc,
       testCase "problematic wiring with accums" do
         Data.Foldable.for_ @[]
@@ -187,7 +193,7 @@ tests =
             ("indirectacc", cauldronAccumsOops2)
           ]
           \(name, c) ->
-            case cook @Foo allowDepCycles c of
+            case cook @(Serializer Foo) allowDepCycles c of
               Left (DependencyCycleError _) -> pure ()
               Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
               Right _ -> assertFailure $ "Unexpected success when wiring" ++ name

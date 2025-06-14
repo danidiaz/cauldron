@@ -555,6 +555,7 @@ cook ::
   Either RecipeError (m bean)
 cook fire cauldron = do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
+  -- Right now we don't allow entrypoints that are accumulators. Should we?
   () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) cauldron
   () <- first MissingDependenciesError do checkMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
   plan <- first DependencyCycleError do buildPlan fire (Map.keysSet accumMap) cauldron
