@@ -48,6 +48,8 @@ library
         Cauldron.Args
         Cauldron.Managed
         Cauldron.Builder
+    other-modules:
+        Cauldron.Args.Internal
 
 library graph
     import:           common-lib

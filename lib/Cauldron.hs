@@ -147,6 +147,7 @@ import Cauldron.Graph qualified as Graph
 import Cauldron.Graph.Algorithm qualified as Graph
 import Cauldron.Graph.Export.Dot qualified as Dot
 import Cauldron.Args
+import Cauldron.Args.Internal (Args(..))
 import Cauldron.Beans (SomeMonoidTypeRep (..))
 import Cauldron.Beans qualified
 import Control.Exception (Exception (..))
@@ -178,6 +179,7 @@ import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
 import Type.Reflection qualified
 import Data.String (IsString(..))
 import System.IO qualified
+import Control.Applicative ((<|>))
 
 -- | A map of bean recipes, indexed by the 'TypeRep' of the bean each recipe
 -- ultimately produces. Only one recipe is allowed for each bean type.
@@ -439,7 +441,7 @@ data Fire m = Fire
     followPlanCauldron ::
       Cauldron m ->
       Set TypeRep ->
-      (forall t. (Typeable t) => Maybe t) ->
+      BeanGetter -> 
       Beans ->
       Plan ->
       m Beans
@@ -456,7 +458,7 @@ forbidDepCycles =
     { shouldOmitDependency = \_ -> False,
       followPlanCauldron = \cauldron _secondaryBeanReps _previous initial plan ->
         Data.Foldable.foldlM
-          do followPlanStep (\_ -> id) (\_ -> id) cauldron mempty
+          do followPlanStep (\_ -> beansBeanGetter) (\_ -> beansBeanGetter) cauldron
           initial
           plan
     }
@@ -478,11 +480,21 @@ allowSelfDeps =
     { shouldOmitDependency = \case
         (BarePrimaryBean bean, PrimaryBean anotherBean) | bean == anotherBean -> True
         _ -> False,
-      followPlanCauldron = \cauldron _secondaryBeanReps _previous initial plan ->
+      followPlanCauldron = \cauldron _secondaryBeanReps previous initial plan ->
         mfix do
-          \final ->
+          \final -> do
+            let prioritizeCurrent beans = beansBeanGetter beans <> previous
+            -- We take care to remove the target bean to ensure that we read it from final, if there are self loops. 
+            -- We don't want to read it from previous!
+            let makeBareView tr beans = (prioritizeCurrent beans `censor` Set.singleton tr) <> beansBeanGetter final
+            -- We don't care about final here, 
+            -- because we are only interested in self deps,
+            -- and decos use the in-construction bean anyway. 
+            -- We don't want to decorate the final bean, 
+            -- or some version of it from previous!
+            let makeDecoView _ beans = prioritizeCurrent beans
             Data.Foldable.foldlM
-              do followPlanStep Cauldron.Beans.delete (\_ -> id) cauldron final
+              do followPlanStep makeBareView makeDecoView cauldron
               initial
               plan
     }
@@ -501,16 +513,22 @@ allowDepCycles :: (MonadFix m) => Fire m
 allowDepCycles =
   Fire
     { shouldOmitDependency = \case
+        -- Note that we don't delete deps on secondary beans.
+        -- NOTE: I guess the dep of secondary beans on their own primary bean is added separately?
         (BarePrimaryBean _, PrimaryBean _) -> True
         (PrimaryBeanDeco _ _, PrimaryBean _) -> True
         _ -> False,
-      followPlanCauldron = \cauldron secondaryBeanReps _previous initial plan -> do
-        let makeBareView _ = (`Cauldron.Beans.restrictKeys` secondaryBeanReps)
-        let makeDecoView tr = (`Cauldron.Beans.restrictKeys` (Set.insert tr secondaryBeanReps))
+      followPlanCauldron = \cauldron secondaryBeanReps previous initial plan -> do
         mfix do
-          \final ->
+          \final -> do
+            let prioritizeCurrent beans = beansBeanGetter beans <> previous
+            -- We always prefer the final beans, except for the secondary beans.
+            let makeBareView _ beans = (prioritizeCurrent beans `restrict` secondaryBeanReps) <> beansBeanGetter final
+            -- We always prefer the final beans, except for the secondary beans,
+            -- AND the important case of the bean being decorated, for which the decorator needs the in-construction version.
+            let makeDecoView tr beans = (prioritizeCurrent beans `restrict` Set.insert tr secondaryBeanReps) <> beansBeanGetter final
             Data.Foldable.foldlM
-              do followPlanStep makeBareView makeDecoView cauldron final
+              do followPlanStep makeBareView makeDecoView cauldron
               initial
               plan
     }
@@ -562,7 +580,7 @@ cook fire cauldron = do
   () <- first MissingDependenciesError $ checkMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
   plan <- first DependencyCycleError $ buildPlan fire (Map.keysSet accumMap) cauldron
   Right $ do
-    beans <- followPlan fire Nothing cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
+    beans <- followPlan fire mempty cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
     pure $ fromJust $ taste @bean beans
 
 cookToConstructor ::
@@ -574,6 +592,7 @@ cookToConstructor ::
 cookToConstructor fire cauldron = do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
   -- Right now we don't allow entrypoints that are accumulators. Should we?
+
   () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) cauldron
   plan <- first DependencyCycleError do buildPlan fire (Map.keysSet accumMap) cauldron
   let deps = collectMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
@@ -584,7 +603,7 @@ cookToConstructor fire cauldron = do
         _argReps = deps,
         _regReps = Set.empty,
         _runArgs = \previous -> do
-          beans <- followPlan fire previous cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
+          beans <- followPlan fire (BeanGetter previous) cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
           pure $ pure $ fromJust $ taste @bean beans
       }
     }
@@ -762,7 +781,7 @@ constructorEdges makeTargetStep item (ConstructorReps {argReps, regReps}) =
 followPlan ::
   Monad m =>
   Fire m ->
-  (forall t. (Typeable t) => Maybe t) ->
+  BeanGetter ->
   Cauldron m ->
   Beans ->
   Plan -> 
@@ -774,16 +793,54 @@ followPlan Fire {followPlanCauldron} previous cauldron initialBeans plan =
             currentStageBeans <- followPlanCauldron cauldron secondaryBeanReps previous initialBeans plan
             pure currentStageBeans
 
+data BeanGetter = BeanGetter { _run :: forall t. (Typeable t) => Maybe t } 
+
+instance Semigroup BeanGetter where
+  BeanGetter { _run = run1 } <> BeanGetter { _run = run2 } =
+    BeanGetter { _run = run1 <|> run2 }
+
+instance Monoid BeanGetter where
+  mempty = BeanGetter { _run = Nothing }
+
+runBeanGetter :: BeanGetter -> forall t. (Typeable t) => Maybe t 
+runBeanGetter BeanGetter { _run } = _run
+
+beansBeanGetter :: Beans -> BeanGetter
+beansBeanGetter beans = BeanGetter (taste beans) 
+
+censor :: BeanGetter -> Set TypeRep -> BeanGetter
+censor (BeanGetter { _run }) censored =
+  BeanGetter { _run = _run' }
+  where
+  _run' :: forall bean. (Typeable bean) => Maybe bean
+  _run' =
+    let tr = typeRep (Proxy @bean)
+     in if tr `Set.member` censored
+          then Nothing
+          else _run
+
+restrict :: BeanGetter -> Set TypeRep -> BeanGetter
+restrict (BeanGetter { _run }) allowed =
+  BeanGetter { _run = _run' }
+  where
+  _run' :: forall bean. (Typeable bean) => Maybe bean
+  _run' =
+    let tr = typeRep (Proxy @bean)
+     in if tr `Set.member` allowed
+          then _run
+          else Nothing
+
+
+-- | Builds the transition function for a 'foldM'.
 followPlanStep ::
   (Monad m) =>
-  (TypeRep -> Beans -> Beans) ->
-  (TypeRep -> Beans -> Beans) ->
+  (TypeRep -> Beans -> BeanGetter) ->
+  (TypeRep -> Beans -> BeanGetter) ->
   Cauldron m ->
-  Beans ->
   Beans ->
   BeanConstructionStep ->
   m Beans
-followPlanStep makeBareView makeDecoView Cauldron {recipeMap} final super item =
+followPlanStep makeBareView makeDecoView Cauldron {recipeMap} super item =
   case item of
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipeMap of
       SomeRecipe {_recipe = Recipe {bean}} -> do
@@ -792,14 +849,14 @@ followPlanStep makeBareView makeDecoView Cauldron {recipeMap} final super item =
         -- because if we have a self-dependency, we don't want to use the bean
         -- from a previous context (if it exists) we want the bean from final.
         -- There is a test for this.
-        inserter <- followConstructor bean final (makeBareView beanRep super)
+        inserter <- followConstructor bean (makeBareView beanRep super)
         pure do inserter super
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipeMap of
       SomeRecipe {_recipe = Recipe {decos}} -> do
         let deco = decos `Data.Sequence.index` index
         let ConstructorReps {beanRep} = constructorReps deco
         -- Unlike before, we don't delete the beanRep before running the constructor.
-        inserter <- followConstructor deco final (makeDecoView beanRep super)
+        inserter <- followConstructor deco (makeDecoView beanRep super)
         pure do inserter super
     -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
     -- 'PrimaryBeanDeco' steps.
@@ -814,11 +871,11 @@ followPlanStep makeBareView makeDecoView Cauldron {recipeMap} final super item =
 followConstructor ::
   (Monad m, Typeable bean) =>
   Constructor m bean ->
-  Beans ->
-  Beans ->
+  BeanGetter ->
   m (Beans -> Beans)
-followConstructor c final super = do
-  (regs, bean) <- runConstructor [super, final] c
+followConstructor c getter = do
+  --   (regs, bean) <- runConstructor [super, final] c
+  (regs, bean) <- runConstructor getter c
   pure \bs ->
     Cauldron.Beans.unionBeansMonoidally (getRegsReps (getConstructorArgs c)) bs regs
       & Cauldron.Beans.insert bean
@@ -1057,9 +1114,13 @@ ioEff args = withFrozenCallStack (hoistConstructor liftIO (eff args))
 eff' :: forall bean m. (HasCallStack) => Args (m (Regs bean)) -> Constructor m bean
 eff' = Constructor callStack
 
-runConstructor :: (Monad m) => [Beans] -> Constructor m bean -> m (Beans, bean)
-runConstructor bss (Constructor {_args}) = do
-  regs <- _args & runArgs (Data.Foldable.asum (taste <$> bss))
+runConstructor :: (Monad m) => 
+    BeanGetter ->
+    Constructor m bean -> 
+      m (Beans, bean)
+runConstructor getter (Constructor {_args}) = do
+  -- regs <- _args & runArgs (Data.Foldable.asum (taste <$> bss))
+  regs <- _args & runArgs (runBeanGetter getter)
   pure (runRegs (getRegsReps _args) regs)
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
