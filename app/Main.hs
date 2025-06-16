@@ -238,7 +238,7 @@ main = do
       pure $ Nothing
   let depGraph = getDependencyGraph cauldron
   writeAsDot (defaultStyle merr) "beans.dot" depGraph
-  writeAsDot (defaultStyle merr) "beans-no-agg.dot" $ removeSecondaryBeans $ depGraph
-  writeAsDot (defaultStyle merr) "beans-no-agg-no-decos.dot" $ removeDecos $ removeSecondaryBeans $ depGraph
-  writeAsDot (defaultStyle merr) "beans-simple.dot" $ collapseToPrimaryBeans $ removeDecos $ removeSecondaryBeans $ depGraph
-  writeAsDot (defaultStyle merr) "beans-simple-with-decos.dot" $ collapseToPrimaryBeans $ removeSecondaryBeans $ depGraph
+  writeAsDot (defaultStyle merr) "beans-no-agg.dot" $ removeAggregates $ depGraph
+  writeAsDot (defaultStyle merr) "beans-no-agg-no-decos.dot" $ removeDecos $ removeAggregates $ depGraph
+  writeAsDot (defaultStyle merr) "beans-simple.dot" $ collapseBeans $ removeDecos $ removeAggregates $ depGraph
+  writeAsDot (defaultStyle merr) "beans-simple-with-decos.dot" $ collapseBeans $ removeAggregates $ depGraph

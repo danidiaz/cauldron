@@ -136,9 +136,9 @@ module Cauldron
 
     -- *** Simplifying the dep graph
     -- $simplifygraph
-    removeSecondaryBeans,
+    removeAggregates,
     removeDecos,
-    collapseToPrimaryBeans,
+    collapseBeans,
   )
 where
 
@@ -478,7 +478,7 @@ allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
     { shouldOmitDependency = \case
-        (BarePrimaryBean bean, PrimaryBean anotherBean) | bean == anotherBean -> True
+        (BarePrimaryBean bean, FinishedBean anotherBean) | bean == anotherBean -> True
         _ -> False,
       followPlanCauldron = \cauldron _secondaryBeanReps previous initial plan ->
         mfix do
@@ -515,8 +515,8 @@ allowDepCycles =
     { shouldOmitDependency = \case
         -- Note that we don't delete deps on secondary beans.
         -- NOTE: I guess the dep of secondary beans on their own primary bean is added separately?
-        (BarePrimaryBean _, PrimaryBean _) -> True
-        (PrimaryBeanDeco _ _, PrimaryBean _) -> True
+        (BarePrimaryBean _, FinishedBean _) -> True
+        (PrimaryBeanDeco _ _, FinishedBean _) -> True
         _ -> False,
       followPlanCauldron = \cauldron secondaryBeanReps previous initial plan -> do
         mfix do
@@ -558,9 +558,9 @@ data BeanConstructionStep
   | -- | Apply the decorator with the given index. Comes after the 'BarePrimaryBean' and all 'PrimaryBeanDeco's with a lower index value.
     PrimaryBeanDeco TypeRep Int
   | -- | Final, fully decorated version of a bean. If there are no decorators, comes directly after 'BarePrimaryBean'.
-    PrimaryBean TypeRep
+    FinishedBean TypeRep
   | -- | Beans that are secondary registrations of a 'Constructor' and which are aggregated monoidally.
-    SecondaryBean TypeRep
+    AggregateBean TypeRep
   deriving stock (Show, Eq, Ord)
 
 -- | Build the beans using the recipeMap stored in the 'Cauldron'.
@@ -710,8 +710,8 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
   let makeTargetStep :: TypeRep -> BeanConstructionStep
       makeTargetStep rep =
         if rep `Set.member` secondary
-          then SecondaryBean rep
-          else PrimaryBean rep
+          then AggregateBean rep
+          else FinishedBean rep
   recipeMap
     & Map.foldMapWithKey
       \beanRep
@@ -725,7 +725,7 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
          } ->
           do
             let bareBean = BarePrimaryBean beanRep
-                boiledBean = PrimaryBean beanRep
+                boiledBean = FinishedBean beanRep
                 decoSteps = do
                   (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decos)
                   [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
@@ -743,7 +743,7 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
                   -- "bare" undecorated form is not strictly required. It will
                   -- always exist in an indirect manner, through the decorators.
                   -- But it might be useful when rendering the dep graph.
-                  (PrimaryBean beanRep, BarePrimaryBean beanRep)
+                  (FinishedBean beanRep, BarePrimaryBean beanRep)
                     :
                     -- The dep chain of completed bean -> decorators -> bare bean.
                     zip (Data.List.NonEmpty.tail innerSteps) (Data.List.NonEmpty.toList innerSteps)
@@ -773,7 +773,7 @@ constructorEdges makeTargetStep item (ConstructorReps {argReps, regReps}) =
     -- secondary beans depend on their producers
     ( do
         (regRep, _) <- Map.toList regReps
-        let repStep = SecondaryBean regRep
+        let repStep = AggregateBean regRep
         [(repStep, item)]
     )
 
@@ -860,10 +860,10 @@ followPlanStep makeBareView makeDecoView Cauldron {recipeMap} super item =
         pure do inserter super
     -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
     -- 'PrimaryBeanDeco' steps.
-    PrimaryBean {} -> pure super
+    FinishedBean {} -> pure super
     -- \| We do nothing here, secondary beans are built as a byproduct
     -- of primary beans and decorators.
-    SecondaryBean {} -> pure super
+    AggregateBean {} -> pure super
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles
@@ -933,8 +933,8 @@ prettyRecipeErrorLines = \case
              [ "- " ++ case step of
                  BarePrimaryBean rep -> "Bare bean " ++ show rep
                  PrimaryBeanDeco rep i -> "Decorator " ++ show i ++ " for bean " ++ show rep
-                 PrimaryBean rep -> "Complete bean " ++ show rep
-                 SecondaryBean rep -> "Secondary bean " ++ show rep
+                 FinishedBean rep -> "Complete bean " ++ show rep
+                 AggregateBean rep -> "Secondary bean " ++ show rep
              ]
                ++ case mstack of
                  Nothing -> []
@@ -955,9 +955,9 @@ toAdjacencyMap :: DependencyGraph -> AdjacencyMap BeanConstructionStep
 toAdjacencyMap DependencyGraph {graph} = graph
 
 -- | Remove all vertices and edges related to secondary beans.
-removeSecondaryBeans :: DependencyGraph -> DependencyGraph
-removeSecondaryBeans DependencyGraph {graph} =
-  DependencyGraph {graph = Graph.induce (\case SecondaryBean {} -> False; _ -> True) graph}
+removeAggregates :: DependencyGraph -> DependencyGraph
+removeAggregates DependencyGraph {graph} =
+  DependencyGraph {graph = Graph.induce (\case AggregateBean {} -> False; _ -> True) graph}
 
 -- | Remove all vertices and edges related to bean decorators.
 removeDecos :: DependencyGraph -> DependencyGraph
@@ -967,26 +967,27 @@ removeDecos DependencyGraph {graph} =
 -- | Unifies 'PrimaryBean's with their respective 'BarePrimaryBean's and 'PrimaryBeanDeco's.
 --
 -- Also removes any self-loops.
-collapseToPrimaryBeans :: DependencyGraph -> DependencyGraph
-collapseToPrimaryBeans DependencyGraph {graph} = do
+collapseBeans :: DependencyGraph -> DependencyGraph
+collapseBeans DependencyGraph {graph} = do
   let simplified =
         Graph.gmap
           ( \case
-              BarePrimaryBean rep -> PrimaryBean rep
-              PrimaryBeanDeco rep _ -> PrimaryBean rep
-              other -> other
+              BarePrimaryBean rep -> FinishedBean rep
+              PrimaryBeanDeco rep _ -> FinishedBean rep
+              AggregateBean rep -> FinishedBean rep
+              FinishedBean rep -> FinishedBean rep
           )
           graph
       -- Is there a simpler way to removoe self-loops?
       vertices = Graph.vertexList simplified
       edges = Graph.edgeList simplified
       edgesWithoutSelfLoops =
+        edges &
         filter
           ( \case
-              (PrimaryBean source, PrimaryBean target) -> if source == target then False else True
+              (FinishedBean source, FinishedBean target) -> if source == target then False else True
               _ -> True
           )
-          edges
   DependencyGraph {graph = Graph.vertices vertices `Graph.overlay` Graph.edges edgesWithoutSelfLoops}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
@@ -1010,7 +1011,7 @@ defaultStyle merr =
             []
         Just (MissingDependenciesError (MissingDependencies _ _ missing)) ->
           case step of
-            PrimaryBean rep
+            FinishedBean rep
               | Set.member rep missing ->
                   [ fromString "style" Dot.:= fromString "dashed",
                     fromString "color" Dot.:= fromString "red"
@@ -1018,12 +1019,12 @@ defaultStyle merr =
             _ -> []
         Just (DoubleDutyBeansError (DoubleDutyBeans (Map.keysSet -> bs))) ->
           case step of
-            PrimaryBean rep
+            FinishedBean rep
               | Set.member rep bs ->
                   [ fromString "style" Dot.:= fromString "bold",
                     fromString "color" Dot.:= fromString "green"
                   ]
-            SecondaryBean rep
+            AggregateBean rep
               | Set.member rep bs ->
                   [ fromString "style" Dot.:= fromString "bold",
                     fromString "color" Dot.:= fromString "green"
@@ -1048,8 +1049,8 @@ defaultStepToText =
    in \case
         BarePrimaryBean rep -> fromString $ p rep ++ "#bare"
         PrimaryBeanDeco rep index -> fromString $ p rep ++ "#deco#" ++ show index
-        PrimaryBean rep -> fromString $ p rep
-        SecondaryBean rep -> fromString $ p rep ++ "#agg"
+        AggregateBean rep -> fromString $ p rep ++ "#agg"
+        FinishedBean rep -> fromString $ p rep
 
 
 -- | A way of building value of type @bean@, potentially requiring some

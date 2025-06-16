@@ -3,7 +3,16 @@
 ## 0.7.0.0
 
 * Remove dependency on algebraic-graphs, copying those parts of the code that we used.
-* Remove `cookTree` and `cookNonEmpty`.
+* Remove `cookTree` and `cookNonEmpty`. 
+* Added `nest`.
+* `cook` is now "typed": we pass the type of the bean we want to extract.
+* Renamed `PrimaryBean` to `FinishedBean`.
+* Renamed `SecondaryBean` to `AggregateBean`.
+* Now the `Constructor`s don't depend directly on `SecondaryBean`/`AggregateBean`.
+  There is a `PrimaryBean`/`FinishedBean` that points to the `SecondaryBean`/`AggregateBean`,
+  and `Constructor`s depend on that.
+* Rename `collapseToPrimaryBeans` to `collapseBeans`.
+* Rename `removeSecodnaryBeans` to `removeAggregates`.
 
 ## 0.6.1.0
 
