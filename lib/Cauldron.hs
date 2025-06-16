@@ -440,7 +440,6 @@ data Fire m = Fire
   { shouldOmitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
       Cauldron m ->
-      Set TypeRep ->
       BeanGetter -> 
       Beans ->
       Plan ->
@@ -456,9 +455,11 @@ forbidDepCycles :: (Monad m) => Fire m
 forbidDepCycles =
   Fire
     { shouldOmitDependency = \_ -> False,
-      followPlanCauldron = \cauldron _secondaryBeanReps _previous initial plan ->
+      followPlanCauldron = \cauldron previous initial plan -> do
+        let makeBareView _ beans = beansBeanGetter beans <> previous
+        let makeDecoView _ beans = beansBeanGetter beans <> previous
         Data.Foldable.foldlM
-          do followPlanStep (\_ -> beansBeanGetter) (\_ -> beansBeanGetter) cauldron
+          do followPlanStep makeBareView makeDecoView cauldron
           initial
           plan
     }
@@ -480,23 +481,7 @@ allowSelfDeps =
     { shouldOmitDependency = \case
         (BarePrimaryBean bean, FinishedBean anotherBean) | bean == anotherBean -> True
         _ -> False,
-      followPlanCauldron = \cauldron _secondaryBeanReps previous initial plan ->
-        mfix do
-          \final -> do
-            let prioritizeCurrent beans = beansBeanGetter beans <> previous
-            -- We take care to remove the target bean to ensure that we read it from final, if there are self loops. 
-            -- We don't want to read it from previous!
-            let makeBareView tr beans = (prioritizeCurrent beans `censor` Set.singleton tr) <> beansBeanGetter final
-            -- We don't care about final here, 
-            -- because we are only interested in self deps,
-            -- and decos use the in-construction bean anyway. 
-            -- We don't want to decorate the final bean, 
-            -- or some version of it from previous!
-            let makeDecoView _ beans = prioritizeCurrent beans
-            Data.Foldable.foldlM
-              do followPlanStep makeBareView makeDecoView cauldron
-              initial
-              plan
+      followPlanCauldron = fixyFollowPlanCauldron
     }
 
 -- | Allow /any/ kind of dependency cycles.
@@ -513,25 +498,29 @@ allowDepCycles :: (MonadFix m) => Fire m
 allowDepCycles =
   Fire
     { shouldOmitDependency = \case
-        -- Note that we don't delete deps on secondary beans.
-        -- NOTE: I guess the dep of secondary beans on their own primary bean is added separately?
         (BarePrimaryBean _, FinishedBean _) -> True
         (PrimaryBeanDeco _ _, FinishedBean _) -> True
+        (AggregateBean _ , FinishedBean _) -> True
         _ -> False,
-      followPlanCauldron = \cauldron secondaryBeanReps previous initial plan -> do
-        mfix do
-          \final -> do
-            let prioritizeCurrent beans = beansBeanGetter beans <> previous
-            -- We always prefer the final beans, except for the secondary beans.
-            let makeBareView _ beans = (prioritizeCurrent beans `restrict` secondaryBeanReps) <> beansBeanGetter final
-            -- We always prefer the final beans, except for the secondary beans,
-            -- AND the important case of the bean being decorated, for which the decorator needs the in-construction version.
-            let makeDecoView tr beans = (prioritizeCurrent beans `restrict` Set.insert tr secondaryBeanReps) <> beansBeanGetter final
-            Data.Foldable.foldlM
-              do followPlanStep makeBareView makeDecoView cauldron
-              initial
-              plan
+      followPlanCauldron = fixyFollowPlanCauldron
     }
+
+
+fixyFollowPlanCauldron :: MonadFix m => Cauldron m -> BeanGetter -> Beans -> [BeanConstructionStep] -> m Beans
+fixyFollowPlanCauldron = \cauldron previous initial plan -> do
+  mfix do
+    \final -> do
+      -- We prefer the final beans.
+      let makeBareView _ _ = beansBeanGetter final <> previous
+      -- We prefer the final beans,
+      -- *except* when the bean being decorated, 
+      -- because the decorator needs the in-construction version.
+      let makeDecoView tr beans = (beansBeanGetter beans `restrict` Set.singleton tr) <> beansBeanGetter final <> previous
+      Data.Foldable.foldlM
+        do followPlanStep makeBareView makeDecoView cauldron
+        initial
+        plan
+
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
@@ -573,28 +562,25 @@ cook ::
   Fire m ->
   Cauldron m ->
   Either RecipeError (m bean)
-cook fire cauldron = do
+cook Fire {shouldOmitDependency, followPlanCauldron} cauldron = do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
-  -- Right now we don't allow entrypoints that are accumulators. Should we?
   () <- first MissingEntrypointError $ checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
   () <- first MissingDependenciesError $ checkMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
-  plan <- first DependencyCycleError $ buildPlan fire (Map.keysSet accumMap) cauldron
+  plan <- first DependencyCycleError $ buildPlan shouldOmitDependency cauldron
   Right $ do
-    beans <- followPlan fire mempty cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
+    beans <- followPlanCauldron cauldron mempty (fromDynList (Data.Foldable.toList accumMap)) plan
     pure $ fromJust $ taste @bean beans
 
 nest ::
   forall {m} bean.
-  (Monad m, Typeable bean) =>
+  (Monad m, Typeable bean, HasCallStack) =>
   Fire m ->
   Cauldron m ->
   Either RecipeError (Constructor m bean)
-nest fire cauldron = do
+nest Fire {shouldOmitDependency, followPlanCauldron} cauldron = withFrozenCallStack do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
-  -- Right now we don't allow entrypoints that are accumulators. Should we?
-
   () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
-  plan <- first DependencyCycleError do buildPlan fire (Map.keysSet accumMap) cauldron
+  plan <- first DependencyCycleError do buildPlan shouldOmitDependency cauldron
   let deps = collectMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
   Right $ Constructor
     {
@@ -603,7 +589,7 @@ nest fire cauldron = do
         _argReps = deps,
         _regReps = Set.empty,
         _runArgs = \previous -> do
-          beans <- followPlan fire (BeanGetter previous) cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
+          beans <- followPlanCauldron cauldron (BeanGetter previous) (fromDynList (Data.Foldable.toList accumMap)) plan
           pure $ pure $ fromJust $ taste @bean beans
       }
     }
@@ -621,8 +607,7 @@ newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
 -- be obtained even if the 'Cauldron' can't be 'cook'ed successfully.
 getDependencyGraph :: Cauldron m -> DependencyGraph
 getDependencyGraph cauldron =
-  let (accumMap, _) = cauldronRegs cauldron
-      (_, deps) = buildDepsCauldron (Map.keysSet accumMap) cauldron
+   let (_, deps) = buildDepsCauldron cauldron
    in DependencyGraph {graph = Graph.edges deps}
 
 checkNoDoubleDutyBeans ::
@@ -692,9 +677,9 @@ newtype DependencyCycle = DependencyCycle (NonEmpty (BeanConstructionStep, Maybe
   deriving stock (Show)
 
 
-buildPlan :: Fire m -> Set TypeRep -> Cauldron m -> Either DependencyCycle Plan
-buildPlan Fire {shouldOmitDependency} secondary cauldron = do
-  let (locations, deps) = buildDepsCauldron secondary cauldron
+buildPlan :: ((BeanConstructionStep, BeanConstructionStep) -> Bool) -> Cauldron m -> Either DependencyCycle Plan
+buildPlan shouldOmitDependency cauldron = do
+  let (locations, deps) = buildDepsCauldron cauldron
   -- We may omit some dependency edges to allow for cyclic dependencies.
   let graph = Graph.edges $ filter (not . shouldOmitDependency) deps
   case Graph.reverseTopSort graph of
@@ -703,15 +688,8 @@ buildPlan Fire {shouldOmitDependency} secondary cauldron = do
     Right plan -> do
       Right plan
 
-buildDepsCauldron :: Set TypeRep -> Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
-buildDepsCauldron secondary Cauldron {recipeMap} = do
-  -- Are we depending on a primary bean, or on a monoidally aggregated secondary bean?
-  -- I wonder if we could make this more uniform, it's kind of annoying to have to make this decision here...
-  let makeTargetStep :: TypeRep -> BeanConstructionStep
-      makeTargetStep rep =
-        if rep `Set.member` secondary
-          then AggregateBean rep
-          else FinishedBean rep
+buildDepsCauldron :: Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
+buildDepsCauldron Cauldron {recipeMap} = do
   recipeMap
     & Map.foldMapWithKey
       \beanRep
@@ -730,13 +708,13 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
                   (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decos)
                   [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
                 beanDeps = do
-                  constructorEdges makeTargetStep bareBean (constructorReps bean)
+                  constructorEdges bareBean (constructorReps bean)
                 decoDeps = do
                   (decoStep, decoCon) <- decoSteps
                   -- We remove the bean because from the args becase, in the
                   -- case of decos, we want to depend on the in-the-making
                   -- version of the bean, not the completed bean.
-                  constructorEdges makeTargetStep decoStep (removeBeanFromArgs do constructorReps decoCon)
+                  constructorEdges decoStep (removeBeanFromArgs do constructorReps decoCon)
                 innerSteps = bareBean Data.List.NonEmpty.:| (fst <$> decoSteps) ++ [boiledBean]
                 innerDeps =
                   -- This explicit dependency between the completed bean and its
@@ -758,40 +736,27 @@ buildDepsCauldron secondary Cauldron {recipeMap} = do
               )
 
 constructorEdges ::
-  (TypeRep -> BeanConstructionStep) ->
   BeanConstructionStep ->
   ConstructorReps ->
   [(BeanConstructionStep, BeanConstructionStep)]
-constructorEdges makeTargetStep item (ConstructorReps {argReps, regReps}) =
+constructorEdges item (ConstructorReps {argReps, regReps}) =
   -- consumers depend on their args
   ( do
       argRep <- Set.toList argReps
-      let argStep = makeTargetStep argRep
+      let argStep = FinishedBean argRep
       [(item, argStep)]
   )
     ++
-    -- secondary beans depend on their producers
+    
     ( do
         (regRep, _) <- Map.toList regReps
         let repStep = AggregateBean regRep
-        [(repStep, item)]
+        [
+         -- aggregate beans depend on their producers     
+         (repStep, item), 
+         -- The finished version of the aggregate bean depends on the aggregation step.
+         (FinishedBean regRep, repStep) ]
     )
-
--- | Can we get rid of this function in favor of followPlanCaudron?
-followPlan ::
-  Monad m =>
-  Fire m ->
-  BeanGetter ->
-  Cauldron m ->
-  Beans ->
-  Plan -> 
-  m Beans
-followPlan Fire {followPlanCauldron} previous cauldron initialBeans plan =
-  let -- the very first initial beans are the accumulators?
-      secondaryBeanReps = Cauldron.Beans.keysSet initialBeans
-   in do
-            currentStageBeans <- followPlanCauldron cauldron secondaryBeanReps previous initialBeans plan
-            pure currentStageBeans
 
 data BeanGetter = BeanGetter { _run :: forall t. (Typeable t) => Maybe t } 
 
@@ -807,17 +772,6 @@ runBeanGetter BeanGetter { _run } = _run
 
 beansBeanGetter :: Beans -> BeanGetter
 beansBeanGetter beans = BeanGetter (taste beans) 
-
-censor :: BeanGetter -> Set TypeRep -> BeanGetter
-censor (BeanGetter { _run }) censored =
-  BeanGetter { _run = _run' }
-  where
-  _run' :: forall bean. (Typeable bean) => Maybe bean
-  _run' =
-    let tr = typeRep (Proxy @bean)
-     in if tr `Set.member` censored
-          then Nothing
-          else _run
 
 restrict :: BeanGetter -> Set TypeRep -> BeanGetter
 restrict (BeanGetter { _run }) allowed =
@@ -845,25 +799,20 @@ followPlanStep makeBareView makeDecoView Cauldron {recipeMap} super item =
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipeMap of
       SomeRecipe {_recipe = Recipe {bean}} -> do
         let ConstructorReps {beanRep} = constructorReps bean
-        -- We delete the beanRep before running the bean,
-        -- because if we have a self-dependency, we don't want to use the bean
-        -- from a previous context (if it exists) we want the bean from final.
-        -- There is a test for this.
         inserter <- followConstructor bean (makeBareView beanRep super)
         pure do inserter super
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipeMap of
       SomeRecipe {_recipe = Recipe {decos}} -> do
         let deco = decos `Data.Sequence.index` index
         let ConstructorReps {beanRep} = constructorReps deco
-        -- Unlike before, we don't delete the beanRep before running the constructor.
         inserter <- followConstructor deco (makeDecoView beanRep super)
         pure do inserter super
-    -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
-    -- 'PrimaryBeanDeco' steps.
-    FinishedBean {} -> pure super
     -- \| We do nothing here, secondary beans are built as a byproduct
     -- of primary beans and decorators.
     AggregateBean {} -> pure super
+    -- \| We do nothing here, the work has been done in previous 'BarePrimaryBean' and
+    -- 'PrimaryBeanDeco' steps.
+    FinishedBean {} -> pure super
 
 -- | Build a bean out of already built beans.
 -- This can only work without blowing up if there aren't dependecy cycles

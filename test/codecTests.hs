@@ -183,14 +183,14 @@ tests =
                     assertEqual "experted result" expected acc,
       testCase "problematic wiring with accums" do
         Data.Foldable.for_ @[]
-          [ ("selfacc", cauldronAccumsOops1),
-            ("indirectacc", cauldronAccumsOops2)
+          [ ("aggcyle", cauldronAccumsOops1),
+            ("indirectagg", cauldronAccumsOops2)
           ]
           \(name, c) ->
             case cook @(Serializer Foo) allowDepCycles c of
-              Left (DependencyCycleError _) -> pure ()
+              Left (DependencyCycleError _) -> assertFailure $ "We should be able to wire cycles with accs"
               Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
-              Right _ -> assertFailure $ "Unexpected success when wiring" ++ name
+              Right _ -> pure ()
     ]
   where
     makeBasicTest :: Cauldron Identity -> IO ()

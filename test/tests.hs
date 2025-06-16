@@ -205,8 +205,9 @@ tests =
           "traces"
           [ 
             -- "weird constructor", -- not happens, because overwritten
-            "self-invoking weird constructor",
+            -- the order of the traces here is a bit too overspecified. several orders could be valid.
             "logger constructor",
+            "self-invoking weird constructor",
             "logger init",
             "repo init invoking logger",
             "store",
