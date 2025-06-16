@@ -109,7 +109,7 @@ module Cauldron
 
     -- * Cooking the beans
     cook,
-    cookToConstructor,
+    nest,
 
     -- ** How loopy can we get?
     Fire,
@@ -576,24 +576,24 @@ cook ::
 cook fire cauldron = do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
   -- Right now we don't allow entrypoints that are accumulators. Should we?
-  () <- first MissingEntrypointError $ checkEntryPointPresent (typeRep (Proxy @bean)) cauldron
+  () <- first MissingEntrypointError $ checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
   () <- first MissingDependenciesError $ checkMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
   plan <- first DependencyCycleError $ buildPlan fire (Map.keysSet accumMap) cauldron
   Right $ do
     beans <- followPlan fire mempty cauldron (fromDynList (Data.Foldable.toList accumMap)) plan
     pure $ fromJust $ taste @bean beans
 
-cookToConstructor ::
+nest ::
   forall {m} bean.
   (Monad m, Typeable bean) =>
   Fire m ->
   Cauldron m ->
   Either RecipeError (Constructor m bean)
-cookToConstructor fire cauldron = do
+nest fire cauldron = do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
   -- Right now we don't allow entrypoints that are accumulators. Should we?
 
-  () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) cauldron
+  () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
   plan <- first DependencyCycleError do buildPlan fire (Map.keysSet accumMap) cauldron
   let deps = collectMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
   Right $ Constructor
@@ -608,9 +608,9 @@ cookToConstructor fire cauldron = do
       }
     }
 
-checkEntryPointPresent :: TypeRep -> Cauldron m -> Either TypeRep ()
-checkEntryPointPresent tr cauldron =  
-  if Set.member tr (Cauldron.keysSet cauldron)
+checkEntryPointPresent :: TypeRep -> Set TypeRep -> Cauldron m -> Either TypeRep ()
+checkEntryPointPresent tr secondary cauldron =  
+  if Set.member tr (Cauldron.keysSet cauldron `Set.union` secondary)
     then Right ()
     else Left tr
 

@@ -111,17 +111,12 @@ newtype Bcc = Bcc Int
   deriving stock (Eq)
   deriving (Semigroup, Monoid) via Sum Int
 
--- | Because we don't allow cook to extract accumulators, we need to declare a separate entrypoint. 
-newtype Entrypoint = Entrypoint Acc
-
 cauldronAccums1 :: Cauldron Identity
 cauldronAccums1 =
   fromRecipeList
     [ recipe @(Serializer Foo) $ val $ wire $ \sb -> (Acc 5, makeFooSerializer sb),
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
-      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf),
-      recipe @Entrypoint $ val $ wire $ Entrypoint
-
+      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
     ]
 
 cauldronAccums2 :: Cauldron Identity
@@ -129,8 +124,7 @@ cauldronAccums2 =
   fromRecipeList
     [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> makeFooSerializer sb,
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
-      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf),
-      recipe @Entrypoint $ val $ wire $ Entrypoint
+      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
     ]
 
 cauldronAccumsOops1 :: Cauldron Identity
@@ -181,11 +175,11 @@ tests =
             ("someConsume", cauldronAccums2, Acc 10)
           ]
           \(name, c, expected) ->
-            case cook @Entrypoint allowDepCycles c of
+            case cook @Acc allowDepCycles c of
               Left _err -> do
                 -- putStrLn $ prettyRecipeError err
                 assertFailure $ "could not wire " ++ name
-              Right (Identity (Entrypoint acc)) ->
+              Right (Identity acc) ->
                     assertEqual "experted result" expected acc,
       testCase "problematic wiring with accums" do
         Data.Foldable.for_ @[]
