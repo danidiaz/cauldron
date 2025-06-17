@@ -132,13 +132,15 @@ cauldronWithCycle =
     & insert @(Logger M)
       (eff $ wire \(_ :: Repository M) -> makeLogger)
 
-cauldronX :: Cauldron M
-cauldronX =
+cauldronX1 :: Cauldron M
+cauldronX1 =
     fromRecipeList
         [ recipe @(Logger M) $ eff $ pure makeLogger, 
           recipe @(Weird M) $ eff $ wire makeWeird -- overwritten
         ]
-    <>
+
+cauldronX2 :: Cauldron M
+cauldronX2 =
       fromRecipeList
         [ recipe @(Repository M) $ eff $ do
             action <- wire makeRepository
@@ -154,8 +156,14 @@ cauldronX =
                       val $ wire (weirdDeco "outer")
                     ]
               },
-          recipe @(Initializer, Repository M, Weird M) $ val_ do wire (,,)
+          recipe @Entrypoint $ val_ do wire Entrypoint
         ]
+
+data Entrypoint = Entrypoint Initializer (Repository M) (Weird M)
+
+cauldronX :: Cauldron M
+cauldronX = cauldronX1 <> cauldronX2
+
 
 cauldronLonely :: Cauldron M
 cauldronLonely =
@@ -187,15 +195,12 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        ((), traces) <- case cook allowSelfDeps cauldronX of
+        ((), traces) <- case cook @Entrypoint allowSelfDeps cauldronX of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
             runWriterT do
               boiledBeans <- beansAction
-              let ( Initializer {runInitializer},
-                    Repository {findById, store},
-                    Weird {anotherWeirdOp}
-                    ) :: (Initializer, Repository M, Weird M) = boiledBeans
+              let Entrypoint (Initializer {runInitializer}) (Repository {findById, store}) (Weird {anotherWeirdOp}) = boiledBeans
               runInitializer
               store 1 "foo"
               _ <- findById 1

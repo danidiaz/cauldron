@@ -181,7 +181,7 @@ tests =
                 assertFailure $ "could not wire " ++ name
               Right (Identity acc) ->
                     assertEqual "experted result" expected acc,
-      testCase "problematic wiring with accums" do
+      testCase "wiring with accums" do
         Data.Foldable.for_ @[]
           [ ("aggcyle", cauldronAccumsOops1),
             ("indirectagg", cauldronAccumsOops2)
