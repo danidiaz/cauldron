@@ -236,6 +236,51 @@ tests =
         --      assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
         --  pure ()
           ,
+      testCase "value nested" do
+        ((), traces) <- case (
+              do constructorX2 <- nest allowSelfDeps cauldronX2
+                 cook @Entrypoint allowSelfDeps (cauldronX1 & Cauldron.insert @Entrypoint constructorX2)) of
+          Left _ -> assertFailure "could not wire"
+          Right beansAction -> do
+            runWriterT do
+              boiledBeans <- beansAction
+              let Entrypoint (Initializer {runInitializer}) (Repository {findById, store}) (Weird {anotherWeirdOp}) = boiledBeans
+              runInitializer
+              store 1 "foo"
+              _ <- findById 1
+              anotherWeirdOp
+              pure ()
+        assertEqual
+          "traces"
+          [ 
+            -- the order of the traces here is a bit too overspecified. several orders could be valid.
+            "logger constructor",
+            "self-invoking weird constructor",
+            "weird constructor", -- note that this is present. Overwritten by nested, but still built
+            -- The absence of the logger init is because we are only getting the aggregate beans from the nested.
+            -- "logger init",
+            "repo init invoking logger",
+            "store",
+            "findById",
+            -- the deco is applied! The outer the deco, the earliest is invoked.
+            "deco for anotherWeirdOp outer",
+            "deco for anotherWeirdOp inner",
+            "another weirdOp 2",
+            "deco for weirdOp outer",
+            "deco for weirdOp inner",
+            -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
+            "weirdOp 2"
+          ]
+          traces
+        --case getDependencyGraph cauldronNonEmpty of
+        --  dg2  -> do
+        --    let adj2 = toAdjacencyMap dg2
+        --    unless (hasVertex (PrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+        --      assertFailure "cauldron 2 doesn't have the fully built logger from cauldron 1 in its dep graph"
+        --    when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+        --      assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
+        --  pure ()
+          ,
       testCase "lonely beans get built" do
         (_, _) <- case cook allowSelfDeps cauldronLonely of
           Left _ -> assertFailure "could not wire"
