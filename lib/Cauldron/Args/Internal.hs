@@ -404,3 +404,4 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
 -- >>> import Data.Monoid
+-- >>> import Cauldron.Beans (taste)
