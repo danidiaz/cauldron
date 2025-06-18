@@ -16,7 +16,7 @@ module Cauldron.Args.Internal
   
 where
 
-import Cauldron.Beans (Beans, SomeMonoidTypeRep (..), fromDynList, taste)
+import Cauldron.Beans (Beans, SomeMonoidTypeRep (..), fromDynList)
 import Cauldron.Beans qualified
 import Control.Exception (Exception, throw)
 import Data.Dynamic
