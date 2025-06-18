@@ -50,11 +50,10 @@
 --           recipe @B $ val $ wire makeB,
 --           recipe @C $ eff $ wire makeC -- we use eff because the constructor has IO effects
 --         ]
---   action <- either throwIO pure $ cook forbidDepCycles cauldron
---   beans <- action
---   pure $ taste @C beans
+--   action <- either throwIO pure $ cook @C forbidDepCycles cauldron
+--   action
 -- :}
--- Just C
+-- C
 module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
@@ -365,9 +364,8 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 --               ]
 --           }
 --         ]
---   action <- either throwIO pure $ cook forbidDepCycles cauldron
---   beans <- action
---   let Just Foo {sayFoo} = taste beans
+--   action <- either throwIO pure $ cook @Foo forbidDepCycles cauldron
+--   Foo {sayFoo} <- action
 --   sayFoo
 -- :}
 -- deco2 init
@@ -1173,10 +1171,10 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 --           recipe @V $ val $ wire makeV,
 --           recipe @W $ val $ wire W
 --         ]
---   Identity beans <- either throwIO pure $ cook forbidDepCycles cauldron
---   pure $ taste @W beans
+--   Identity w <- either throwIO pure $ cook @W forbidDepCycles cauldron
+--   pure w
 -- :}
--- Just (W (Sum {getSum = 8}))
+-- W (Sum {getSum = 8})
 
 -- $setup
 -- >>> :set -XBlockArguments
