@@ -67,10 +67,10 @@ Having more than one constructor for the same bean type is disallowed. The
 wiring is *type-directed*, so there can't be any ambiguity about which bean
 constructor to use.
 
-## Monoidally aggregated secondary beans
+## Aggregate beans
 
 More complex constructors can return—besides a "primary" bean as seen in the
-previous section—one or more "secondary" beans. For example:
+previous section—one or more secondary "aggregate" beans. For example:
 
 ```
 makeServer :: Logger -> Repository -> (Initializer, Inspector, Server)
@@ -87,7 +87,7 @@ must have `Monoid` instances. Unlike with the "primary" bean the constructor pro
 *can* be produced by more than one constructor. Their values will be aggregated
 across all the constructors that produce them.
 
-Constructors can depend on the aggregated value of a secondary bean by taking
+Constructors can depend on the final combined value of an aggregate bean by taking
 the bean as a regular argument. Here, `makeDebuggingServer` receives the
 `mappend`ed value of all the `Inspector`s produced by other constructors (or
 `mempty`, if no constructor produces them):
@@ -106,8 +106,8 @@ they decorate as an argument:
 makeServerDecorator :: Server -> Server
 ```
 
-Like normal constructors, decorators can have their own dependencies (other than the
-decorated bean), perform effects, and register secondary beans:
+Like normal constructors, decorators can have their own dependencies (besides the
+decorated bean itself), perform effects, and register aggregate beans:
 
 ```
 makeServerDecorator :: Logger -> Server -> IO (Initializer,Server)
@@ -148,9 +148,9 @@ records-of-functions correspond to POJO constructors.
   bean, or the in-construction result of applying the decorators that come
   earlier in the decorator sequence.
 
-- [context hierachies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to distributing the constructors into various sets organized in parent-child relationships, so that constructors in a child can see the beans of the parent, but not vice-versa. 
+- [context hierachies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to taking an "incomplete" set of constructors where not all arguments beans can be "filled" inside the set, and turning it into a single constructor which takes the missing beans as arguments, and can be made part of a wider set of constructors. 
 
-- [injecting all the beans that implement a certain interface as a list](https://twitter.com/NiestrojRobert/status/1746808940435042410) roughly corresponds to a constructor that takes a monoidally aggregated "secondary bean" as an argument. 
+- [injecting all the beans that implement a certain interface as a list](https://twitter.com/NiestrojRobert/status/1746808940435042410) roughly corresponds to a constructor that takes a aggregate bean as an argument. 
 
 Some features I'm not yet sure how to mimic:
 
@@ -161,6 +161,8 @@ Some features I'm not yet sure how to mimic:
 # See also
 
 - [registry](https://hackage.haskell.org/package/registry) is a more mature and useable library for dependency injection in Haskell. See [this explanatory video](https://www.youtube.com/watch?v=fFCcvsbCrH8).
+
+- [Do we need effects to get abstraction? (2019)](https://hachyderm.io/@DiazCarrete/114712223474781312)
 
 # Acknowledgement
 
