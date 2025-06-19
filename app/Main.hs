@@ -73,7 +73,7 @@ data Y = Y deriving (Show)
 data Z = Z deriving (Show)
 
 {-
-  These beans are a bit special: they are "secondary" beans which are optionally
+  These beans are a bit special: they are secondary "aggregate" beans which are optionally
   produced by the constructors of other beans.
 
   They have Monoid instances. The values returned by all the constructors that
@@ -95,10 +95,10 @@ newtype Initializer = Initializer {runInitializer :: IO ()}
 makeA :: A
 makeA = A
 
--- A bean with a monoidal registration.
---
--- The registration could be some generic introspection mechanism, or perhaps
--- some effectful action that sets up a worker thread.
+-- A primary bean 'B' with an aggregate bean 'Inspector'.
+-- 
+-- aggregate beans can be used to implement some generic introspection mechanism
+-- for an app, or perhaps some effectful action that sets up worker threads.
 makeB :: (Inspector, B)
 makeB = (Inspector (pure ["B stuff"]), B)
 
@@ -116,40 +116,44 @@ makeF = \_ _ -> (Inspector (pure ["F stuff"]), F)
 
 -- | A bean with a self-dependency!
 --
--- We need this if we want self-invocations to be decorated.
+-- We need these self-dependencies in order for self-invocations to be decorated.
 --
--- Dependency cycles of more than one bean are forbidden, however.
+-- The 'Fire' we use to 'cook' the 'Cauldron' might allow or disallow self-dependencies.
 makeG :: E -> F -> G -> G
 makeG _ _ _ = G
 
 -- | A decorator.
 --
---  Decorators are basically normal constructors, only that they return
---  a Endo that knows how to tweak the value of a bean.
+-- Decorators are basically normal constructors, only that they take
+-- the bean they return as a parameter. 
+--
+-- This is not the same as a bean self-dependency! These receive the completed
+-- bean from the future, while decorators work with the in-construction version
+-- of the bean.
 --
 -- Because they are normal constructors, they can be effectful, and they
 -- might have dependencies of their own.
 makeGDeco1 :: A -> G -> G
 makeGDeco1 _ g = g
 
--- | A bean with two monoidal registrations.
+-- | A primary bean 'H' with two aggregate beans 'Initializer' and 'Inspector'.
 makeH :: A -> D -> G -> (Initializer, Inspector, H)
 makeH _ _ _ = (Initializer (putStrLn "H init"), Inspector (pure ["H stuff"]), H)
 
--- | Notice that this bean has "Inspector" as a dependency. Inspector is a
--- monoidal bean which is aggregated across all the constructor that register
--- it. This is OK as long as there are no dependency cycles.
+-- | Notice that this bean has "Inspector" as a dependency. Inspector is an
+-- aggregate bean; its value is aggregated across all the constructor that
+-- produce it.
 --
--- Why would a bean depend on such a aggregated bean? Well, for example, a
--- server bean might want to publish diagnostic information collected from beans
--- that register it.
+-- Why would a bean depend on an aggregate bean? Well, for example, a server
+-- bean might want to publish diagnostic information (exposed using an uniform
+-- interface) that is collected from the constructors that register it.
 makeZ :: Inspector -> D -> H -> Z
 makeZ _ _ _ = Z
 
 makeZDeco1 :: B -> E -> Z -> Z
 makeZDeco1 _ _ z = z
 
--- | A decorator with a monoidal registration.
+-- | A decorator for 'Z' which produces an aggregate bean 'Initializer'.
 makeZDeco2 :: (F -> Z -> (Initializer, Z))
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
