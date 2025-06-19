@@ -560,14 +560,14 @@ cook ::
   Fire m ->
   Cauldron m ->
   Either RecipeError (m bean)
-cook Fire {shouldOmitDependency, followPlanCauldron} cauldron = do
-  accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
-  () <- first MissingEntrypointError $ checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
-  () <- first MissingDependenciesError $ checkMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
-  plan <- first DependencyCycleError $ buildPlan shouldOmitDependency cauldron
+cook fire cauldron = do
+  (mdeps, c) <- nest' fire cauldron
+  _ <- case mdeps of
+    [] -> Right ()
+    d : _ -> Left $ MissingDependenciesError d
   Right $ do
-    beans <- followPlanCauldron cauldron mempty (fromDynList (Data.Foldable.toList accumMap)) plan
-    pure $ fromJust $ taste @bean beans
+    (_, bean) <- runConstructor (mempty @BeanGetter) c
+    pure bean
 
 nest ::
   forall {m} bean.
@@ -575,22 +575,32 @@ nest ::
   Fire m ->
   Cauldron m ->
   Either RecipeError (Constructor m bean)
-nest Fire {shouldOmitDependency, followPlanCauldron} cauldron = withFrozenCallStack do
+nest fire cauldron = withFrozenCallStack do
+  (_, c) <- nest' fire cauldron
+  pure c
+
+nest' ::
+  forall {m} bean.
+  (Monad m, Typeable bean, HasCallStack) =>
+  Fire m ->
+  Cauldron m ->
+  Either RecipeError ([MissingDependencies], Constructor m bean)
+nest' Fire {shouldOmitDependency, followPlanCauldron} cauldron = withFrozenCallStack do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
   () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
   plan <- first DependencyCycleError do buildPlan shouldOmitDependency cauldron
-  let deps = collectMissingDeps $ missingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
-  Right $ Constructor
+  let missingDeps = collectMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
+  Right $ (missingDeps, Constructor
     {
       _constructorCallStack = callStack,
       _args = Args {
-        _argReps = deps,
+        _argReps = missingDepsToArgReps missingDeps,
         _regReps = Set.empty,
         _runArgs = \previous -> do
           beans <- followPlanCauldron cauldron (BeanGetter previous) (fromDynList (Data.Foldable.toList accumMap)) plan
           pure $ pure $ fromJust $ taste @bean beans
       }
-    }
+    })
 
 checkEntryPointPresent :: TypeRep -> Set TypeRep -> Cauldron m -> Either TypeRep ()
 checkEntryPointPresent tr secondary cauldron =  
@@ -634,26 +644,19 @@ recipeRegs (SomeRecipe _ (Recipe {bean, decos})) = do
 data MissingDependencies = MissingDependencies CallStack TypeRep (Set TypeRep)
   deriving stock (Show)
 
-checkMissingDeps ::
-  [MissingDependencies] ->
-  Either MissingDependencies ()
-checkMissingDeps = \case
-  [] -> Right ()
-  ds : _ -> Left ds
-
-collectMissingDeps ::
+missingDepsToArgReps ::
   [MissingDependencies] ->
   Set TypeRep
-collectMissingDeps = Set.unions . fmap (\(MissingDependencies _ _ missing) ->  missing)
+missingDepsToArgReps = Set.unions . fmap (\(MissingDependencies _ _ missing) ->  missing)
 
-missingDeps :: 
+collectMissingDeps :: 
   -- | accums
   Set TypeRep ->
   -- | available at this level
   Set TypeRep ->
   Cauldron m ->
   [MissingDependencies]
-missingDeps accums available cauldron =
+collectMissingDeps accums available cauldron =
   demandsByConstructorsInCauldron cauldron & Data.Foldable.foldMap \(stack, tr, demanded) ->
     let missing = Set.filter (`Set.notMember` (available `Set.union` accums)) demanded
      in if Set.null missing
