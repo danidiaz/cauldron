@@ -185,7 +185,7 @@ boringWiring = do
 -- graph we may want to draw.
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Either RecipeError (IO Result)
+coolWiring :: Either CookingError (IO Result)
 coolWiring = cook allowSelfDeps cauldron
 
 cauldron :: Cauldron IO
@@ -227,7 +227,7 @@ main = do
   -- wiring with Cauldron
   merr <- case coolWiring of
     Left badBeans -> do
-      putStrLn $ prettyRecipeError badBeans
+      putStrLn $ prettyCookingError badBeans
       pure $ Just badBeans
     Right action -> do
       Result (Initializer {runInitializer}) (Inspector {inspect}) z <- action
