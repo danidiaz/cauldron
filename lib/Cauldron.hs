@@ -117,12 +117,12 @@ module Cauldron
     allowDepCycles,
 
     -- ** When things go wrong
-    RecipeError (..),
+    CookingMistake (..),
     MissingDependencies (..),
     DoubleDutyBeans (..),
     DependencyCycle (..),
-    prettyRecipeError,
-    prettyRecipeErrorLines,
+    prettyCookingMistake,
+    prettyCookingMistakeLines,
 
     -- ** Visualizing dependencies between beans.
     getDependencyGraph,
@@ -559,7 +559,7 @@ cook ::
   (Monad m, Typeable bean) =>
   Fire m ->
   Cauldron m ->
-  Either RecipeError (m bean)
+  Either CookingMistake (m bean)
 cook fire cauldron = do
   (mdeps, c) <- nest' fire cauldron
   _ <- case mdeps of
@@ -574,7 +574,7 @@ nest ::
   (Monad m, Typeable bean, HasCallStack) =>
   Fire m ->
   Cauldron m ->
-  Either RecipeError (Constructor m bean)
+  Either CookingMistake (Constructor m bean)
 nest fire cauldron = withFrozenCallStack do
   (_, c) <- nest' fire cauldron
   pure c
@@ -584,7 +584,7 @@ nest' ::
   (Monad m, Typeable bean, HasCallStack) =>
   Fire m ->
   Cauldron m ->
-  Either RecipeError ([MissingDependencies], Constructor m bean)
+  Either CookingMistake ([MissingDependencies], Constructor m bean)
 nest' Fire {shouldEnforceDependency, followPlanCauldron} cauldron = withFrozenCallStack do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
   () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
@@ -831,7 +831,7 @@ followConstructor c getter = do
       & Cauldron.Beans.insert bean
 
 -- | Sometimes the 'cook'ing process goes wrong.
-data RecipeError
+data CookingMistake
   = MissingEntrypointError TypeRep 
   |  
     -- | A 'Constructor' depends on beans that can't be found either in the current 'Cauldron' or its ancestors.
@@ -843,14 +843,14 @@ data RecipeError
     DependencyCycleError DependencyCycle
   deriving stock (Show)
 
-instance Exception RecipeError where
-  displayException = prettyRecipeError
+instance Exception CookingMistake where
+  displayException = prettyCookingMistake
 
-prettyRecipeError :: RecipeError -> String
-prettyRecipeError = Data.List.intercalate "\n" . prettyRecipeErrorLines
+prettyCookingMistake :: CookingMistake -> String
+prettyCookingMistake = Data.List.intercalate "\n" . prettyCookingMistakeLines
 
-prettyRecipeErrorLines :: RecipeError -> [String]
-prettyRecipeErrorLines = \case
+prettyCookingMistakeLines :: CookingMistake -> [String]
+prettyCookingMistakeLines = \case
   MissingEntrypointError tr ->
      ["Missing entrypoint: " ++ show tr]
   MissingDependenciesError
@@ -949,8 +949,8 @@ writeAsDot style filepath DependencyGraph {graph} = do
     System.IO.hPutStrLn handle dot
 
 -- | Default DOT rendering style to use with 'writeAsDot'.
--- When a 'RecipeError' exists, is highlights the problematic 'BeanConstructionStep's.
-defaultStyle :: (Monoid s, IsString s) => Maybe RecipeError -> Dot.Style BeanConstructionStep s
+-- When a 'CookingMistake' exists, is highlights the problematic 'BeanConstructionStep's.
+defaultStyle :: (Monoid s, IsString s) => Maybe CookingMistake -> Dot.Style BeanConstructionStep s
 defaultStyle merr =
   -- https://graphviz.org/docs/attr-types/style/
   -- https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-Export-Dot.html
