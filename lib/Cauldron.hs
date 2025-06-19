@@ -587,7 +587,7 @@ nest' ::
   Either CookingError ([MissingDependencies], Constructor m bean)
 nest' Fire {shouldEnforceDependency, followPlanCauldron} cauldron = withFrozenCallStack do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
-  () <- first MissingBeanRecipeError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
+  () <- first MissingResultBeanError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
   plan <- first DependencyCycleError do buildPlan shouldEnforceDependency cauldron
   let missingDeps = collectMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
   Right $ (missingDeps, Constructor
@@ -834,7 +834,7 @@ followConstructor c getter = do
 data CookingError
     
   = -- | The bean that was demanded from the 'Cauldron' doesn't have a 'Recipe' that produces it.
-    MissingBeanRecipeError TypeRep 
+    MissingResultBeanError TypeRep 
   |  
     -- | A 'Constructor' depends on beans that can't be found in the 'Cauldron'.
     MissingDependenciesError MissingDependencies
@@ -853,8 +853,8 @@ prettyCookingError = Data.List.intercalate "\n" . prettyCookingErrorLines
 
 prettyCookingErrorLines :: CookingError -> [String]
 prettyCookingErrorLines = \case
-  MissingBeanRecipeError tr ->
-     ["Requested bean " ++ show tr ++ "doesn't have a recipe."]
+  MissingResultBeanError tr ->
+     ["No recipe found that produces requested bean " ++ show tr]
   MissingDependenciesError
     (MissingDependencies constructorCallStack constructorResultRep missingDependenciesReps) ->
       [ "This constructor for a value of type "
@@ -959,7 +959,7 @@ defaultStyle merr =
   (Dot.defaultStyle defaultStepToText)
     { Dot.vertexAttributes = \step -> case merr of
         Nothing -> []
-        Just (MissingBeanRecipeError _) ->
+        Just (MissingResultBeanError _) ->
             []
         Just (MissingDependenciesError (MissingDependencies _ _ missing)) ->
           case step of
