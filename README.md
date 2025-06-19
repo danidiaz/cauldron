@@ -161,3 +161,7 @@ Some features I'm not yet sure how to mimic:
 # See also
 
 - [registry](https://hackage.haskell.org/package/registry) is a more mature and useable library for dependency injection in Haskell. See [this explanatory video](https://www.youtube.com/watch?v=fFCcvsbCrH8).
+
+# Acknowledgement
+
+This package contains vendored code from Andrey Mokhov's [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs) (most of the `cauldron:graph` library).
