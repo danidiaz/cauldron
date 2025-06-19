@@ -156,10 +156,10 @@ cauldronX2 =
                       val $ wire (weirdDeco "outer")
                     ]
               },
-          recipe @Entrypoint $ val_ do wire Entrypoint
+          recipe @Result $ val_ do wire Result
         ]
 
-data Entrypoint = Entrypoint Initializer (Repository M) (Weird M)
+data Result = Result Initializer (Repository M) (Weird M)
 
 cauldronX :: Cauldron M
 cauldronX = cauldronX1 <> cauldronX2
@@ -195,12 +195,12 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        ((), traces) <- case cook @Entrypoint allowSelfDeps cauldronX of
+        ((), traces) <- case cook @Result allowSelfDeps cauldronX of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
             runWriterT do
               boiledBeans <- beansAction
-              let Entrypoint (Initializer {runInitializer}) (Repository {findById, store}) (Weird {anotherWeirdOp}) = boiledBeans
+              let Result (Initializer {runInitializer}) (Repository {findById, store}) (Weird {anotherWeirdOp}) = boiledBeans
               runInitializer
               store 1 "foo"
               _ <- findById 1
@@ -239,12 +239,12 @@ tests =
       testCase "value nested" do
         ((), traces) <- case (
               do constructorX2 <- nest allowSelfDeps cauldronX2
-                 cook @Entrypoint allowSelfDeps (cauldronX1 & Cauldron.insert @Entrypoint constructorX2)) of
+                 cook @Result allowSelfDeps (cauldronX1 & Cauldron.insert @Result constructorX2)) of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
             runWriterT do
               boiledBeans <- beansAction
-              let Entrypoint (Initializer {runInitializer}) (Repository {findById, store}) (Weird {anotherWeirdOp}) = boiledBeans
+              let Result (Initializer {runInitializer}) (Repository {findById, store}) (Weird {anotherWeirdOp}) = boiledBeans
               runInitializer
               store 1 "foo"
               _ <- findById 1

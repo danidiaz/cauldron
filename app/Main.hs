@@ -153,9 +153,9 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: (F -> Z -> (Initializer, Z))
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-data Entrypoint = Entrypoint Initializer Inspector Z
+data Result = Result Initializer Inspector Z
 
-boringWiring :: IO Entrypoint
+boringWiring :: IO Result
 boringWiring = do
   let -- We have to remember to collect the monoidal registrations.
       initializer = init1 <> init2
@@ -178,14 +178,14 @@ boringWiring = do
       z1 = makeZDeco1 b e z0
       (init2, z2) = makeZDeco2 f z1
       z = z2
-  pure $ Entrypoint initializer inspector z
+  pure $ Result initializer inspector z
 
 -- | Here we don't have to worry about positional parameters. We throw all the
 -- constructors into the 'Cauldron' and taste the bean values at the end, plus a
 -- graph we may want to draw.
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
-coolWiring :: Either RecipeError (IO Entrypoint)
+coolWiring :: Either RecipeError (IO Result)
 coolWiring = cook allowSelfDeps cauldron
 
 cauldron :: Cauldron IO
@@ -212,14 +212,14 @@ cauldron :: Cauldron IO =
               val $ wire makeZDeco2
             ]
         },
-    recipe @Entrypoint $ val $ wire Entrypoint
+    recipe @Result $ val $ wire Result
   ]
 
 main :: IO ()
 main = do
   -- "manual" wiring
   do
-    Entrypoint (Initializer {runInitializer}) (Inspector {inspect}) z <- boringWiring
+    Result (Initializer {runInitializer}) (Inspector {inspect}) z <- boringWiring
     inspection <- inspect
     print inspection
     print z
@@ -230,7 +230,7 @@ main = do
       putStrLn $ prettyRecipeError badBeans
       pure $ Just badBeans
     Right action -> do
-      Entrypoint (Initializer {runInitializer}) (Inspector {inspect}) z <- action
+      Result (Initializer {runInitializer}) (Inspector {inspect}) z <- action
       inspection <- inspect
       print inspection
       print z
