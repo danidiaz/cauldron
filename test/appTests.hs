@@ -106,7 +106,7 @@ makeZDeco1 _ _ z = z
 makeZDeco2 :: F -> Z -> (Initializer, Z)
 makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
-coolWiring :: Fire IO -> Either RecipeError (IO Entrypoint)
+coolWiring :: Fire IO -> Either CookingError (IO Entrypoint)
 coolWiring fire = do
   cook fire cauldron
 

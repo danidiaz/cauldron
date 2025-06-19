@@ -117,12 +117,12 @@ module Cauldron
     allowDepCycles,
 
     -- ** When things go wrong
-    CookingMistake (..),
+    CookingError (..),
     MissingDependencies (..),
     DoubleDutyBeans (..),
     DependencyCycle (..),
-    prettyCookingMistake,
-    prettyCookingMistakeLines,
+    prettyCookingError,
+    prettyCookingErrorLines,
 
     -- ** Visualizing dependencies between beans.
     getDependencyGraph,
@@ -559,7 +559,7 @@ cook ::
   (Monad m, Typeable bean) =>
   Fire m ->
   Cauldron m ->
-  Either CookingMistake (m bean)
+  Either CookingError (m bean)
 cook fire cauldron = do
   (mdeps, c) <- nest' fire cauldron
   _ <- case mdeps of
@@ -574,7 +574,7 @@ nest ::
   (Monad m, Typeable bean, HasCallStack) =>
   Fire m ->
   Cauldron m ->
-  Either CookingMistake (Constructor m bean)
+  Either CookingError (Constructor m bean)
 nest fire cauldron = withFrozenCallStack do
   (_, c) <- nest' fire cauldron
   pure c
@@ -584,10 +584,10 @@ nest' ::
   (Monad m, Typeable bean, HasCallStack) =>
   Fire m ->
   Cauldron m ->
-  Either CookingMistake ([MissingDependencies], Constructor m bean)
+  Either CookingError ([MissingDependencies], Constructor m bean)
 nest' Fire {shouldEnforceDependency, followPlanCauldron} cauldron = withFrozenCallStack do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
-  () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
+  () <- first MissingBeanRecipeError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
   plan <- first DependencyCycleError do buildPlan shouldEnforceDependency cauldron
   let missingDeps = collectMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
   Right $ (missingDeps, Constructor
@@ -831,10 +831,12 @@ followConstructor c getter = do
       & Cauldron.Beans.insert bean
 
 -- | Sometimes the 'cook'ing process goes wrong.
-data CookingMistake
-  = MissingEntrypointError TypeRep 
+data CookingError
+    
+  = -- | The bean that was demanded from the 'Cauldron' doesn't have a 'Recipe' that produces it.
+    MissingBeanRecipeError TypeRep 
   |  
-    -- | A 'Constructor' depends on beans that can't be found either in the current 'Cauldron' or its ancestors.
+    -- | A 'Constructor' depends on beans that can't be found in the 'Cauldron'.
     MissingDependenciesError MissingDependencies
   | -- | Beans that work both as primary beans and as secondary beans
     -- are disallowed.
@@ -843,16 +845,16 @@ data CookingMistake
     DependencyCycleError DependencyCycle
   deriving stock (Show)
 
-instance Exception CookingMistake where
-  displayException = prettyCookingMistake
+instance Exception CookingError where
+  displayException = prettyCookingError
 
-prettyCookingMistake :: CookingMistake -> String
-prettyCookingMistake = Data.List.intercalate "\n" . prettyCookingMistakeLines
+prettyCookingError :: CookingError -> String
+prettyCookingError = Data.List.intercalate "\n" . prettyCookingErrorLines
 
-prettyCookingMistakeLines :: CookingMistake -> [String]
-prettyCookingMistakeLines = \case
-  MissingEntrypointError tr ->
-     ["Missing entrypoint: " ++ show tr]
+prettyCookingErrorLines :: CookingError -> [String]
+prettyCookingErrorLines = \case
+  MissingBeanRecipeError tr ->
+     ["Requested bean " ++ show tr ++ "doesn't have a recipe."]
   MissingDependenciesError
     (MissingDependencies constructorCallStack constructorResultRep missingDependenciesReps) ->
       [ "This constructor for a value of type "
@@ -949,15 +951,15 @@ writeAsDot style filepath DependencyGraph {graph} = do
     System.IO.hPutStrLn handle dot
 
 -- | Default DOT rendering style to use with 'writeAsDot'.
--- When a 'CookingMistake' exists, is highlights the problematic 'BeanConstructionStep's.
-defaultStyle :: (Monoid s, IsString s) => Maybe CookingMistake -> Dot.Style BeanConstructionStep s
+-- When a 'CookingError' exists, is highlights the problematic 'BeanConstructionStep's.
+defaultStyle :: (Monoid s, IsString s) => Maybe CookingError -> Dot.Style BeanConstructionStep s
 defaultStyle merr =
   -- https://graphviz.org/docs/attr-types/style/
   -- https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-Export-Dot.html
   (Dot.defaultStyle defaultStepToText)
     { Dot.vertexAttributes = \step -> case merr of
         Nothing -> []
-        Just (MissingEntrypointError _) ->
+        Just (MissingBeanRecipeError _) ->
             []
         Just (MissingDependenciesError (MissingDependencies _ _ missing)) ->
           case step of
