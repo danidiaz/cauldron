@@ -50,7 +50,7 @@
 --           recipe @B $ val $ wire makeB,
 --           recipe @C $ eff $ wire makeC -- we use eff because the constructor has IO effects
 --         ]
---   action <- either throwIO pure $ cook @C forbidDepCycles cauldron
+--   action <- cook @C forbidDepCycles cauldron & either throwIO pure
 --   action
 -- :}
 -- C
@@ -364,7 +364,7 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 --               ]
 --           }
 --         ]
---   action <- either throwIO pure $ cook @Foo forbidDepCycles cauldron
+--   action <- cook @Foo forbidDepCycles cauldron & either throwIO pure 
 --   Foo {sayFoo} <- action
 --   sayFoo
 -- :}
@@ -1174,7 +1174,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 --           recipe @V $ val $ wire makeV,
 --           recipe @W $ val $ wire W
 --         ]
---   Identity w <- either throwIO pure $ cook @W forbidDepCycles cauldron
+--   Identity w <- cook @W forbidDepCycles cauldron & either throwIO pure
 --   pure w
 -- :}
 -- W (Sum {getSum = 8})
