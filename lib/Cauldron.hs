@@ -435,7 +435,7 @@ delete tr Cauldron {recipeMap} =
 --
 -- (The name is admittedly uninformative; the culinary metaphor was stretched too far.)
 data Fire m = Fire
-  { shouldOmitDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
+  { shouldEnforceDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
       Cauldron m ->
       BeanGetter -> 
@@ -452,7 +452,7 @@ removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
 forbidDepCycles :: (Monad m) => Fire m
 forbidDepCycles =
   Fire
-    { shouldOmitDependency = \_ -> False,
+    { shouldEnforceDependency = \_ -> True,
       followPlanCauldron = \cauldron previous initial plan -> do
         let makeBareView _ beans = beansBeanGetter beans <> previous
         let makeDecoView _ beans = beansBeanGetter beans <> previous
@@ -476,9 +476,9 @@ forbidDepCycles =
 allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
-    { shouldOmitDependency = \case
-        (BarePrimaryBean bean, FinishedBean anotherBean) | bean == anotherBean -> True
-        _ -> False,
+    { shouldEnforceDependency = \case
+        (BarePrimaryBean bean, FinishedBean anotherBean) | bean == anotherBean -> False
+        _ -> True,
       followPlanCauldron = fixyFollowPlanCauldron
     }
 
@@ -495,11 +495,11 @@ allowSelfDeps =
 allowDepCycles :: (MonadFix m) => Fire m
 allowDepCycles =
   Fire
-    { shouldOmitDependency = \case
-        (BarePrimaryBean _, FinishedBean _) -> True
-        (PrimaryBeanDeco _ _, FinishedBean _) -> True
-        (AggregateBean _ , FinishedBean _) -> True
-        _ -> False,
+    { shouldEnforceDependency = \case
+        (BarePrimaryBean _, FinishedBean _) -> False
+        (PrimaryBeanDeco _ _, FinishedBean _) -> False
+        (AggregateBean _ , FinishedBean _) -> False
+        _ -> True,
       followPlanCauldron = fixyFollowPlanCauldron
     }
 
@@ -585,10 +585,10 @@ nest' ::
   Fire m ->
   Cauldron m ->
   Either RecipeError ([MissingDependencies], Constructor m bean)
-nest' Fire {shouldOmitDependency, followPlanCauldron} cauldron = withFrozenCallStack do
+nest' Fire {shouldEnforceDependency, followPlanCauldron} cauldron = withFrozenCallStack do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
   () <- first MissingEntrypointError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
-  plan <- first DependencyCycleError do buildPlan shouldOmitDependency cauldron
+  plan <- first DependencyCycleError do buildPlan shouldEnforceDependency cauldron
   let missingDeps = collectMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
   Right $ (missingDeps, Constructor
     {
@@ -679,10 +679,10 @@ newtype DependencyCycle = DependencyCycle (NonEmpty (BeanConstructionStep, Maybe
 
 
 buildPlan :: ((BeanConstructionStep, BeanConstructionStep) -> Bool) -> Cauldron m -> Either DependencyCycle Plan
-buildPlan shouldOmitDependency cauldron = do
+buildPlan shouldEnforceDependency cauldron = do
   let (locations, deps) = buildDepsCauldron cauldron
   -- We may omit some dependency edges to allow for cyclic dependencies.
-  let graph = Graph.edges $ filter (not . shouldOmitDependency) deps
+  let graph = Graph.edges $ filter shouldEnforceDependency deps
   case Graph.reverseTopSort graph of
     Left recipeCycle ->
       Left $ DependencyCycle $ recipeCycle <&> \step -> (step, Map.lookup step locations)
