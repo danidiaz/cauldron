@@ -103,7 +103,7 @@ module Cauldron
     hoistConstructor,
     hoistConstructor',
 
-    -- ** Registering secondary beans
+    -- ** Registering aggregate beans
     -- $secondarybeans
 
     -- * Cooking the beans
@@ -550,14 +550,14 @@ data BeanConstructionStep
     AggregateBean TypeRep
   deriving stock (Show, Eq, Ord)
 
--- | Build the beans using the recipeMap stored in the 'Cauldron'.
+-- | Build the @bean@ using the 'Recipe's stored in the 'Cauldron'.
 --
--- Any secondary beans that are registered by constructors are aggregated
--- monoidally.
 cook ::
   forall {m} bean.
   (Monad m, Typeable bean) =>
+  -- | The types of dependency cycles that are allowed.
   Fire m ->
+  -- | A 'Cauldron' containing the necessary 'Recipe's.
   Cauldron m ->
   Either CookingError (m bean)
 cook fire cauldron = do
@@ -569,10 +569,18 @@ cook fire cauldron = do
     (_, bean) <- runConstructor (mempty @BeanGetter) c
     pure bean
 
+-- | Takes a 'Cauldron' converts it into a 'Constructor' where any unfilled
+-- dependencies are taken as the arguments of the 'Constructor'.  The
+-- 'Constructor' can later be included in a bigger 'Cauldron', which will
+-- provide the missing dependencies.
+--
+-- This function never fails with 'MissingDependenciesError'.
 nest ::
   forall {m} bean.
   (Monad m, Typeable bean, HasCallStack) =>
+  -- | The types of dependency cycles that are allowed.
   Fire m ->
+  -- | A 'Cauldron', possibly with unfilled dependencies.
   Cauldron m ->
   Either CookingError (Constructor m bean)
 nest fire cauldron = withFrozenCallStack do
@@ -1006,12 +1014,12 @@ defaultStepToText =
 
 
 -- | A way of building value of type @bean@, potentially requiring some
--- dependencies, potentially returning some secondary beans
+-- dependencies, potentially returning some secondary aggregate beans
 -- along the primary @bean@ result, and also potentially requiring some
 -- initialization effect in a monad @m@.
 --
 -- Note that only the type of the primary @bean@ is reflected in the
--- 'Constructor' type. Those of the dependencies and secondary beans are not.
+-- 'Constructor' type. Those of the dependencies and aggregate beans are not.
 --
 -- A typical initialization monad will be 'IO', used for example to create
 -- mutable references that the bean will use internally. Sometimes the
@@ -1030,7 +1038,7 @@ val_ x = Constructor callStack $ fmap (pure . pure) x
 
 -- | Like 'val_', but examines the @nested@ value returned by the 'Args' looking
 -- for (potentially nested) tuples.  All tuple components except the
--- rightmost-innermost one are registered as secondary beans (if they have
+-- rightmost-innermost one are registered as aggregate beans (if they have
 -- 'Monoid' instances, otherwise 'val' won't compile).
 val :: forall {nested} bean m. (Registrable nested bean, Applicative m, HasCallStack) => Args nested -> Constructor m bean
 val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity x)
@@ -1053,7 +1061,7 @@ ioEff_ args = withFrozenCallStack (hoistConstructor liftIO (eff_ args))
 
 -- | Like 'eff_', but examines the @nested@ value produced by the action
 -- returned by the 'Args' looking for (potentially nested) tuples.  All tuple
--- components except the rightmost-innermost one are registered as secondary
+-- components except the rightmost-innermost one are registered as aggregate
 -- beans (if they have 'Monoid' instances, otherwise 'eff' won't compile).
 eff :: forall {nested} bean m. (Registrable nested bean, Monad m, HasCallStack) => Args (m nested) -> Constructor m bean
 eff x = withFrozenCallStack (eff' $ register x)
@@ -1122,32 +1130,32 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- be produced by a single 'Recipe' in the 'Cauldron'.
 --
 -- 'Constructor's can produce, besides their \"primary\" bean result,
--- \"secondary\" beans that are not reflected in the 'Constructor' signature.
+-- secondary \"aggregate\" beans that are not reflected in the 'Constructor' signature.
 -- Multiple constructors across different 'Recipe's can produce secondary beans of the
 -- same type.
 --
--- Secondary beans are a bit special, in that:
+-- Aggregate beans are a bit special, in that:
 --
--- * The value that is \"seen"\ by a 'Constructor' that depends on a secondary bean
---   is the aggregation of /all/ values produced for that bean in the 'Cauldron'. This
---   means that secondary beans must have 'Monoid' instances, to enable aggregation.
+-- * The value that is \"seen"\ by a 'Constructor' that depends on an aggregate bean
+--   is the aggregation of /all/ values produced for that bean in the 'Cauldron'. Therefore,
+--   these beans must have 'Monoid' instances.
 --
 -- * When calculating build plan steps for a 'Cauldron', 'Constructor's that depend on a
---   secondary bean come after /all/ of the 'Constructor's that produce that secondary bean.
+--   aggregate bean come after /all/ of the 'Constructor's that produce that aggregate bean.
 --
--- * Secondary beans can't be decorated.
+-- * Aggregate beans can't be decorated.
 --
--- * A bean type can't be primary and secondary at the same time. See 'DoubleDutyBeansError'.
+-- * A bean type can't be primary and aggregate at the same time. See 'DoubleDutyBeansError'.
 --
--- What are secondary beans useful for?
+-- What are aggregate beans useful for?
 --
 -- * Exposing some uniform control or inspection interface for certain beans.
 --
 -- * Registering tasks or workers that must be run after application initialization.
 --
--- The simplest way of registering secondary beans is to pass an 'Args' value returning a tuple
+-- The simplest way of registering aggregate beans is to pass an 'Args' value returning a tuple
 -- to the 'val' (for pure constructors) or 'eff' (for effectful constructors) functions. Components
--- of the tuple other than the rightmost component are considered secondary beans:
+-- of the tuple other than the rightmost component are considered aggregate beans:
 --
 -- >>> :{
 -- con :: Constructor Identity String
@@ -1156,7 +1164,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- effCon = eff $ pure $ pure @IO (Sum @Int, All False, "foo")
 -- :}
 --
--- Example of how secondary bean values are accumulated:
+-- Example of how aggregate bean values are aggregated:
 --
 -- >>> :{
 -- data U = U deriving Show
@@ -1165,7 +1173,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- makeU = (Sum 1, U)
 -- makeV :: U -> (Sum Int, V)
 -- makeV = \_ -> (Sum 7, V)
--- newtype W = W (Sum Int) deriving Show -- depends on the secondary bean
+-- newtype W = W (Sum Int) deriving Show -- depends on the aggregate bean
 -- :}
 --
 -- >>> :{

@@ -83,11 +83,12 @@ makeServer :: Logger -> Repository -> IO (Initializer, Inspector, Server)
 ```
 
 These secondary outputs of a constructor, like `Initializer` and `Inspector`,
-must have `Monoid` instances. Unlike with the "primary" bean the constructor produces, they
+must have `Monoid` instances. Unlike with the "primary" bean the constructor
+produces, they
 *can* be produced by more than one constructor. Their values will be aggregated
 across all the constructors that produce them.
 
-Constructors can depend on the final combined value of an aggregate bean by taking
+Constructors can depend on the final aggregated value of an aggregate bean by taking
 the bean as a regular argument. Here, `makeDebuggingServer` receives the
 `mappend`ed value of all the `Inspector`s produced by other constructors (or
 `mempty`, if no constructor produces them):
