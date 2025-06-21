@@ -449,6 +449,20 @@ removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
   ConstructorReps {argReps = Set.delete beanRep argReps, regReps, beanRep}
 
 -- | Forbid any kind of cyclic dependencies between beans. This is probably what you want.
+--
+-- >>> :{
+-- data A = A
+-- loopyA :: A -> A
+-- loopyA _ = A
+-- :}
+--
+-- >>> :{
+--   cook @A forbidDepCycles ([
+--       recipe @A $ val $ wire loopyA
+--       ] :: Cauldron IO) 
+--       & isLeft
+-- :}
+-- True
 forbidDepCycles :: (Monad m) => Fire m
 forbidDepCycles =
   Fire
@@ -473,6 +487,39 @@ forbidDepCycles =
 -- __BEWARE__: Pattern-matching too eagerly on a \"bean from the future\" during
 -- construction will cause infinite loops or, if you are lucky, throw
 -- 'Control.Exception.FixIOException's.
+--
+--
+-- >>> :{
+-- data A = A
+-- loopyA :: A -> A
+-- loopyA _ = A
+-- :}
+--
+-- >>> :{
+--   cook @A allowSelfDeps ([
+--       recipe @A $ val $ wire loopyA
+--       ] :: Cauldron IO) 
+--       & isLeft
+-- :}
+-- False
+--
+-- >>> :{
+-- data U = U
+-- data V = V
+-- loopyU :: V -> U
+-- loopyU _ = U
+-- loopyV :: U -> V
+-- loopyV _ = V
+-- :}
+--
+-- >>> :{
+--   cook @U allowSelfDeps ([
+--       recipe @U $ val $ wire loopyU,
+--       recipe @V $ val $ wire loopyV
+--       ] :: Cauldron IO) 
+--       & isLeft
+-- :}
+-- True
 allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
@@ -492,6 +539,24 @@ allowSelfDeps =
 -- __BEWARE__: Pattern-matching too eagerly on argument beans during
 -- construction will cause infinite loops or, if you are lucky, throw
 -- 'Control.Exception.FixIOException's.
+--
+-- >>> :{
+-- data U = U
+-- data V = V
+-- loopyU :: V -> U
+-- loopyU _ = U
+-- loopyV :: U -> V
+-- loopyV _ = V
+-- :}
+--
+-- >>> :{
+--   cook @U allowDepCycles ([
+--       recipe @U $ val $ wire loopyU,
+--       recipe @V $ val $ wire loopyV
+--       ] :: Cauldron IO) 
+--       & isLeft
+-- :}
+-- False
 allowDepCycles :: (MonadFix m) => Fire m
 allowDepCycles =
   Fire
@@ -550,12 +615,13 @@ data BeanConstructionStep
     AggregateBean TypeRep
   deriving stock (Show, Eq, Ord)
 
--- | Build the @bean@ using the 'Recipe's stored in the 'Cauldron'.
+-- | Build the requested @bean@ using the 'Recipe's stored in the 'Cauldron'. The 'Cauldron' must 
+-- contain 'Recipe's for producing all the transitive dependencies of the @bean@.
 --
 cook ::
   forall {m} bean.
   (Monad m, Typeable bean) =>
-  -- | The types of dependency cycles that are allowed.
+  -- | The types of dependency cycles that are allowed between beans.
   Fire m ->
   -- | A 'Cauldron' containing the necessary 'Recipe's.
   Cauldron m ->
@@ -580,10 +646,65 @@ cook fire cauldron = do
 --
 -- This is an advanced function for when you want limited scopes for some beans.
 -- Usually 'cook' is enough.
+--
+-- Consider these example definitions:
+--
+-- >>> :{
+-- data A = A (IO ())
+-- data B = B (IO ())
+-- data C = C (IO ())
+-- makeA :: A
+-- makeA = A (putStrLn "A constructor")
+-- makeA2 :: A
+-- makeA2 = A (putStrLn "A2 constructor")
+-- makeB :: A -> B
+-- makeB (A a) = B (a >> putStrLn "B constructor")
+-- makeC :: A -> B -> C
+-- makeC = \(A a) (B b) -> C  (a >> b >> putStrLn "C constructor")
+-- :}
+--
+-- This is a wiring that uses 'nest' to create an scope that gives a local
+-- meaning to the bean @A@:
+--
+-- >>> :{
+-- do
+--   nested :: Constructor IO C <- nest @C forbidDepCycles [
+--       recipe @A $ val $ wire makeA2, -- this will be used by makeC
+--       recipe @C $ val $ wire makeC -- takes B from outside
+--       ] & either throwIO pure
+--   action <- cook @C forbidDepCycles [
+--       recipe @A $ val $ wire makeA,
+--       recipe @B $ val $ wire makeB,
+--       recipe @C $ nested
+--       ] & either throwIO pure
+--   C c <- action
+--   c
+-- :}
+-- A2 constructor
+-- A constructor
+-- B constructor
+-- C constructor
+--
+-- compare with this other wiring that uses a single 'Cauldron':
+--
+-- >>> :{
+-- do
+--   action <- cook @C forbidDepCycles [
+--       recipe @A $ val $ wire makeA,
+--       recipe @B $ val $ wire makeB,
+--       recipe @C $ val $ wire makeC
+--       ] & either throwIO pure
+--   C c <- action
+--   c
+-- :}
+-- A constructor
+-- A constructor
+-- B constructor
+-- C constructor
 nest ::
   forall {m} bean.
   (Monad m, Typeable bean, HasCallStack) =>
-  -- | The types of dependency cycles that are allowed.
+  -- | The types of dependency cycles that are allowed between beans.
   Fire m ->
   -- | A 'Cauldron', possibly with unfilled dependencies.
   Cauldron m ->
@@ -1038,6 +1159,16 @@ data Constructor m bean = Constructor
 -- | Create a 'Constructor' from an 'Args' value that returns a 'bean'.
 --
 -- Usually, the 'Args' value will be created by 'wire'ing a constructor function.
+--
+-- >>> :{
+-- data A = A
+-- data B = B
+-- makeB :: A -> B
+-- makeB _ = B 
+-- c :: Constructor IO B
+-- c = val_ $ wire $ makeB
+-- :}
+-- 
 val_ :: forall bean m. (Applicative m, HasCallStack) => Args bean -> Constructor m bean
 val_ x = Constructor callStack $ fmap (pure . pure) x
 
@@ -1045,11 +1176,26 @@ val_ x = Constructor callStack $ fmap (pure . pure) x
 -- for (potentially nested) tuples.  All tuple components except the
 -- rightmost-innermost one are registered as aggregate beans (if they have
 -- 'Monoid' instances, otherwise 'val' won't compile).
+--
+-- >>> :{
+-- data A = A
+-- data B = B
+-- makeB :: A -> (Sum Int, Any, B)
+-- makeB _ = (Sum 0, Any False, B) 
+-- c :: Constructor IO B
+-- c = val $ wire $ makeB
+-- makeB' :: A -> (Sum Int, (Any, B))
+-- makeB' _ = (Sum 0, (Any False, B))
+-- c' :: Constructor IO B
+-- c' = val $ wire $ makeB
+-- :}
+-- 
 val :: forall {nested} bean m. (Registrable nested bean, Applicative m, HasCallStack) => Args nested -> Constructor m bean
 val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity x)
 
 -- | Like 'val', but uses an alternative form of registering secondary beans.
 -- Less 'Registrable' typeclass magic, but more verbose. Likely not what you want.
+--
 val' :: forall bean m. (Applicative m, HasCallStack) => Args (Regs bean) -> Constructor m bean
 val' x = Constructor callStack $ fmap pure x
 
@@ -1057,6 +1203,16 @@ val' x = Constructor callStack $ fmap pure x
 -- effect that produces 'bean'.
 --
 -- Usually, the 'Args' value will be created by 'wire'ing an effectul constructor function.
+--
+-- >>> :{
+-- data A = A
+-- data B = B
+-- makeB :: A -> IO B
+-- makeB _ = pure B 
+-- c :: Constructor IO B
+-- c = eff_ $ wire $ makeB
+-- :}
+-- 
 eff_ :: forall bean m. (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
 eff_ x = Constructor callStack $ fmap (fmap pure) x
 
@@ -1068,6 +1224,20 @@ ioEff_ args = withFrozenCallStack (hoistConstructor liftIO (eff_ args))
 -- returned by the 'Args' looking for (potentially nested) tuples.  All tuple
 -- components except the rightmost-innermost one are registered as aggregate
 -- beans (if they have 'Monoid' instances, otherwise 'eff' won't compile).
+--
+-- >>> :{
+-- data A = A
+-- data B = B
+-- makeB :: A -> IO (Sum Int, Any, B)
+-- makeB _ = pure (Sum 0, Any False, B) 
+-- c :: Constructor IO B
+-- c = eff $ wire $ makeB
+-- makeB' :: A -> IO (Sum Int, (Any, B))
+-- makeB' _ = pure (Sum 0, (Any False, B))
+-- c' :: Constructor IO B
+-- c' = eff $ wire $ makeB
+-- :}
+-- 
 eff :: forall {nested} bean m. (Registrable nested bean, Monad m, HasCallStack) => Args (m nested) -> Constructor m bean
 eff x = withFrozenCallStack (eff' $ register x)
 
@@ -1201,6 +1371,6 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
 -- >>> import Data.Monoid
--- >>> import Data.Either (either)
+-- >>> import Data.Either (either, isLeft)
 -- >>> import Control.Exception (throwIO)
 

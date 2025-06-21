@@ -59,6 +59,7 @@ library graph
         Cauldron.Graph.Algorithm
         Cauldron.Graph.Export
         Cauldron.Graph.Export.Dot
+    visibility: public
 
 executable cauldron-example-wiring
     import:           common-base
