@@ -569,12 +569,17 @@ cook fire cauldron = do
     (_, bean) <- runConstructor (mempty @BeanGetter) c
     pure bean
 
--- | Takes a 'Cauldron' converts it into a 'Constructor' where any unfilled
+-- | 
+-- 
+-- Takes a 'Cauldron' converts it into a 'Constructor' where any unfilled
 -- dependencies are taken as the arguments of the 'Constructor'.  The
 -- 'Constructor' can later be included in a bigger 'Cauldron', which will
 -- provide the missing dependencies.
 --
 -- This function never fails with 'MissingDependenciesError'.
+--
+-- This is an advanced function for when you want limited scopes for some beans.
+-- Usually 'cook' is enough.
 nest ::
   forall {m} bean.
   (Monad m, Typeable bean, HasCallStack) =>
