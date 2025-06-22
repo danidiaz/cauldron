@@ -180,7 +180,7 @@ tests =
                 -- putStrLn $ prettyRecipeError err
                 assertFailure $ "could not wire " ++ name
               Right (Identity acc) ->
-                    assertEqual "experted result" expected acc,
+                assertEqual "experted result" expected acc,
       testCase "wiring with accums" do
         Data.Foldable.for_ @[]
           [ ("aggcyle", cauldronAccumsOops1),
@@ -200,8 +200,8 @@ tests =
           -- putStrLn $ prettyRecipeError err
           assertFailure "could not wire"
         Right (Identity (Serializer {runSerializer})) -> do
-              let value = FooToBar (BarToFoo (FooToBar (BarToBaz EndBaz)))
-              assertEqual "experted result" ".FooToBar.BarToFoo.FooToBar.BarToBar.EndBaz" (runSerializer value)
+          let value = FooToBar (BarToFoo (FooToBar (BarToBaz EndBaz)))
+          assertEqual "experted result" ".FooToBar.BarToFoo.FooToBar.BarToBar.EndBaz" (runSerializer value)
 
 main :: IO ()
 main = defaultMain tests

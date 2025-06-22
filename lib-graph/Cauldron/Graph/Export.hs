@@ -1,5 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 -----------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------
+
 -- |
 -- Module     : Algebra.Graph.Export
 -- Copyright  : (c) Andrey Mokhov 2016-2024
@@ -13,23 +17,29 @@
 --
 -- This module defines basic functionality for exporting graphs in textual and
 -- binary formats. "Algebra.Graph.Export.Dot" provides DOT-specific functions.
------------------------------------------------------------------------------
-module Cauldron.Graph.Export (
-    -- * Constructing and exporting documents
-    Doc, isEmpty, literal, render,
+module Cauldron.Graph.Export
+  ( -- * Constructing and exporting documents
+    Doc,
+    isEmpty,
+    literal,
+    render,
 
     -- * Common combinators for text documents
-    (<+>), brackets, doubleQuotes, indent, unlines,
+    (<+>),
+    brackets,
+    doubleQuotes,
+    indent,
+    unlines,
 
     -- * Generic graph export
-    export
-    ) where
+    export,
+  )
+where
 
+import Cauldron.Graph (AdjacencyMap, edgeList, vertexList)
 import Data.Foldable (fold)
 import Data.String hiding (unlines)
 import Prelude hiding (unlines)
-
-import Cauldron.Graph (AdjacencyMap, vertexList, edgeList)
 
 -- | An abstract document data type with /O(1)/ time concatenation (the current
 -- implementation uses difference lists). Here @s@ is the type of abstract
@@ -55,21 +65,23 @@ import Cauldron.Graph (AdjacencyMap, vertexList, edgeList)
 newtype Doc s = Doc [s] deriving (Monoid, Semigroup)
 
 instance (Monoid s, Show s) => Show (Doc s) where
-    show = show . render
+  show = show . render
 
 instance (Monoid s, Eq s) => Eq (Doc s) where
-    x == y | isEmpty x = isEmpty y
-           | isEmpty y = False
-           | otherwise = render x == render y
+  x == y
+    | isEmpty x = isEmpty y
+    | isEmpty y = False
+    | otherwise = render x == render y
 
 -- | The empty document is smallest.
 instance (Monoid s, Ord s) => Ord (Doc s) where
-    compare x y | isEmpty x = if isEmpty y then EQ else LT
-                | isEmpty y = GT
-                | otherwise = compare (render x) (render y)
+  compare x y
+    | isEmpty x = if isEmpty y then EQ else LT
+    | isEmpty y = GT
+    | otherwise = compare (render x) (render y)
 
-instance IsString s => IsString (Doc s) where
-    fromString = literal . fromString
+instance (IsString s) => IsString (Doc s) where
+  fromString = literal . fromString
 
 -- | Check if a document is empty. The result is the same as when comparing the
 -- given document to 'mempty', but this function does not require the 'Eq' @s@
@@ -104,7 +116,7 @@ literal = Doc . pure
 -- render 'mempty'                         == 'mempty'
 -- render . 'literal'                      == 'id'
 -- @
-render :: Monoid s => Doc s -> s
+render :: (Monoid s) => Doc s -> s
 render (Doc x) = fold x
 
 -- | Concatenate two documents, separated by a single space, unless one of the
@@ -116,10 +128,11 @@ render (Doc x) = fold x
 -- x \<+\> (y \<+\> z)      == (x \<+\> y) \<+\> z
 -- "name" \<+\> "surname" == "name surname"
 -- @
-(<+>) :: IsString s => Doc s -> Doc s -> Doc s
-x <+> y | isEmpty x = y
-        | isEmpty y = x
-        | otherwise = x <> " " <> y
+(<+>) :: (IsString s) => Doc s -> Doc s -> Doc s
+x <+> y
+  | isEmpty x = y
+  | isEmpty y = x
+  | otherwise = x <> " " <> y
 
 infixl 7 <+>
 
@@ -129,7 +142,7 @@ infixl 7 <+>
 -- brackets "i"    == "[i]"
 -- brackets 'mempty' == "[]"
 -- @
-brackets :: IsString s => Doc s -> Doc s
+brackets :: (IsString s) => Doc s -> Doc s
 brackets x = "[" <> x <> "]"
 
 -- | Wrap a document into double quotes.
@@ -138,7 +151,7 @@ brackets x = "[" <> x <> "]"
 -- doubleQuotes "\/path\/with spaces"   == "\\"\/path\/with spaces\\""
 -- doubleQuotes (doubleQuotes 'mempty') == "\\"\\"\\"\\""
 -- @
-doubleQuotes :: IsString s => Doc s -> Doc s
+doubleQuotes :: (IsString s) => Doc s -> Doc s
 doubleQuotes x = "\"" <> x <> "\""
 
 -- | Prepend a given number of spaces to a document.
@@ -147,7 +160,7 @@ doubleQuotes x = "\"" <> x <> "\""
 -- indent 0        == 'id'
 -- indent 1 'mempty' == " "
 -- @
-indent :: IsString s => Int -> Doc s -> Doc s
+indent :: (IsString s) => Int -> Doc s -> Doc s
 indent spaces x = fromString (replicate spaces ' ') <> x
 
 -- | Concatenate documents after appending a terminating newline symbol to each.
@@ -157,11 +170,12 @@ indent spaces x = fromString (replicate spaces ' ') <> x
 -- unlines ['mempty']              == "\\n"
 -- unlines ["title", "subtitle"] == "title\\nsubtitle\\n"
 -- @
-unlines :: IsString s => [Doc s] -> Doc s
-unlines []     = mempty
-unlines (x:xs) = x <> "\n" <> unlines xs
+unlines :: (IsString s) => [Doc s] -> Doc s
+unlines [] = mempty
+unlines (x : xs) = x <> "\n" <> unlines xs
 
 -- TODO: Avoid round-trip graph conversion if g :: AdjacencyMap a.
+
 -- | Export a graph into a document given two functions that construct documents
 -- for individual vertices and edges. The order of export is: vertices, sorted
 -- by 'Ord' @a@, and then edges, sorted by 'Ord' @(a, a)@.
@@ -183,5 +197,5 @@ unlines (x:xs) = x <> "\n" <> unlines xs
 export :: (Ord a) => (a -> Doc s) -> (a -> a -> Doc s) -> AdjacencyMap a -> Doc s
 export v e adjMap = vDoc <> eDoc
   where
-    vDoc   = mconcat $ map  v          (vertexList adjMap)
-    eDoc   = mconcat $ map (uncurry e) (edgeList   adjMap)
+    vDoc = mconcat $ map v (vertexList adjMap)
+    eDoc = mconcat $ map (uncurry e) (edgeList adjMap)

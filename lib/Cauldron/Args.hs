@@ -19,6 +19,7 @@ module Cauldron.Args
     runArgs,
     getArgsReps,
     contramapArgs,
+
     -- ** Reducing 'arg' boilerplate with 'wire'
     Wireable (wire),
 

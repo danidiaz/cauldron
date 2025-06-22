@@ -11,6 +11,7 @@ module Main (main) where
 import Cauldron
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer
+import Data.Foldable qualified
 import Data.Function ((&))
 import Data.IORef
 import Data.Map (Map)
@@ -21,7 +22,6 @@ import Data.Set qualified
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Data.Foldable qualified
 
 type Text = String
 
@@ -134,36 +134,35 @@ cauldronWithCycle =
 
 cauldronX1 :: Cauldron M
 cauldronX1 =
-    fromRecipeList
-        [ recipe @(Logger M) $ eff $ pure makeLogger, 
-          recipe @(Weird M) $ eff $ wire makeWeird -- overwritten
-        ]
+  fromRecipeList
+    [ recipe @(Logger M) $ eff $ pure makeLogger,
+      recipe @(Weird M) $ eff $ wire makeWeird -- overwritten
+    ]
 
 cauldronX2 :: Cauldron M
 cauldronX2 =
-      fromRecipeList
-        [ recipe @(Repository M) $ eff $ do
-            action <- wire makeRepository
-            pure do
-              (initializer, repo) <- action
-              pure (initializer, repo),
-          recipe @(Weird M)
-            Recipe
-              { bean = eff $ wire makeSelfInvokingWeird,
-                decos =
-                  fromDecoList
-                    [ val $ wire (weirdDeco "inner"),
-                      val $ wire (weirdDeco "outer")
-                    ]
-              },
-          recipe @Result $ val_ do wire Result
-        ]
+  fromRecipeList
+    [ recipe @(Repository M) $ eff $ do
+        action <- wire makeRepository
+        pure do
+          (initializer, repo) <- action
+          pure (initializer, repo),
+      recipe @(Weird M)
+        Recipe
+          { bean = eff $ wire makeSelfInvokingWeird,
+            decos =
+              fromDecoList
+                [ val $ wire (weirdDeco "inner"),
+                  val $ wire (weirdDeco "outer")
+                ]
+          },
+      recipe @Result $ val_ do wire Result
+    ]
 
 data Result = Result Initializer (Repository M) (Weird M)
 
 cauldronX :: Cauldron M
 cauldronX = cauldronX1 <> cauldronX2
-
 
 cauldronLonely :: Cauldron M
 cauldronLonely =
@@ -208,8 +207,7 @@ tests =
               pure ()
         assertEqual
           "traces"
-          [ 
-            -- "weird constructor", -- not happens, because overwritten
+          [ -- "weird constructor", -- not happens, because overwritten
             -- the order of the traces here is a bit too overspecified. several orders could be valid.
             "logger constructor",
             "self-invoking weird constructor",
@@ -226,20 +224,21 @@ tests =
             -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
             "weirdOp 2"
           ]
-          traces
-        --case getDependencyGraph cauldronNonEmpty of
-        --  dg2  -> do
-        --    let adj2 = toAdjacencyMap dg2
-        --    unless (hasVertex (PrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
-        --      assertFailure "cauldron 2 doesn't have the fully built logger from cauldron 1 in its dep graph"
-        --    when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
-        --      assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
-        --  pure ()
-          ,
+          traces,
+      -- case getDependencyGraph cauldronNonEmpty of
+      --  dg2  -> do
+      --    let adj2 = toAdjacencyMap dg2
+      --    unless (hasVertex (PrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+      --      assertFailure "cauldron 2 doesn't have the fully built logger from cauldron 1 in its dep graph"
+      --    when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+      --      assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
+      --  pure ()
+
       testCase "value nested" do
-        ((), traces) <- case (
-              do constructorX2 <- nest allowSelfDeps cauldronX2
-                 cook @Result allowSelfDeps (cauldronX1 & Cauldron.insert @Result constructorX2)) of
+        ((), traces) <- case ( do
+                                 constructorX2 <- nest allowSelfDeps cauldronX2
+                                 cook @Result allowSelfDeps (cauldronX1 & Cauldron.insert @Result constructorX2)
+                             ) of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
             runWriterT do
@@ -252,8 +251,7 @@ tests =
               pure ()
         assertEqual
           "traces"
-          [ 
-            -- the order of the traces here is a bit too overspecified. several orders could be valid.
+          [ -- the order of the traces here is a bit too overspecified. several orders could be valid.
             "logger constructor",
             "self-invoking weird constructor",
             "weird constructor", -- note that this is present. Overwritten by nested, but still built
@@ -271,16 +269,16 @@ tests =
             -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
             "weirdOp 2"
           ]
-          traces
-        --case getDependencyGraph cauldronNonEmpty of
-        --  dg2  -> do
-        --    let adj2 = toAdjacencyMap dg2
-        --    unless (hasVertex (PrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
-        --      assertFailure "cauldron 2 doesn't have the fully built logger from cauldron 1 in its dep graph"
-        --    when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
-        --      assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
-        --  pure ()
-          ,
+          traces,
+      -- case getDependencyGraph cauldronNonEmpty of
+      --  dg2  -> do
+      --    let adj2 = toAdjacencyMap dg2
+      --    unless (hasVertex (PrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+      --      assertFailure "cauldron 2 doesn't have the fully built logger from cauldron 1 in its dep graph"
+      --    when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+      --      assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
+      --  pure ()
+
       testCase "lonely beans get built" do
         (_, _) <- case cook allowSelfDeps cauldronLonely of
           Left _ -> assertFailure "could not wire"
@@ -303,9 +301,9 @@ tests =
         pure (),
       testCase "cauldron with cycle" do
         case cook' cauldronWithCycle of
-          Left (DependencyCycleError (DependencyCycle vs)) -> 
-              -- Why not a cycle of length 3? Because there also are bare versions for each bean.
-              assertEqual "cycle of the expected length" 4 (Data.Foldable.length vs)
+          Left (DependencyCycleError (DependencyCycle vs)) ->
+            -- Why not a cycle of length 3? Because there also are bare versions for each bean.
+            assertEqual "cycle of the expected length" 4 (Data.Foldable.length vs)
           _ -> assertFailure "dependency cycle not detected"
         pure ()
     ]

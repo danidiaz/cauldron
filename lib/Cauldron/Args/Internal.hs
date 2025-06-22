@@ -12,9 +12,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
-module Cauldron.Args.Internal
-  
-where
+module Cauldron.Args.Internal where
 
 import Cauldron.Beans (Beans, SomeMonoidTypeRep (..), fromDynList)
 import Cauldron.Beans qualified

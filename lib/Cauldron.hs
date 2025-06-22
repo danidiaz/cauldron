@@ -3,13 +3,13 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE DuplicateRecordFields #-}
 
 -- | This is a library for performing dependency injection. It's an alternative
 -- to manually wiring your functions and passing all required parameters
@@ -141,14 +141,15 @@ module Cauldron
   )
 where
 
+import Cauldron.Args
+import Cauldron.Args.Internal (Args (..))
+import Cauldron.Beans (SomeMonoidTypeRep (..))
+import Cauldron.Beans qualified
 import Cauldron.Graph (AdjacencyMap)
 import Cauldron.Graph qualified as Graph
 import Cauldron.Graph.Algorithm qualified as Graph
 import Cauldron.Graph.Export.Dot qualified as Dot
-import Cauldron.Args
-import Cauldron.Args.Internal (Args(..))
-import Cauldron.Beans (SomeMonoidTypeRep (..))
-import Cauldron.Beans qualified
+import Control.Applicative ((<|>))
 import Control.Exception (Exception (..))
 import Control.Monad.Fix
 import Control.Monad.IO.Class
@@ -170,15 +171,14 @@ import Data.Sequence (Seq)
 import Data.Sequence qualified
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.String (IsString (..))
 import Data.Type.Equality (testEquality)
 import Data.Typeable
 import GHC.Exception (CallStack, prettyCallStackLines)
 import GHC.IsList
 import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
-import Type.Reflection qualified
-import Data.String (IsString(..))
 import System.IO qualified
-import Control.Applicative ((<|>))
+import Type.Reflection qualified
 
 -- | A map of bean recipes, indexed by the 'TypeRep' of the bean each recipe
 -- ultimately produces. Only one recipe is allowed for each bean type.
@@ -364,7 +364,7 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 --               ]
 --           }
 --         ]
---   action <- cook @Foo forbidDepCycles cauldron & either throwIO pure 
+--   action <- cook @Foo forbidDepCycles cauldron & either throwIO pure
 --   Foo {sayFoo} <- action
 --   sayFoo
 -- :}
@@ -438,7 +438,7 @@ data Fire m = Fire
   { shouldEnforceDependency :: (BeanConstructionStep, BeanConstructionStep) -> Bool,
     followPlanCauldron ::
       Cauldron m ->
-      BeanGetter -> 
+      BeanGetter ->
       Beans ->
       Plan ->
       m Beans
@@ -459,7 +459,7 @@ removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
 -- >>> :{
 --   cook @A forbidDepCycles ([
 --       recipe @A $ val $ wire loopyA
---       ] :: Cauldron IO) 
+--       ] :: Cauldron IO)
 --       & \case Left (DependencyCycleError _) -> "self dep is forbidden"; _ -> "oops"
 -- :}
 -- "self dep is forbidden"
@@ -498,7 +498,7 @@ forbidDepCycles =
 -- >>> :{
 --   cook @A allowSelfDeps ([
 --       recipe @A $ val $ wire loopyA
---       ] :: Cauldron IO) 
+--       ] :: Cauldron IO)
 --       & \case Left (DependencyCycleError _) -> "oops"; _ -> "self dep is ok"
 -- :}
 -- "self dep is ok"
@@ -516,7 +516,7 @@ forbidDepCycles =
 --   cook @U allowSelfDeps ([
 --       recipe @U $ val $ wire loopyU,
 --       recipe @V $ val $ wire loopyV
---       ] :: Cauldron IO) 
+--       ] :: Cauldron IO)
 --       & \case Left (DependencyCycleError _) -> "cycle between 2 deps"; _ -> "oops"
 -- :}
 -- "cycle between 2 deps"
@@ -553,7 +553,7 @@ allowSelfDeps =
 --   cook @U allowDepCycles ([
 --       recipe @U $ val $ wire loopyU,
 --       recipe @V $ val $ wire loopyV
---       ] :: Cauldron IO) 
+--       ] :: Cauldron IO)
 --       & \case Left (DependencyCycleError _) -> "oops"; _ -> "cycles are ok"
 -- :}
 -- "cycles are ok"
@@ -563,27 +563,25 @@ allowDepCycles =
     { shouldEnforceDependency = \case
         (BarePrimaryBean _, FinishedBean _) -> False
         (PrimaryBeanDeco _ _, FinishedBean _) -> False
-        (AggregateBean _ , FinishedBean _) -> False
+        (AggregateBean _, FinishedBean _) -> False
         _ -> True,
       followPlanCauldron = fixyFollowPlanCauldron
     }
 
-
-fixyFollowPlanCauldron :: MonadFix m => Cauldron m -> BeanGetter -> Beans -> [BeanConstructionStep] -> m Beans
+fixyFollowPlanCauldron :: (MonadFix m) => Cauldron m -> BeanGetter -> Beans -> [BeanConstructionStep] -> m Beans
 fixyFollowPlanCauldron = \cauldron previous initial plan -> do
   mfix do
     \final -> do
       -- We prefer the final beans.
       let makeBareView _ _ = beansBeanGetter final <> previous
       -- We prefer the final beans,
-      -- *except* when the bean being decorated, 
+      -- \*except* when the bean being decorated,
       -- because the decorator needs the in-construction version.
       let makeDecoView tr beans = (beansBeanGetter beans `restrict` Set.singleton tr) <> beansBeanGetter final <> previous
       Data.Foldable.foldlM
         do followPlanStep makeBareView makeDecoView cauldron
         initial
         plan
-
 
 -- https://discord.com/channels/280033776820813825/280036215477239809/1147832555828162594
 -- https://github.com/ghc-proposals/ghc-proposals/pull/126#issuecomment-1363403330
@@ -624,7 +622,7 @@ data BeanConstructionStep
 -- :}
 --
 -- >>> :{
--- cook @A forbidDepCycles (mempty :: Cauldron IO) 
+-- cook @A forbidDepCycles (mempty :: Cauldron IO)
 --  & \case Left (MissingResultBeanError _) -> "no recipe for requested bean"; _ -> "oops"
 -- :}
 -- "no recipe for requested bean"
@@ -635,11 +633,10 @@ data BeanConstructionStep
 -- :}
 --
 -- >>> :{
--- cook @B forbidDepCycles ([recipe $ val $ wire B] :: Cauldron IO) 
+-- cook @B forbidDepCycles ([recipe $ val $ wire B] :: Cauldron IO)
 --  & \case Left (MissingDependenciesError _) -> "no recipe for A"; _ -> "oops"
 -- :}
 -- "no recipe for A"
--- 
 cook ::
   forall {m} bean.
   (Monad m, Typeable bean) =>
@@ -657,8 +654,8 @@ cook fire cauldron = do
     (_, bean) <- runConstructor (mempty @BeanGetter) c
     pure bean
 
--- | 
--- 
+-- |
+--
 -- Takes a 'Cauldron' converts it into a 'Constructor' where any unfilled
 -- dependencies are taken as the arguments of the 'Constructor'.  The
 -- 'Constructor' can later be included in a bigger 'Cauldron', which will
@@ -746,24 +743,26 @@ nest' Fire {shouldEnforceDependency, followPlanCauldron} cauldron = withFrozenCa
   () <- first MissingResultBeanError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
   plan <- first DependencyCycleError do buildPlan shouldEnforceDependency cauldron
   let missingDeps = collectMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
-  Right $ (missingDeps, Constructor
-    {
-      _constructorCallStack = callStack,
-      _args = Args {
-        _argReps = missingDepsToArgReps missingDeps,
-        _regReps = Set.empty,
-        _runArgs = \previous -> do
-          beans <- followPlanCauldron cauldron (BeanGetter previous) (fromDynList (Data.Foldable.toList accumMap)) plan
-          pure $ pure $ fromJust $ taste @bean beans
-      }
-    })
+  Right $
+    ( missingDeps,
+      Constructor
+        { _constructorCallStack = callStack,
+          _args =
+            Args
+              { _argReps = missingDepsToArgReps missingDeps,
+                _regReps = Set.empty,
+                _runArgs = \previous -> do
+                  beans <- followPlanCauldron cauldron (BeanGetter previous) (fromDynList (Data.Foldable.toList accumMap)) plan
+                  pure $ pure $ fromJust $ taste @bean beans
+              }
+        }
+    )
 
 checkEntryPointPresent :: TypeRep -> Set TypeRep -> Cauldron m -> Either TypeRep ()
-checkEntryPointPresent tr secondary cauldron =  
+checkEntryPointPresent tr secondary cauldron =
   if Set.member tr (Cauldron.keysSet cauldron `Set.union` secondary)
     then Right ()
     else Left tr
-
 
 newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
   deriving stock (Show)
@@ -772,7 +771,7 @@ newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
 -- be obtained even if the 'Cauldron' can't be 'cook'ed successfully.
 getDependencyGraph :: Cauldron m -> DependencyGraph
 getDependencyGraph cauldron =
-   let (_, deps) = buildDepsCauldron cauldron
+  let (_, deps) = buildDepsCauldron cauldron
    in DependencyGraph {graph = Graph.edges deps}
 
 checkNoDoubleDutyBeans ::
@@ -804,9 +803,9 @@ data MissingDependencies = MissingDependencies CallStack TypeRep (Set TypeRep)
 missingDepsToArgReps ::
   [MissingDependencies] ->
   Set TypeRep
-missingDepsToArgReps = Set.unions . fmap (\(MissingDependencies _ _ missing) ->  missing)
+missingDepsToArgReps = Set.unions . fmap (\(MissingDependencies _ _ missing) -> missing)
 
-collectMissingDeps :: 
+collectMissingDeps ::
   -- | accums
   Set TypeRep ->
   -- | available at this level
@@ -833,7 +832,6 @@ demandsByConstructorsInCauldron Cauldron {recipeMap} = do
 
 newtype DependencyCycle = DependencyCycle (NonEmpty (BeanConstructionStep, Maybe CallStack))
   deriving stock (Show)
-
 
 buildPlan :: ((BeanConstructionStep, BeanConstructionStep) -> Bool) -> Cauldron m -> Either DependencyCycle Plan
 buildPlan shouldEnforceDependency cauldron = do
@@ -904,44 +902,41 @@ constructorEdges item (ConstructorReps {argReps, regReps}) =
       let argStep = FinishedBean argRep
       [(item, argStep)]
   )
-    ++
-    
-    ( do
-        (regRep, _) <- Map.toList regReps
-        let repStep = AggregateBean regRep
-        [
-         -- aggregate beans depend on their producers     
-         (repStep, item), 
-         -- The finished version of the aggregate bean depends on the aggregation step.
-         (FinishedBean regRep, repStep) ]
-    )
+    ++ ( do
+           (regRep, _) <- Map.toList regReps
+           let repStep = AggregateBean regRep
+           [ -- aggregate beans depend on their producers
+             (repStep, item),
+             -- The finished version of the aggregate bean depends on the aggregation step.
+             (FinishedBean regRep, repStep)
+             ]
+       )
 
-data BeanGetter = BeanGetter { _run :: forall t. (Typeable t) => Maybe t } 
+data BeanGetter = BeanGetter {_run :: forall t. (Typeable t) => Maybe t}
 
 instance Semigroup BeanGetter where
-  BeanGetter { _run = run1 } <> BeanGetter { _run = run2 } =
-    BeanGetter { _run = run1 <|> run2 }
+  BeanGetter {_run = run1} <> BeanGetter {_run = run2} =
+    BeanGetter {_run = run1 <|> run2}
 
 instance Monoid BeanGetter where
-  mempty = BeanGetter { _run = Nothing }
+  mempty = BeanGetter {_run = Nothing}
 
-runBeanGetter :: BeanGetter -> forall t. (Typeable t) => Maybe t 
-runBeanGetter BeanGetter { _run } = _run
+runBeanGetter :: BeanGetter -> forall t. (Typeable t) => Maybe t
+runBeanGetter BeanGetter {_run} = _run
 
 beansBeanGetter :: Beans -> BeanGetter
-beansBeanGetter beans = BeanGetter (taste beans) 
+beansBeanGetter beans = BeanGetter (taste beans)
 
 restrict :: BeanGetter -> Set TypeRep -> BeanGetter
-restrict (BeanGetter { _run }) allowed =
-  BeanGetter { _run = _run' }
+restrict (BeanGetter {_run}) allowed =
+  BeanGetter {_run = _run'}
   where
-  _run' :: forall bean. (Typeable bean) => Maybe bean
-  _run' =
-    let tr = typeRep (Proxy @bean)
-     in if tr `Set.member` allowed
-          then _run
-          else Nothing
-
+    _run' :: forall bean. (Typeable bean) => Maybe bean
+    _run' =
+      let tr = typeRep (Proxy @bean)
+       in if tr `Set.member` allowed
+            then _run
+            else Nothing
 
 -- | Builds the transition function for a 'foldM'.
 followPlanStep ::
@@ -989,11 +984,9 @@ followConstructor c getter = do
 
 -- | Sometimes the 'cook'ing process goes wrong.
 data CookingError
-    
   = -- | The bean that was demanded from the 'Cauldron' doesn't have a 'Recipe' that produces it.
-    MissingResultBeanError TypeRep 
-  |  
-    -- | A 'Constructor' depends on beans that can't be found in the 'Cauldron'.
+    MissingResultBeanError TypeRep
+  | -- | A 'Constructor' depends on beans that can't be found in the 'Cauldron'.
     MissingDependenciesError MissingDependencies
   | -- | Beans that work both as primary beans and as secondary beans
     -- are disallowed.
@@ -1011,7 +1004,7 @@ prettyCookingError = Data.List.intercalate "\n" . prettyCookingErrorLines
 prettyCookingErrorLines :: CookingError -> [String]
 prettyCookingErrorLines = \case
   MissingResultBeanError tr ->
-     ["No recipe found that produces requested bean " ++ show tr]
+    ["No recipe found that produces requested bean " ++ show tr]
   MissingDependenciesError
     (MissingDependencies constructorCallStack constructorResultRep missingDependenciesReps) ->
       [ "This constructor for a value of type "
@@ -1091,12 +1084,12 @@ collapseBeans DependencyGraph {graph} = do
       vertices = Graph.vertexList simplified
       edges = Graph.edgeList simplified
       edgesWithoutSelfLoops =
-        edges &
-        filter
-          ( \case
-              (FinishedBean source, FinishedBean target) -> if source == target then False else True
-              _ -> True
-          )
+        edges
+          & filter
+            ( \case
+                (FinishedBean source, FinishedBean target) -> if source == target then False else True
+                _ -> True
+            )
   DependencyGraph {graph = Graph.vertices vertices `Graph.overlay` Graph.edges edgesWithoutSelfLoops}
 
 -- | See the [DOT format](https://graphviz.org/doc/info/lang.html).
@@ -1104,7 +1097,7 @@ writeAsDot :: Dot.Style BeanConstructionStep String -> FilePath -> DependencyGra
 writeAsDot style filepath DependencyGraph {graph} = do
   let dot = Dot.export style graph
   System.IO.withFile filepath System.IO.WriteMode $ \handle -> do
-    System.IO.hSetEncoding handle System.IO.utf8  
+    System.IO.hSetEncoding handle System.IO.utf8
     System.IO.hPutStrLn handle dot
 
 -- | Default DOT rendering style to use with 'writeAsDot'.
@@ -1117,7 +1110,7 @@ defaultStyle merr =
     { Dot.vertexAttributes = \step -> case merr of
         Nothing -> []
         Just (MissingResultBeanError _) ->
-            []
+          []
         Just (MissingDependenciesError (MissingDependencies _ _ missing)) ->
           case step of
             FinishedBean rep
@@ -1149,10 +1142,10 @@ defaultStyle merr =
     }
 
 -- | Change the default way of how 'BeanConstructionStep's are rendered to text.
-setVertexName :: IsString s => (BeanConstructionStep -> s) -> Dot.Style BeanConstructionStep s -> Dot.Style BeanConstructionStep s
+setVertexName :: (IsString s) => (BeanConstructionStep -> s) -> Dot.Style BeanConstructionStep s -> Dot.Style BeanConstructionStep s
 setVertexName vertexName style = style {Dot.vertexName}
 
-defaultStepToText :: IsString s => BeanConstructionStep -> s
+defaultStepToText :: (IsString s) => BeanConstructionStep -> s
 defaultStepToText =
   let p rep = show rep
    in \case
@@ -1160,7 +1153,6 @@ defaultStepToText =
         PrimaryBeanDeco rep index -> fromString $ p rep ++ "#deco#" ++ show index
         AggregateBean rep -> fromString $ p rep ++ "#agg"
         FinishedBean rep -> fromString $ p rep
-
 
 -- | A way of building value of type @bean@, potentially requiring some
 -- dependencies, potentially returning some secondary aggregate beans
@@ -1192,11 +1184,10 @@ data Constructor m bean = Constructor
 -- data A = A
 -- data B = B
 -- makeB :: A -> B
--- makeB _ = B 
+-- makeB _ = B
 -- c :: Constructor IO B
 -- c = val_ $ wire $ makeB
 -- :}
--- 
 val_ :: forall bean m. (Applicative m, HasCallStack) => Args bean -> Constructor m bean
 val_ x = Constructor callStack $ fmap (pure . pure) x
 
@@ -1209,7 +1200,7 @@ val_ x = Constructor callStack $ fmap (pure . pure) x
 -- data A = A
 -- data B = B
 -- makeB :: A -> (Sum Int, Any, B)
--- makeB _ = (Sum 0, Any False, B) 
+-- makeB _ = (Sum 0, Any False, B)
 -- c :: Constructor IO B
 -- c = val $ wire $ makeB
 -- makeB' :: A -> (Sum Int, (Any, B))
@@ -1217,13 +1208,11 @@ val_ x = Constructor callStack $ fmap (pure . pure) x
 -- c' :: Constructor IO B
 -- c' = val $ wire $ makeB
 -- :}
--- 
 val :: forall {nested} bean m. (Registrable nested bean, Applicative m, HasCallStack) => Args nested -> Constructor m bean
 val x = withFrozenCallStack (val' $ fmap runIdentity $ register $ fmap Identity x)
 
 -- | Like 'val', but uses an alternative form of registering secondary beans.
 -- Less 'Registrable' typeclass magic, but more verbose. Likely not what you want.
---
 val' :: forall bean m. (Applicative m, HasCallStack) => Args (Regs bean) -> Constructor m bean
 val' x = Constructor callStack $ fmap pure x
 
@@ -1236,11 +1225,10 @@ val' x = Constructor callStack $ fmap pure x
 -- data A = A
 -- data B = B
 -- makeB :: A -> IO B
--- makeB _ = pure B 
+-- makeB _ = pure B
 -- c :: Constructor IO B
 -- c = eff_ $ wire $ makeB
 -- :}
--- 
 eff_ :: forall bean m. (Functor m, HasCallStack) => Args (m bean) -> Constructor m bean
 eff_ x = Constructor callStack $ fmap (fmap pure) x
 
@@ -1257,7 +1245,7 @@ ioEff_ args = withFrozenCallStack (hoistConstructor liftIO (eff_ args))
 -- data A = A
 -- data B = B
 -- makeB :: A -> IO (Sum Int, Any, B)
--- makeB _ = pure (Sum 0, Any False, B) 
+-- makeB _ = pure (Sum 0, Any False, B)
 -- c :: Constructor IO B
 -- c = eff $ wire $ makeB
 -- makeB' :: A -> IO (Sum Int, (Any, B))
@@ -1265,7 +1253,6 @@ ioEff_ args = withFrozenCallStack (hoistConstructor liftIO (eff_ args))
 -- c' :: Constructor IO B
 -- c' = eff $ wire $ makeB
 -- :}
--- 
 eff :: forall {nested} bean m. (Registrable nested bean, Monad m, HasCallStack) => Args (m nested) -> Constructor m bean
 eff x = withFrozenCallStack (eff' $ register x)
 
@@ -1278,10 +1265,11 @@ ioEff args = withFrozenCallStack (hoistConstructor liftIO (eff args))
 eff' :: forall bean m. (HasCallStack) => Args (m (Regs bean)) -> Constructor m bean
 eff' = Constructor callStack
 
-runConstructor :: (Monad m) => 
-    BeanGetter ->
-    Constructor m bean -> 
-      m (Beans, bean)
+runConstructor ::
+  (Monad m) =>
+  BeanGetter ->
+  Constructor m bean ->
+  m (Beans, bean)
 runConstructor getter (Constructor {_args}) = do
   -- regs <- _args & runArgs (Data.Foldable.asum (taste <$> bss))
   regs <- _args & runArgs (runBeanGetter getter)
@@ -1406,11 +1394,10 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 --   cook @X forbidDepCycles ([
 --       recipe @X $ val $ wire makeX,
 --       recipe @(Sum Int) $ val $ wire makeAgg
---       ] :: Cauldron IO) 
+--       ] :: Cauldron IO)
 --       & \case Left (DoubleDutyBeansError _) -> "Sum Int is aggregate and primary"; _ -> "oops"
 -- :}
 -- "Sum Int is aggregate and primary"
---
 
 -- $setup
 -- >>> :set -XBlockArguments
@@ -1421,4 +1408,3 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- >>> import Data.Monoid
 -- >>> import Data.Either (either, isLeft)
 -- >>> import Control.Exception (throwIO)
-

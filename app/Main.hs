@@ -96,7 +96,7 @@ makeA :: A
 makeA = A
 
 -- A primary bean 'B' with an aggregate bean 'Inspector'.
--- 
+--
 -- aggregate beans can be used to implement some generic introspection mechanism
 -- for an app, or perhaps some effectful action that sets up worker threads.
 makeB :: (Inspector, B)
@@ -125,7 +125,7 @@ makeG _ _ _ = G
 -- | A decorator.
 --
 -- Decorators are basically normal constructors, only that they take
--- the bean they return as a parameter. 
+-- the bean they return as a parameter.
 --
 -- This is not the same as a bean self-dependency! These receive the completed
 -- bean from the future, while decorators work with the in-construction version
