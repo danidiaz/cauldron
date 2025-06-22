@@ -149,7 +149,7 @@ records-of-functions correspond to POJO constructors.
   bean, or the in-construction result of applying the decorators that come
   earlier in the decorator sequence.
 
-- [context hierachies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to taking an "incomplete" set of constructors where not all arguments beans can be "filled" inside the set, and turning it into a single constructor which takes the missing beans as arguments, and can be made part of a wider set of constructors. 
+- [context hierachies](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/ctx-management/hierarchies.html) correspond to taking an "incomplete" set of constructors where not all constructor dependencies can be satisfied inside the set, and turning it into a single constructor which takes the missing dependencies as arguments, and can be made part of a wider set of constructors. The missing dependencies will then be read from that wider set.
 
 - [injecting all the beans that implement a certain interface as a list](https://twitter.com/NiestrojRobert/status/1746808940435042410) roughly corresponds to a constructor that takes a aggregate bean as an argument. 
 
