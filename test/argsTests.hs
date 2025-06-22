@@ -15,10 +15,11 @@ import Control.Exception
 import Data.Dynamic
 import Data.Function ((&))
 import Data.Proxy
-import Data.Text (Text)
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
+
+type Text = String
 
 data A = A
 

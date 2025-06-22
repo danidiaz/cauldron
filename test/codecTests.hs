@@ -165,7 +165,7 @@ tests =
           Right _ -> assertFailure "Builder should have failed with duplicate beans error",
       testCase "should fail cycle wiring" do
         Data.Foldable.for_ @[] [("forbid", forbidDepCycles), ("selfdeps", allowSelfDeps)] \(name, fire) ->
-          case cook fire cauldron of
+          case cook @(Serializer Foo) fire cauldron of
             Left (DependencyCycleError _) -> pure ()
             Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
             Right _ -> assertFailure $ "Unexpected success when wiring" ++ name,
@@ -175,25 +175,22 @@ tests =
             ("someConsume", cauldronAccums2, Acc 10)
           ]
           \(name, c, expected) ->
-            case cook allowDepCycles c of
+            case cook @Acc allowDepCycles c of
               Left _err -> do
                 -- putStrLn $ prettyRecipeError err
                 assertFailure $ "could not wire " ++ name
-              Right (Identity bs) ->
-                case taste bs of
-                  Nothing -> assertFailure $ "accum not found " ++ name
-                  Just (acc :: Acc) -> do
+              Right (Identity acc) ->
                     assertEqual "experted result" expected acc,
-      testCase "problematic wiring with accums" do
+      testCase "wiring with accums" do
         Data.Foldable.for_ @[]
-          [ ("selfacc", cauldronAccumsOops1),
-            ("indirectacc", cauldronAccumsOops2)
+          [ ("aggcyle", cauldronAccumsOops1),
+            ("indirectagg", cauldronAccumsOops2)
           ]
           \(name, c) ->
-            case cook allowDepCycles c of
-              Left (DependencyCycleError _) -> pure ()
+            case cook @(Serializer Foo) allowDepCycles c of
+              Left (DependencyCycleError _) -> assertFailure $ "We should be able to wire cycles with accs"
               Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
-              Right _ -> assertFailure $ "Unexpected success when wiring" ++ name
+              Right _ -> pure ()
     ]
   where
     makeBasicTest :: Cauldron Identity -> IO ()
@@ -202,10 +199,7 @@ tests =
         Left _ -> do
           -- putStrLn $ prettyRecipeError err
           assertFailure "could not wire"
-        Right (Identity bs) ->
-          case taste bs of
-            Nothing -> assertFailure "serializer not found"
-            Just (Serializer {runSerializer}) -> do
+        Right (Identity (Serializer {runSerializer})) -> do
               let value = FooToBar (BarToFoo (FooToBar (BarToBaz EndBaz)))
               assertEqual "experted result" ".FooToBar.BarToFoo.FooToBar.BarToBar.EndBaz" (runSerializer value)
 

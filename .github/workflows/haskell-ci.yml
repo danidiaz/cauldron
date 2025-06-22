@@ -28,9 +28,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - compiler: ghc-9.8.2
+          - compiler: ghc-9.10.1
             compilerKind: ghc
-            compilerVersion: 9.8.2
+            compilerVersion: 9.10.1
             setup-method: ghcup
             allow-failure: false
       fail-fast: false
@@ -40,10 +40,10 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends gnupg ca-certificates dirmngr curl git software-properties-common
           mkdir -p "$HOME/.ghcup/bin"
-          curl -sL https://downloads.haskell.org/ghcup/0.1.20.0/x86_64-linux-ghcup-0.1.20.0 > "$HOME/.ghcup/bin/ghcup"
+          curl -sL https://downloads.haskell.org/ghcup/0.1.50.2/x86_64-linux-ghcup-0.1.50.2 > "$HOME/.ghcup/bin/ghcup"
           chmod a+x "$HOME/.ghcup/bin/ghcup"
           "$HOME/.ghcup/bin/ghcup" install ghc "$HCVER" || (cat "$HOME"/.ghcup/logs/*.* && false)
-          "$HOME/.ghcup/bin/ghcup" install cabal 3.10.2.0 || (cat "$HOME"/.ghcup/logs/*.* && false)
+          "$HOME/.ghcup/bin/ghcup" install cabal 3.12.1.0 || (cat "$HOME"/.ghcup/logs/*.* && false)
         env:
           HCKIND: ${{ matrix.compilerKind }}
           HCNAME: ${{ matrix.compiler }}
@@ -63,7 +63,7 @@ jobs:
           echo "HC=$HC" >> "$GITHUB_ENV"
           echo "HCPKG=$HCPKG" >> "$GITHUB_ENV"
           echo "HADDOCK=$HADDOCK" >> "$GITHUB_ENV"
-          echo "CABAL=$HOME/.ghcup/bin/cabal-3.10.2.0 -vnormal+nowrap" >> "$GITHUB_ENV"
+          echo "CABAL=$HOME/.ghcup/bin/cabal-3.12.1.0 -vnormal+nowrap" >> "$GITHUB_ENV"
           HCNUMVER=$(${HC} --numeric-version|perl -ne '/^(\d+)\.(\d+)\.(\d+)(\.(\d+))?$/; print(10000 * $1 + 100 * $2 + ($3 == 0 ? $5 != 1 : $3))')
           echo "HCNUMVER=$HCNUMVER" >> "$GITHUB_ENV"
           echo "ARG_TESTS=--enable-tests" >> "$GITHUB_ENV"
@@ -177,7 +177,7 @@ jobs:
       - name: doctests
         run: |
           $CABAL v2-install $ARG_COMPILER --ghc-options="-rtsopts" doctest --overwrite-policy=always
-          $CABAL v2-repl all --with-ghc=doctest --repl-options='-w -Wdefault'
+          $CABAL v2-repl lib:cauldron --with-ghc=doctest --repl-options='-w -Wdefault'
       - name: cabal check
         run: |
           cd ${PKGDIR_cauldron} || false

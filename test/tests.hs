@@ -8,27 +8,22 @@
 
 module Main (main) where
 
-import Algebra.Graph.AdjacencyMap
 import Cauldron
-import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Writer
 import Data.Function ((&))
-import Data.Functor.Identity
 import Data.IORef
-import Data.List.NonEmpty (NonEmpty)
-import Data.List.NonEmpty qualified
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.Proxy
 import Data.Set qualified
-import Data.Text (Text)
-import Data.Tree
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
+import Data.Foldable qualified
+
+type Text = String
 
 type M = WriterT [Text] IO
 
@@ -137,13 +132,15 @@ cauldronWithCycle =
     & insert @(Logger M)
       (eff $ wire \(_ :: Repository M) -> makeLogger)
 
-cauldronNonEmpty :: NonEmpty (Cauldron M)
-cauldronNonEmpty =
-  Data.List.NonEmpty.fromList
-    [ fromRecipeList
-        [ recipe @(Logger M) $ eff $ pure makeLogger,
-          recipe @(Weird M) $ eff $ wire makeWeird
-        ],
+cauldronX1 :: Cauldron M
+cauldronX1 =
+    fromRecipeList
+        [ recipe @(Logger M) $ eff $ pure makeLogger, 
+          recipe @(Weird M) $ eff $ wire makeWeird -- overwritten
+        ]
+
+cauldronX2 :: Cauldron M
+cauldronX2 =
       fromRecipeList
         [ recipe @(Repository M) $ eff $ do
             action <- wire makeRepository
@@ -159,47 +156,20 @@ cauldronNonEmpty =
                       val $ wire (weirdDeco "outer")
                     ]
               },
-          recipe @(Initializer, Repository M, Weird M) $ val_ do wire (,,)
+          recipe @Result $ val_ do wire Result
         ]
-    ]
 
-cauldronNonEmptyWrongOrder :: NonEmpty (Cauldron M)
-cauldronNonEmptyWrongOrder = do
-  Data.List.NonEmpty.fromList
-    [ fromRecipeList
-        [ recipe @(Weird M) $ eff $ wire makeWeird
-        ],
-      fromRecipeList
-        [ recipe @(Logger M) $ eff $ pure makeLogger
-        ]
-    ]
+data Result = Result Initializer (Repository M) (Weird M)
+
+cauldronX :: Cauldron M
+cauldronX = cauldronX1 <> cauldronX2
+
 
 cauldronLonely :: Cauldron M
 cauldronLonely =
   fromRecipeList
     [ recipe @(Lonely M) $ val $ pure makeLonely
     ]
-
-data A = A
-
-makeA :: (Sum Int, A)
-makeA = (Sum 1, A)
-
-data B = B
-
-makeB :: A -> (Sum Int, B)
-makeB _ = (Sum 7, B)
-
-data C = C
-
-makeC :: A -> (Sum Int, C)
-makeC _ = (Sum 11, C)
-
-treeOfCauldrons :: Tree (Cauldron Identity)
-treeOfCauldrons =
-  Node
-    [recipe $ val $ wire makeA]
-    [Node [recipe $ val $ wire makeB] [], Node [recipe $ val $ wire makeC] []]
 
 tests :: TestTree
 tests =
@@ -210,7 +180,7 @@ tests =
           Left _ -> assertFailure "could not wire"
           Right beansAction -> runWriterT do
             boiledBeans <- beansAction
-            let (Initializer {runInitializer}, Repository {findById, store}) = fromJust . taste $ boiledBeans
+            let (Initializer {runInitializer}, Repository {findById, store}) = boiledBeans
             runInitializer
             store 1 "foo"
             _ <- findById 1
@@ -225,15 +195,12 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        ((), traces) <- case cookNonEmpty' cauldronNonEmpty of
+        ((), traces) <- case cook @Result allowSelfDeps cauldronX of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
             runWriterT do
-              _ Data.List.NonEmpty.:| [boiledBeans] <- beansAction
-              let ( Initializer {runInitializer},
-                    Repository {findById, store},
-                    Weird {anotherWeirdOp}
-                    ) = fromJust . taste $ boiledBeans
+              boiledBeans <- beansAction
+              let Result (Initializer {runInitializer}) (Repository {findById, store}) (Weird {anotherWeirdOp}) = boiledBeans
               runInitializer
               store 1 "foo"
               _ <- findById 1
@@ -241,8 +208,10 @@ tests =
               pure ()
         assertEqual
           "traces"
-          [ "logger constructor",
-            "weird constructor",
+          [ 
+            -- "weird constructor", -- not happens, because overwritten
+            -- the order of the traces here is a bit too overspecified. several orders could be valid.
+            "logger constructor",
             "self-invoking weird constructor",
             "logger init",
             "repo init invoking logger",
@@ -258,37 +227,66 @@ tests =
             "weirdOp 2"
           ]
           traces
-        case getDependencyGraph <$> cauldronNonEmpty of
-          dg1 Data.List.NonEmpty.:| [dg2] -> do
-            let _adj1 = toAdjacencyMap dg1
-            let adj2 = toAdjacencyMap dg2
-            unless (hasVertex (PrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
-              assertFailure "cauldron 2 doesn't have the fully built logger from cauldron 1 in its dep graph"
-            when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
-              assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
-            pure ()
-          _ -> assertFailure "should never happen, malformed test",
-      testCase "value sequential - parents can't see beans in children" do
-        case cookNonEmpty' cauldronNonEmptyWrongOrder of
-          Left (MissingDependenciesError _) -> pure ()
-          Left _ -> assertFailure "Unexpected error"
-          Right _ -> assertFailure "parent cauldron sees bean in child cauldron",
-      testCase "tree of cauldrons" do
-        case cookTree' treeOfCauldrons of
-          Left err -> assertFailure $ "failed to build tree: " ++ show err
-          Right (Identity beans) -> case beans of
-            Node bbase [Node bbranch1 [], Node bbranch2 []] ->
-              assertEqual
-                "expected accs across branches"
-                (Just (Sum 1), Just (Sum 8), Just (Sum 12))
-                (taste @(Sum Int) bbase, taste @(Sum Int) bbranch1, taste @(Sum Int) bbranch2)
-            _ -> assertFailure $ "tree has unexpected shape",
+        --case getDependencyGraph cauldronNonEmpty of
+        --  dg2  -> do
+        --    let adj2 = toAdjacencyMap dg2
+        --    unless (hasVertex (PrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+        --      assertFailure "cauldron 2 doesn't have the fully built logger from cauldron 1 in its dep graph"
+        --    when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+        --      assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
+        --  pure ()
+          ,
+      testCase "value nested" do
+        ((), traces) <- case (
+              do constructorX2 <- nest allowSelfDeps cauldronX2
+                 cook @Result allowSelfDeps (cauldronX1 & Cauldron.insert @Result constructorX2)) of
+          Left _ -> assertFailure "could not wire"
+          Right beansAction -> do
+            runWriterT do
+              boiledBeans <- beansAction
+              let Result (Initializer {runInitializer}) (Repository {findById, store}) (Weird {anotherWeirdOp}) = boiledBeans
+              runInitializer
+              store 1 "foo"
+              _ <- findById 1
+              anotherWeirdOp
+              pure ()
+        assertEqual
+          "traces"
+          [ 
+            -- the order of the traces here is a bit too overspecified. several orders could be valid.
+            "logger constructor",
+            "self-invoking weird constructor",
+            "weird constructor", -- note that this is present. Overwritten by nested, but still built
+            -- The absence of the logger init is because we are only getting the aggregate beans from the nested.
+            -- "logger init",
+            "repo init invoking logger",
+            "store",
+            "findById",
+            -- the deco is applied! The outer the deco, the earliest is invoked.
+            "deco for anotherWeirdOp outer",
+            "deco for anotherWeirdOp inner",
+            "another weirdOp 2",
+            "deco for weirdOp outer",
+            "deco for weirdOp inner",
+            -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
+            "weirdOp 2"
+          ]
+          traces
+        --case getDependencyGraph cauldronNonEmpty of
+        --  dg2  -> do
+        --    let adj2 = toAdjacencyMap dg2
+        --    unless (hasVertex (PrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+        --      assertFailure "cauldron 2 doesn't have the fully built logger from cauldron 1 in its dep graph"
+        --    when (hasVertex (BarePrimaryBean (typeRep (Proxy @(Logger M)))) adj2) do
+        --      assertFailure "cauldron 2 has the bare undecorated logger from cauldron 1 in its dep graph, despite not depending on it directly"
+        --  pure ()
+          ,
       testCase "lonely beans get built" do
-        (_, _) <- case cook' cauldronLonely of
+        (_, _) <- case cook allowSelfDeps cauldronLonely of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> runWriterT do
             boiledBeans <- beansAction
-            let Lonely {soLonely} = fromJust . taste $ boiledBeans
+            let Lonely {soLonely} = boiledBeans
             soLonely
             pure ()
         pure (),
@@ -305,14 +303,14 @@ tests =
         pure (),
       testCase "cauldron with cycle" do
         case cook' cauldronWithCycle of
-          Left (DependencyCycleError _) -> pure ()
+          Left (DependencyCycleError (DependencyCycle vs)) -> 
+              -- Why not a cycle of length 3? Because there also are bare versions for each bean.
+              assertEqual "cycle of the expected length" 4 (Data.Foldable.length vs)
           _ -> assertFailure "dependency cycle not detected"
         pure ()
     ]
   where
     cook' = cook allowSelfDeps
-    cookNonEmpty' = cookNonEmpty . fmap (allowSelfDeps,)
-    cookTree' = cookTree . fmap (allowSelfDeps,)
 
 main :: IO ()
 main = defaultMain tests
