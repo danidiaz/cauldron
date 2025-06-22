@@ -460,9 +460,9 @@ removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
 --   cook @A forbidDepCycles ([
 --       recipe @A $ val $ wire loopyA
 --       ] :: Cauldron IO) 
---       & isLeft
+--       & \case Left (DependencyCycleError _) -> "self dep is forbidden"; _ -> "oops"
 -- :}
--- True
+-- "self dep is forbidden"
 forbidDepCycles :: (Monad m) => Fire m
 forbidDepCycles =
   Fire
@@ -499,9 +499,9 @@ forbidDepCycles =
 --   cook @A allowSelfDeps ([
 --       recipe @A $ val $ wire loopyA
 --       ] :: Cauldron IO) 
---       & isLeft
+--       & \case Left (DependencyCycleError _) -> "oops"; _ -> "self dep is ok"
 -- :}
--- False
+-- "self dep is ok"
 --
 -- >>> :{
 -- data U = U
@@ -517,9 +517,9 @@ forbidDepCycles =
 --       recipe @U $ val $ wire loopyU,
 --       recipe @V $ val $ wire loopyV
 --       ] :: Cauldron IO) 
---       & isLeft
+--       & \case Left (DependencyCycleError _) -> "cycle between 2 deps"; _ -> "oops"
 -- :}
--- True
+-- "cycle between 2 deps"
 allowSelfDeps :: (MonadFix m) => Fire m
 allowSelfDeps =
   Fire
@@ -554,9 +554,9 @@ allowSelfDeps =
 --       recipe @U $ val $ wire loopyU,
 --       recipe @V $ val $ wire loopyV
 --       ] :: Cauldron IO) 
---       & isLeft
+--       & \case Left (DependencyCycleError _) -> "oops"; _ -> "cycles are ok"
 -- :}
--- False
+-- "cycles are ok"
 allowDepCycles :: (MonadFix m) => Fire m
 allowDepCycles =
   Fire
@@ -615,9 +615,31 @@ data BeanConstructionStep
     AggregateBean TypeRep
   deriving stock (Show, Eq, Ord)
 
--- | Build the requested @bean@ using the 'Recipe's stored in the 'Cauldron'. The 'Cauldron' must 
--- contain 'Recipe's for producing all the transitive dependencies of the @bean@.
+-- | Build the requested @bean@ using the 'Recipe's stored in the 'Cauldron'.
+-- The 'Cauldron' must contain a 'Recipe' for the requested bean, as well as
+-- 'Recipe's for producing all of its transitive dependencies.
 --
+-- >>> :{
+-- data A = A deriving Show
+-- :}
+--
+-- >>> :{
+-- cook @A forbidDepCycles (mempty :: Cauldron IO) 
+--  & \case Left (MissingResultBeanError _) -> "no recipe for requested bean"; _ -> "oops"
+-- :}
+-- "no recipe for requested bean"
+--
+-- >>> :{
+-- data A = A deriving Show
+-- data B = B A deriving Show
+-- :}
+--
+-- >>> :{
+-- cook @B forbidDepCycles ([recipe $ val $ wire B] :: Cauldron IO) 
+--  & \case Left (MissingDependenciesError _) -> "no recipe for A"; _ -> "oops"
+-- :}
+-- "no recipe for A"
+-- 
 cook ::
   forall {m} bean.
   (Monad m, Typeable bean) =>
@@ -741,6 +763,7 @@ checkEntryPointPresent tr secondary cauldron =
   if Set.member tr (Cauldron.keysSet cauldron `Set.union` secondary)
     then Right ()
     else Left tr
+
 
 newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
   deriving stock (Show)
@@ -1147,6 +1170,11 @@ defaultStepToText =
 -- Note that only the type of the primary @bean@ is reflected in the
 -- 'Constructor' type. Those of the dependencies and aggregate beans are not.
 --
+-- 'Constructor' doesn't have a 'Functor' instance. This is beause sometimes a
+-- 'Constructor' may depend on the same type of bean it produces, but the
+-- 'Functor' instance would only change the output type, leading to confusing
+-- wiring errors.
+--
 -- A typical initialization monad will be 'IO', used for example to create
 -- mutable references that the bean will use internally. Sometimes the
 -- constructor will allocate resources with bracket-like operations, and in that
@@ -1315,7 +1343,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 --   is the aggregation of /all/ values produced for that bean in the 'Cauldron'. Therefore,
 --   these beans must have 'Monoid' instances.
 --
--- * When calculating build plan steps for a 'Cauldron', 'Constructor's that depend on a
+-- * When calculating build plan order for a 'Cauldron', 'Constructor's that depend on a
 --   aggregate bean come after /all/ of the 'Constructor's that produce that aggregate bean.
 --
 -- * Aggregate beans can't be decorated.
@@ -1363,6 +1391,26 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 --   pure w
 -- :}
 -- W (Sum {getSum = 8})
+--
+-- Example of how aggregate beans can't also be primary beans:
+--
+-- >>> :{
+-- data X = X deriving Show
+-- makeX :: (Sum Int, X)
+-- makeX = (Sum 1, X)
+-- makeAgg :: Sum Int
+-- makeAgg = Sum 7
+-- :}
+--
+-- >>> :{
+--   cook @X forbidDepCycles ([
+--       recipe @X $ val $ wire makeX,
+--       recipe @(Sum Int) $ val $ wire makeAgg
+--       ] :: Cauldron IO) 
+--       & \case Left (DoubleDutyBeansError _) -> "Sum Int is aggregate and primary"; _ -> "oops"
+-- :}
+-- "Sum Int is aggregate and primary"
+--
 
 -- $setup
 -- >>> :set -XBlockArguments
