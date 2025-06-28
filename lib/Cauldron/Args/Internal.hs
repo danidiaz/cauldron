@@ -227,6 +227,10 @@ class Wireable curried tip | curried -> tip where
   -- | Takes a curried function and reads all of its arguments by type using
   -- 'arg', returning an 'Args' for the final result value of the function.
   --
+  -- This function assumes that the @tip@ is not a function, in order to know
+  -- when to stop collecting arguments. If your intended @tip@ is a function,
+  -- you might need to wrap it in a newtype in order to disambiguate.
+  --
   -- >>> :{
   -- fun0 :: Int
   -- fun0 = 5

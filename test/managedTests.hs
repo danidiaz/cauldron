@@ -9,7 +9,6 @@ module Main (main) where
 import Cauldron
 import Cauldron.Managed
 import Data.IORef
-import Data.Maybe (fromJust)
 import Test.Tasty
 import Test.Tasty.HUnit
 

@@ -42,6 +42,15 @@
 -- makeC = \_ _ -> pure C
 -- :}
 --
+-- The basic idea is to fill up the 'Cauldron' with 'recipe's. 'Recipe's are
+-- built by 'wire'ing the arguments of a constructor function, and then using
+-- functions like 'val' or 'eff' depending on whether the constructor is
+-- effectful or not. More sophisticated 'Recipe's can also have decorators.
+--
+-- The we 'cook' the 'Cauldron' passing as a type argument the type of the bean
+-- that we want to extract, along with a 'Fire' argument that regulates what
+-- dependency cycles are allowed (if allowed at all).
+--
 -- >>> :{
 -- do
 --   let cauldron :: Cauldron IO
@@ -54,6 +63,11 @@
 --   action
 -- :}
 -- C
+--
+-- __Note__: It's better to avoid having beans whose types are functions or
+-- tuples, because those types are given special treatment. See the docs for
+-- 'wire', 'val', and 'eff'.
+--
 module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
@@ -1049,10 +1063,7 @@ prettyCookingErrorLines = \case
 newtype DependencyGraph = DependencyGraph {graph :: AdjacencyMap BeanConstructionStep}
   deriving newtype (Show, Eq, Ord, Semigroup, Monoid)
 
--- | Conversion to a graph type
--- from the
--- [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs-0.7/docs/Algebra-Graph-AdjacencyMap.html)
--- library for further processing.
+-- | Conversion to a graph type for further processing.
 toAdjacencyMap :: DependencyGraph -> AdjacencyMap BeanConstructionStep
 toAdjacencyMap DependencyGraph {graph} = graph
 
@@ -1196,6 +1207,10 @@ val_ x = Constructor callStack $ fmap (pure . pure) x
 -- rightmost-innermost one are registered as aggregate beans (if they have
 -- 'Monoid' instances, otherwise 'val' won't compile).
 --
+-- Because this function gives a special meaning to tuples, it shouldn't be used
+-- to wire beans that have themselves a tuple type. Better define a
+-- special-purpose bean datatype instead.
+--
 -- >>> :{
 -- data A = A
 -- data B = B
@@ -1240,6 +1255,10 @@ ioEff_ args = withFrozenCallStack (hoistConstructor liftIO (eff_ args))
 -- returned by the 'Args' looking for (potentially nested) tuples.  All tuple
 -- components except the rightmost-innermost one are registered as aggregate
 -- beans (if they have 'Monoid' instances, otherwise 'eff' won't compile).
+--
+-- Because this function gives a special meaning to tuples, it shouldn't be used
+-- to wire beans that have themselves a tuple type. Better define a
+-- special-purpose bean datatype instead.
 --
 -- >>> :{
 -- data A = A

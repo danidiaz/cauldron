@@ -167,4 +167,9 @@ Some features I'm not yet sure how to mimic:
 
 # Acknowledgement
 
-This package contains vendored code from Andrey Mokhov's [algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs) (most of the `cauldron:graph` library).
+This package contains vendored code from Grabriella Gonzalez's
+[managed](https://hackage.haskell.org/package/managed) library.
+
+Also vendored code from Andrey Mokhov's
+[algebraic-graphs](https://hackage.haskell.org/package/algebraic-graphs) (most
+of the `cauldron:graph` library).

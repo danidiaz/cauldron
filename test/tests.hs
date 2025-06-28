@@ -22,6 +22,7 @@ import Data.Set qualified
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
+import Data.List (sort)
 
 type Text = String
 
@@ -207,7 +208,7 @@ tests =
               pure ()
         assertEqual
           "traces"
-          [ -- "weird constructor", -- not happens, because overwritten
+          (sort [ -- "weird constructor", -- not happens, because overwritten
             -- the order of the traces here is a bit too overspecified. several orders could be valid.
             "logger constructor",
             "self-invoking weird constructor",
@@ -223,8 +224,8 @@ tests =
             "deco for weirdOp inner",
             -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
             "weirdOp 2"
-          ]
-          traces,
+          ])
+          (sort traces),
       -- case getDependencyGraph cauldronNonEmpty of
       --  dg2  -> do
       --    let adj2 = toAdjacencyMap dg2

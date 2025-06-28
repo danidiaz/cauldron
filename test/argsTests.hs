@@ -9,7 +9,6 @@
 
 module Main (main) where
 
-import Cauldron
 import Cauldron.Args
 import Control.Exception
 import Data.Dynamic
