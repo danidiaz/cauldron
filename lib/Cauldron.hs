@@ -355,6 +355,8 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 --
 -- The order of the decorators in the sequence is the order in which they modify
 -- the underlying bean. First decorator wraps first, last decorator wraps last.
+-- Think of it as there being an implicit 'Data.Function.&' between the bean and the
+-- subsequent decorators, and between the decorators themselves.
 --
 -- >>> :{
 -- newtype Foo = Foo { sayFoo :: IO () }

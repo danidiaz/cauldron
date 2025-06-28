@@ -252,7 +252,7 @@ tests =
               pure ()
         assertEqual
           "traces"
-          [ -- the order of the traces here is a bit too overspecified. several orders could be valid.
+          (sort [ -- the order of the traces here is a bit too overspecified. several orders could be valid.
             "logger constructor",
             "self-invoking weird constructor",
             "weird constructor", -- note that this is present. Overwritten by nested, but still built
@@ -269,8 +269,8 @@ tests =
             "deco for weirdOp inner",
             -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
             "weirdOp 2"
-          ]
-          traces,
+          ])
+          (sort traces),
       -- case getDependencyGraph cauldronNonEmpty of
       --  dg2  -> do
       --    let adj2 = toAdjacencyMap dg2
