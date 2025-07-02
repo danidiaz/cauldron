@@ -1,8 +1,10 @@
 # Revision history for cauldron
 
-## 0.7.0.1
+## 0.8.0.0
 
-* Minor doc and test changes.
+* doc and test changes.
+
+* re-export `arg` from Cauldron.
 
 ## 0.7.0.0
 

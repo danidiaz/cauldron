@@ -112,6 +112,7 @@ module Cauldron
     ioEff,
     eff',
     wire,
+    arg,
     getConstructorArgs,
     getConstructorCallStack,
     hoistConstructor,
@@ -393,7 +394,17 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 
 -- $constructors
 --
--- Bean-producing and bean-decorating functions need to be coaxed into 'Constructor's in order to be used in 'Cauldron's.
+-- Bean-producing and bean-decorating functions need to be coaxed into
+-- 'Constructor's in order to be used in 'Cauldron's.
+-- 
+-- First we fill the arguments of the function in an 'Args' context, either one
+-- by one using 'arg's and 'Applicative' operators, or all in one swoop, using
+-- using 'wire'.
+--
+-- Then, depending on whether the function produces the desired bean directly,
+-- or through an effect, we use functions like 'val', 'val_', 'eff' or 'eff_' on
+-- the 'Args' value.
+--
 
 data ConstructorReps where
   ConstructorReps ::
