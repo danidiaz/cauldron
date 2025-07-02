@@ -676,7 +676,7 @@ cook fire cauldron = do
   (mdeps, c) <- nest' fire cauldron
   _ <- case mdeps of
     [] -> Right ()
-    d : _ -> Left $ MissingDependenciesError d
+    d : ds -> Left $ MissingDependenciesError $ d Data.List.NonEmpty.:| ds
   Right $ do
     (_, bean) <- runConstructor (mempty @BeanGetter) c
     pure bean
@@ -824,11 +824,12 @@ recipeRegs (SomeRecipe _ (Recipe {bean, decos})) = do
   extractRegReps bean
     <> foldMap extractRegReps decos
 
+-- | Missing depencencies for a 'Constructor'.
 data MissingDependencies = MissingDependencies CallStack TypeRep (Set TypeRep)
   deriving stock (Show)
 
-missingDepsToArgReps ::
-  [MissingDependencies] ->
+missingDepsToArgReps :: (Functor f, Foldable f) => 
+  f MissingDependencies ->
   Set TypeRep
 missingDepsToArgReps = Set.unions . fmap (\(MissingDependencies _ _ missing) -> missing)
 
@@ -1014,7 +1015,7 @@ data CookingError
   = -- | The bean that was demanded from the 'Cauldron' doesn't have a 'Recipe' that produces it.
     MissingResultBeanError TypeRep
   | -- | A 'Constructor' depends on beans that can't be found in the 'Cauldron'.
-    MissingDependenciesError MissingDependencies
+    MissingDependenciesError (NonEmpty MissingDependencies)
   | -- | Beans that work both as primary beans and as secondary beans
     -- are disallowed.
     DoubleDutyBeansError DoubleDutyBeans
@@ -1032,8 +1033,8 @@ prettyCookingErrorLines :: CookingError -> [String]
 prettyCookingErrorLines = \case
   MissingResultBeanError tr ->
     ["No recipe found that produces requested bean " ++ show tr]
-  MissingDependenciesError
-    (MissingDependencies constructorCallStack constructorResultRep missingDependenciesReps) ->
+  MissingDependenciesError missingDeps ->
+    missingDeps & foldMap \(MissingDependencies constructorCallStack constructorResultRep missingDependenciesReps) ->
       [ "This constructor for a value of type "
           ++ show constructorResultRep
           ++ ":"
@@ -1135,7 +1136,9 @@ defaultStyle merr =
         Nothing -> []
         Just (MissingResultBeanError _) ->
           []
-        Just (MissingDependenciesError (MissingDependencies _ _ missing)) ->
+        Just (MissingDependenciesError missingDeps) ->
+          let missing = missingDepsToArgReps missingDeps
+           in
           case step of
             FinishedBean rep
               | Set.member rep missing ->

@@ -291,8 +291,9 @@ tests =
         pure (),
       testCase "cauldron missing dep" do
         case cook' cauldronMissingDep of
-          Left (MissingDependenciesError (MissingDependencies _ tr missingSet))
-            | tr == typeRep (Proxy @(Repository M)) && missingSet == Data.Set.singleton (typeRep (Proxy @(Logger M))) -> pure ()
+          Left (MissingDependenciesError missingDeps )
+            | [MissingDependencies _ tr missingSet]  <- Data.Foldable.toList missingDeps,
+              tr == typeRep (Proxy @(Repository M)) && missingSet == Data.Set.singleton (typeRep (Proxy @(Logger M))) -> pure ()
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do
