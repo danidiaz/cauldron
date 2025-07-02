@@ -103,6 +103,8 @@ module Cauldron
     -- * Constructors
     -- $constructors
     Constructor,
+    arg,
+    wire,
     val_,
     val,
     val',
@@ -111,8 +113,6 @@ module Cauldron
     eff,
     ioEff,
     eff',
-    wire,
-    arg,
     getConstructorArgs,
     getConstructorCallStack,
     hoistConstructor,
@@ -398,7 +398,7 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 -- 'Constructor's in order to be used in 'Cauldron's.
 -- 
 -- First we fill the arguments of the function in an 'Args' context, either one
--- by one using 'arg's and 'Applicative' operators, or all in one swoop, using
+-- by one using 'arg's and 'Applicative' operators, or all in a single swoop,
 -- using 'wire'.
 --
 -- Then, depending on whether the function produces the desired bean directly,
