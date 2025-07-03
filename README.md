@@ -165,7 +165,9 @@ Some features I'm not yet sure how to mimic:
 
 - [Do we need effects to get abstraction? (2019)](https://hachyderm.io/@DiazCarrete/114712223474781312)
 
-# Acknowledgement
+- [Dependency Injection Principles, Practices, and Patterns](https://www.goodreads.com/book/show/44416307-dependency-injection-principles-practices-and-patterns). This is a good book on the general principles of DI. 
+
+# Acknowledgements
 
 This package contains vendored code from Grabriella Gonzalez's
 [managed](https://hackage.haskell.org/package/managed) library.
