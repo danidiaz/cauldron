@@ -169,7 +169,7 @@ Some features I'm not yet sure how to mimic:
 
 # Acknowledgements
 
-This package contains vendored code from Grabriella Gonzalez's
+This package contains vendored code from Gabriella Gonzalez's
 [managed](https://hackage.haskell.org/package/managed) library.
 
 Also vendored code from Andrey Mokhov's
