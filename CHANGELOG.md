@@ -8,6 +8,11 @@
 
 * breaking change: `MissingDependenciesError` now includes all the missing dependencies.
 
+* breaking change: `DoubleDutyBeansError` is now a NonEmpty instead of a Map.
+
+* Managed now has a MonadFail instance, like the one from the
+  [managed](https://hackage.haskell.org/package/managed) library.
+
 ## 0.7.0.0
 
 * Remove dependency on algebraic-graphs, copying those parts of the code that we used.

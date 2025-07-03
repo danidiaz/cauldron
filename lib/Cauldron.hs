@@ -134,7 +134,7 @@ module Cauldron
     -- ** When things go wrong
     CookingError (..),
     MissingDependencies (..),
-    DoubleDutyBeans (..),
+    DoubleDutyBean (..),
     DependencyCycle (..),
     prettyCookingError,
     prettyCookingErrorLines,
@@ -791,7 +791,7 @@ checkEntryPointPresent tr secondary cauldron =
     then Right ()
     else Left tr
 
-newtype DoubleDutyBeans = DoubleDutyBeans (Map TypeRep (CallStack, CallStack))
+data DoubleDutyBean = DoubleDutyBean TypeRep CallStack CallStack
   deriving stock (Show)
 
 -- | Get a graph of dependencies between 'BeanConstructionStep's. The graph can
@@ -803,13 +803,15 @@ getDependencyGraph cauldron =
 
 checkNoDoubleDutyBeans ::
   Cauldron m ->
-  Either DoubleDutyBeans (Map TypeRep Dynamic)
+  Either (NonEmpty DoubleDutyBean) (Map TypeRep Dynamic)
 checkNoDoubleDutyBeans cauldron = do
   let (accumMap, beanSet) = cauldronRegs cauldron
-  let common = Map.intersectionWith (,) (fst <$> accumMap) beanSet
-  if not (Map.null common)
-    then Left $ DoubleDutyBeans common
-    else Right $ snd <$> accumMap
+  let common = do
+        (tr, (cs1,cs2)) <- Map.toList $ Map.intersectionWith (,) (fst <$> accumMap) beanSet
+        [DoubleDutyBean tr cs1 cs2]
+  case common of
+    ddb : ddbs -> Left $ ddb Data.List.NonEmpty.:| ddbs
+    [] -> Right $ snd <$> accumMap
 
 cauldronRegs :: Cauldron m -> (Map TypeRep (CallStack, Dynamic), Map TypeRep CallStack)
 cauldronRegs Cauldron {recipeMap} =
@@ -1018,7 +1020,7 @@ data CookingError
     MissingDependenciesError (NonEmpty MissingDependencies)
   | -- | Beans that work both as primary beans and as secondary beans
     -- are disallowed.
-    DoubleDutyBeansError DoubleDutyBeans
+    DoubleDutyBeansError (NonEmpty DoubleDutyBean)
   | -- | Dependency cycles are disallowed by some 'Fire's.
     DependencyCycleError DependencyCycle
   deriving stock (Show)
@@ -1045,10 +1047,10 @@ prettyCookingErrorLines = \case
         ++ do
           rep <- Data.Foldable.toList missingDependenciesReps
           ["- " ++ show rep]
-  DoubleDutyBeansError (DoubleDutyBeans doubleDutyMap) ->
+  DoubleDutyBeansError doubleDutyBeans ->
     [ "The following beans work both as primary beans and secondary beans:"
     ]
-      ++ ( flip Map.foldMapWithKey doubleDutyMap \rep (secCS, primCS) ->
+      ++ ( doubleDutyBeans & foldMap \(DoubleDutyBean rep secCS primCS) ->
              [ "- " ++ show rep ++ " is a secondary bean in this constructor:"
              ]
                ++ (("\t" ++) <$> prettyCallStackLines secCS)
@@ -1146,7 +1148,11 @@ defaultStyle merr =
                     fromString "color" Dot.:= fromString "red"
                   ]
             _ -> []
-        Just (DoubleDutyBeansError (DoubleDutyBeans (Map.keysSet -> bs))) ->
+        Just (DoubleDutyBeansError doubleDutyBeans) ->
+          let bs =  Set.fromList $ do
+                      DoubleDutyBean ddb _ _ <- Data.List.NonEmpty.toList doubleDutyBeans
+                      [ddb]
+          in
           case step of
             FinishedBean rep
               | Set.member rep bs ->

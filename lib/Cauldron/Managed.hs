@@ -75,3 +75,8 @@ instance MonadIO Managed where
     a <- m
     return_ a
   {-# INLINE liftIO #-}
+
+instance MonadFail Managed where
+    fail s = Managed (\return_ -> do
+        a <- fail @IO s
+        return_ a )
