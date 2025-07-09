@@ -212,9 +212,9 @@ manyMemptys reps =
 -- \"from the future\".
 --
 -- >>> :{
--- runArgs (taste Cauldron.Beans.empty) (arg @Int)
+-- try @LazilyReadBeanMissing $ evaluate $ runArgs (taste Cauldron.Beans.empty) (arg @Int)
 -- :}
--- *** Exception: LazilyReadBeanMissing Int
+-- Left (LazilyReadBeanMissing Int)
 --
 -- If more safety is needed, one can perform additional preliminary checks with
 -- the help of 'getArgsReps'.
@@ -407,3 +407,5 @@ instance (Typeable b, Monoid b, Typeable c, Monoid c, Typeable d, Monoid d, Regi
 -- >>> import Data.Function ((&))
 -- >>> import Data.Monoid
 -- >>> import Cauldron.Beans (taste)
+-- >>> import System.IO
+-- >>> import Control.Exception

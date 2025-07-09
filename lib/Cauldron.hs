@@ -1,10 +1,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -106,20 +103,25 @@ module Cauldron
     arg,
     wire,
     val_,
+    eff_,
+    ioEff_,
+
+    -- ** Registering aggregate beans
+    -- $secondarybeans
     val,
     val',
-    eff_,
     eff,
     eff',
-    ioEff_,
     ioEff,
+
+    -- ** "with"-like constructors
+    -- $managedconstructors
+
+    -- ** Sundry constructor helpers
     getConstructorArgs,
     getConstructorCallStack,
     hoistConstructor,
     hoistConstructor',
-
-    -- ** Registering aggregate beans
-    -- $secondarybeans
 
     -- * Cooking the beans
     cook,
@@ -405,6 +407,31 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 -- or through an effect, we use functions like 'val', 'val_', 'eff' or 'eff_' on
 -- the 'Args' value.
 --
+
+
+-- $managedconstructors
+--
+-- Some effectful constructor functions manage the acquisition and release
+-- of the bean they produce using the common idiom or returning a higher-order
+-- function that takes a callback. A typical example is 'System.IO.withFile'.
+--
+-- These effecful constructor functions can be coaxed into 'Constructor's that
+-- have their effects in a monad like 'Cauldron.Managed.Managed'.
+--
+-- We need to wrap the callback-accepting part in 'Cauldron.Managed.managed'
+-- before lifting the function to 'Cauldron.Args.Args' using 'wire':
+--
+-- >>> :{
+-- -- We treat the 'IOMode' as if it were a bean dependency.
+-- handleBean :: Constructor Managed Handle
+-- handleBean = eff_ $ wire $ \mode -> managed $ withFile "/tmp/foo.txt" mode 
+-- :}
+--
+-- Sadly, this forces us to be a bit more verbose and explicitly mention  
+-- the constructor parameters (in the example, @mode@) in order to reach the part
+-- that we wrap in 'Cauldron.Managed.Managed'.
+--
+
 
 data ConstructorReps where
   ConstructorReps ::
@@ -1202,7 +1229,7 @@ defaultStepToText =
 --
 -- A typical initialization monad will be 'IO', used for example to create
 -- mutable references that the bean will use internally. Sometimes the
--- constructor will allocate resources with bracket-like operations, and in that
+-- constructor will acquire resources with bracket-like operations, and in that
 -- case a monad like 'Cauldron.Managed.Managed' might be needed instead.
 data Constructor m bean = Constructor
   { _constructorCallStack :: CallStack,
@@ -1449,3 +1476,5 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- >>> import Data.Monoid
 -- >>> import Data.Either (either, isLeft)
 -- >>> import Control.Exception (throwIO)
+-- >>> import System.IO
+-- >>> import Cauldron.Managed

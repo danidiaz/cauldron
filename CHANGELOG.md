@@ -1,5 +1,12 @@
 # Revision history for cauldron
 
+## 0.8.1.0
+
+* Add `runManaged`.
+
+* `Monoid` and `Semigroup` instances for `Managed`, like the ones from the
+  [managed](https://hackage.haskell.org/package/managed) library.
+
 ## 0.8.0.0
 
 * doc and test changes.
