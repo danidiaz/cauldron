@@ -41,7 +41,7 @@
 --
 -- The basic idea is to fill up the 'Cauldron' with 'recipe's. 'Recipe's are
 -- built by 'wire'ing the arguments of a constructor function, and then using
--- functions like 'val' or 'eff' depending on whether the constructor is
+-- functions like 'val_' or 'eff_' depending on whether the constructor is
 -- effectful or not. More sophisticated 'Recipe's can also have decorators.
 --
 -- The we 'cook' the 'Cauldron' passing as a type argument the type of the bean
@@ -52,9 +52,9 @@
 -- do
 --   let cauldron :: Cauldron IO
 --       cauldron = [
---           recipe @A $ val $ wire makeA,
---           recipe @B $ val $ wire makeB,
---           recipe @C $ eff $ wire makeC -- we use eff because the constructor has IO effects
+--           recipe @A $ val_ $ wire makeA,
+--           recipe @B $ val_ $ wire makeB,
+--           recipe @C $ eff_ $ wire makeC -- we use eff because the constructor has IO effects
 --         ]
 --   action <- cook @C forbidDepCycles cauldron & either throwIO pure
 --   action
@@ -404,22 +404,23 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 -- using 'wire'.
 --
 -- Then, depending on whether the function produces the desired bean directly,
--- or through an effect, we use functions like 'val', 'val_', 'eff' or 'eff_' on
+-- or through an effect, we use functions like 'val_', 'val', 'eff_' or 'eff' on
 -- the 'Args' value.
 --
 
 
 -- $managedconstructors
 --
--- Some effectful constructor functions manage the acquisition and release
--- of the bean they produce using the common idiom or returning a higher-order
--- function that takes a callback. A typical example is 'System.IO.withFile'.
+-- Some effectful constructor functions, in order to manage the acquisition and
+-- release of the bean they produce, use the common idiom or returning a
+-- higher-order function that takes a callback. A typical example is
+-- 'System.IO.withFile'.
 --
 -- These effecful constructor functions can be coaxed into 'Constructor's that
 -- have their effects in a monad like 'Cauldron.Managed.Managed'.
 --
--- We need to wrap the callback-accepting part in 'Cauldron.Managed.managed'
--- before lifting the function to 'Cauldron.Args.Args' using 'wire':
+-- We need to wrap the callback-accepting part in 'Cauldron.Managed.managed',
+-- before we lift the function to 'Cauldron.Args.Args' using 'wire':
 --
 -- >>> :{
 -- -- We treat the 'IOMode' as if it were a bean dependency.
@@ -427,9 +428,9 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 -- handleBean = eff_ $ wire $ \mode -> managed $ withFile "/tmp/foo.txt" mode 
 -- :}
 --
--- Sadly, this forces us to be a bit more verbose and explicitly mention  
--- the constructor parameters (in the example, @mode@) in order to reach the part
--- that we wrap in 'Cauldron.Managed.Managed'.
+-- Annoyingly, this forces us to be a bit more verbose and explicitly mention  
+-- the constructor parameters (in the example, @mode@) in order to reach the
+-- part that we wrap in 'Cauldron.Managed.Managed'.
 --
 
 
