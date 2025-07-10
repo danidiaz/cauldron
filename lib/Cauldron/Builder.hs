@@ -1,6 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -76,7 +75,6 @@ module Cauldron.Builder
 where
 
 import Cauldron
-import Cauldron.Args
 import Cauldron.Managed
 import Control.Exception (Exception (..))
 import Control.Monad.Fix

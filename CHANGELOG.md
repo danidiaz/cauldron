@@ -2,10 +2,13 @@
 
 ## 0.8.1.0
 
-* Add `runManaged`.
+* Add `Cauldron.Managed.runManaged`.
 
 * `Monoid` and `Semigroup` instances for `Managed`, like the ones from the
   [managed](https://hackage.haskell.org/package/managed) library.
+
+* Export `Cauldron.Args.Args` from `Cauldron`. This should make some IDE
+  messages clearer.
 
 ## 0.8.0.0
 

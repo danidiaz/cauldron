@@ -100,6 +100,7 @@ module Cauldron
     -- * Constructors
     -- $constructors
     Constructor,
+    Args,
     arg,
     wire,
     val_,
