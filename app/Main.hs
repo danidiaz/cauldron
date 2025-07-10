@@ -193,31 +193,32 @@ coolWiring :: Either CookingError (IO Result)
 coolWiring = cook allowSelfDeps cauldron
 
 cauldron :: Cauldron IO
-cauldron :: Cauldron IO = mconcat [ 
-    singleton @A $ val $ pure makeA,
-    singleton @B $ val $ pure makeB,
-    singleton @C $ val $ wire makeC,
-    singleton @D $ val $ wire makeD,
-    singleton @E $ val $ wire makeE,
-    singleton @F $ val $ wire makeF,
-    singleton @G $
-      Recipe
-        { bean = val $ wire makeG,
-          decos =
-            [ val $ wire makeGDeco1
-            ]
-        },
-    singleton @H $ val $ wire makeH,
-    singleton @Z
-      Recipe
-        { bean = val $ wire makeZ,
-          decos =
-            [ val $ wire makeZDeco1,
-              val $ wire makeZDeco2
-            ]
-        },
-    singleton @Result $ val $ wire Result
-  ]
+cauldron :: Cauldron IO =
+  mconcat
+    [ singleton @A $ val $ pure makeA,
+      singleton @B $ val $ pure makeB,
+      singleton @C $ val $ wire makeC,
+      singleton @D $ val $ wire makeD,
+      singleton @E $ val $ wire makeE,
+      singleton @F $ val $ wire makeF,
+      singleton @G $
+        Recipe
+          { bean = val $ wire makeG,
+            decos =
+              [ val $ wire makeGDeco1
+              ]
+          },
+      singleton @H $ val $ wire makeH,
+      singleton @Z
+        Recipe
+          { bean = val $ wire makeZ,
+            decos =
+              [ val $ wire makeZDeco1,
+                val $ wire makeZDeco2
+              ]
+          },
+      singleton @Result $ val $ wire Result
+    ]
 
 main :: IO ()
 main = do

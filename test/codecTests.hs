@@ -64,7 +64,8 @@ makeBazSerializer Serializer {runSerializer = runFoo} =
     }
 
 cauldron :: Cauldron Identity
-cauldron = mconcat
+cauldron =
+  mconcat
     [ singleton @(Serializer Foo) $ val $ wire makeFooSerializer,
       singleton @(Serializer Bar) $ val $ wire makeBarSerializer,
       singleton @(Serializer Baz) $ val $ wire makeBazSerializer
@@ -111,7 +112,8 @@ newtype Bcc = Bcc Int
   deriving (Semigroup, Monoid) via Sum Int
 
 cauldronAccums1 :: Cauldron Identity
-cauldronAccums1 = mconcat
+cauldronAccums1 =
+  mconcat
     [ singleton @(Serializer Foo) $ val $ wire $ \sb -> (Acc 5, makeFooSerializer sb),
       singleton @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
       singleton @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)

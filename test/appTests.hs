@@ -111,8 +111,9 @@ coolWiring fire = do
   cook fire cauldron
 
 cauldron :: Cauldron IO
-cauldron :: Cauldron IO = mconcat [
-      singleton $ val $ pure makeA,
+cauldron :: Cauldron IO =
+  mconcat
+    [ singleton $ val $ pure makeA,
       singleton $ val $ pure makeB,
       singleton $ val $ wire makeC,
       singleton $ val $ wire makeD,

@@ -8,6 +8,8 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
+-- {-# LANGUAGE RequiredTypeArguments #-}
+
 -- | This is a library for performing dependency injection. It's an alternative
 -- to manually wiring your functions and passing all required parameters
 -- explicitly. Instead of that, you throw your functions into a 'Cauldron', which wires
@@ -289,14 +291,14 @@ data Recipe m bean = Recipe
     decos :: Seq (Constructor m bean)
   }
 
-fromDecoList :: [Constructor m bean] -> Seq (Constructor m bean)
+fromDecoList :: forall m bean. [Constructor m bean] -> Seq (Constructor m bean)
 fromDecoList = Data.Sequence.fromList
 
 -- | Convenience typeclass that allows passing either 'Recipe's or 'Constructor's
 -- to the 'insert' and 'recipe' functions.
 type ToRecipe :: ((Type -> Type) -> Type -> Type) -> Constraint
 class ToRecipe recipelike where
-  toRecipe :: recipelike m bean -> Recipe m bean
+  toRecipe :: forall m bean. recipelike m bean -> Recipe m bean
 
 -- | Simply identity.
 instance ToRecipe Recipe where
@@ -307,7 +309,7 @@ instance ToRecipe Constructor where
   toRecipe bean = Recipe {bean, decos = Data.Sequence.empty}
 
 -- | Change the monad used by the bean\'s main 'Constructor' and its decos.
-hoistRecipe :: (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
+hoistRecipe :: forall m n bean. (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
 hoistRecipe f (Recipe {bean, decos}) =
   Recipe
     { bean = hoistConstructor f bean,
@@ -317,6 +319,7 @@ hoistRecipe f (Recipe {bean, decos}) =
 -- | More general form of 'hoistRecipe' that enables precise control over the inner `Args`
 -- of each constructor in the 'Recipe'.
 hoistRecipe' ::
+  forall m n bean.
   -- | Transformation to apply to the base constructor.
   (Args (m (Regs bean)) -> Args (n (Regs bean))) ->
   -- | Transformation to apply to each decorator. Takes the decorator index as parameter.
@@ -434,6 +437,13 @@ singleton ::
   Cauldron m
 singleton theRecipe = withFrozenCallStack do
   mempty & insert theRecipe
+
+-- (|=|) :: forall {recipelike} {m}. (ToRecipe recipelike, HasCallStack) =>
+--          forall bean ->
+--          Typeable bean =>
+--          recipelike m bean ->
+--          Cauldron m
+-- (|=|) _ recipelike = singleton recipelike
 
 -- | Put a 'Recipe' into the 'Cauldron'.
 --
@@ -892,7 +902,7 @@ buildPlan shouldEnforceDependency cauldron = do
     Right plan -> do
       Right plan
 
-buildDepsCauldron :: Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
+buildDepsCauldron :: forall m. Cauldron m -> (Map BeanConstructionStep CallStack, [(BeanConstructionStep, BeanConstructionStep)])
 buildDepsCauldron Cauldron {recipeMap} = do
   recipeMap
     & Map.foldMapWithKey
@@ -901,7 +911,7 @@ buildDepsCauldron Cauldron {recipeMap} = do
          { _recipeCallStack,
            _recipe =
              Recipe
-               { bean = bean :: Constructor m bean,
+               { bean,
                  decos
                }
          } ->
@@ -1019,6 +1029,7 @@ followPlanStep makeBareView makeDecoView Cauldron {recipeMap} super item =
 -- This can only work without blowing up if there aren't dependecy cycles
 -- and the order of construction respects the depedencies!
 followConstructor ::
+  forall m bean.
   (Monad m, Typeable bean) =>
   Constructor m bean ->
   BeanGetter ->
@@ -1323,6 +1334,7 @@ eff' :: forall bean m. (HasCallStack) => Args (m (Regs bean)) -> Constructor m b
 eff' = Constructor callStack
 
 runConstructor ::
+  forall m bean.
   (Monad m) =>
   BeanGetter ->
   Constructor m bean ->
@@ -1333,21 +1345,21 @@ runConstructor getter (Constructor {_args}) = do
   pure (runRegs (getRegsReps _args) regs)
 
 -- | Change the monad in which the 'Constructor'\'s effects take place.
-hoistConstructor :: (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
+hoistConstructor :: forall m n bean. (forall x. m x -> n x) -> Constructor m bean -> Constructor n bean
 hoistConstructor f c@Constructor {_args} = c {_args = fmap f _args}
 
 -- | More general form of 'hoistConstructor' that enables precise control over the inner `Args`.
-hoistConstructor' :: (Args (m (Regs bean)) -> Args (n (Regs bean))) -> Constructor m bean -> Constructor n bean
+hoistConstructor' :: forall m n bean. (Args (m (Regs bean)) -> Args (n (Regs bean))) -> Constructor m bean -> Constructor n bean
 hoistConstructor' f c@Constructor {_args} = c {_args = f _args}
 
 -- | Get the inner 'Args' value for the 'Constructor', typically for inspecting
 -- 'TypeRep's of its arguments/registrations.
-getConstructorArgs :: Constructor m bean -> Args (m (Regs bean))
+getConstructorArgs :: forall m bean. Constructor m bean -> Args (m (Regs bean))
 getConstructorArgs (Constructor {_args}) = _args
 
 -- | For debugging purposes, 'Constructor's remember the 'CallStack'
 -- of when they were created.
-getConstructorCallStack :: Constructor m bean -> CallStack
+getConstructorCallStack :: forall m bean. Constructor m bean -> CallStack
 getConstructorCallStack (Constructor {_constructorCallStack}) = _constructorCallStack
 
 -- | For debugging purposes, 'SomeRecipe's remember the 'CallStack'
