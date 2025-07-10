@@ -111,10 +111,10 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 
 cauldron :: Cauldron M
 cauldron =
-  fromRecipeList
-    [ recipe @(Logger M) $ eff $ pure makeLogger,
-      recipe @(Repository M) $ eff $ wire makeRepository,
-      recipe @(Initializer, Repository M) $ val_ $ wire (,)
+  mconcat
+    [ singleton @(Logger M) $ eff $ pure makeLogger,
+      singleton @(Repository M) $ eff $ wire makeRepository,
+      singleton @(Initializer, Repository M) $ val_ $ wire (,)
     ]
 
 cauldronMissingDep :: Cauldron M
@@ -135,20 +135,20 @@ cauldronWithCycle =
 
 cauldronX1 :: Cauldron M
 cauldronX1 =
-  fromRecipeList
-    [ recipe @(Logger M) $ eff $ pure makeLogger,
-      recipe @(Weird M) $ eff $ wire makeWeird -- overwritten
+  mconcat
+    [ singleton @(Logger M) $ eff $ pure makeLogger,
+      singleton @(Weird M) $ eff $ wire makeWeird -- overwritten
     ]
 
 cauldronX2 :: Cauldron M
 cauldronX2 =
-  fromRecipeList
-    [ recipe @(Repository M) $ eff $ do
+  mconcat
+    [ singleton @(Repository M) $ eff $ do
         action <- wire makeRepository
         pure do
           (initializer, repo) <- action
           pure (initializer, repo),
-      recipe @(Weird M)
+      singleton @(Weird M)
         Recipe
           { bean = eff $ wire makeSelfInvokingWeird,
             decos =
@@ -157,7 +157,7 @@ cauldronX2 =
                   val $ wire (weirdDeco "outer")
                 ]
           },
-      recipe @Result $ val_ do wire Result
+      singleton @Result $ val_ do wire Result
     ]
 
 data Result = Result Initializer (Repository M) (Weird M)
@@ -167,8 +167,8 @@ cauldronX = cauldronX1 <> cauldronX2
 
 cauldronLonely :: Cauldron M
 cauldronLonely =
-  fromRecipeList
-    [ recipe @(Lonely M) $ val $ pure makeLonely
+  mconcat
+    [ singleton @(Lonely M) $ val $ pure makeLonely
     ]
 
 tests :: TestTree

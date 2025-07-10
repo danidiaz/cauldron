@@ -111,16 +111,15 @@ coolWiring fire = do
   cook fire cauldron
 
 cauldron :: Cauldron IO
-cauldron :: Cauldron IO =
-  fromRecipeList
-    [ recipe $ val $ pure makeA,
-      recipe $ val $ pure makeB,
-      recipe $ val $ wire makeC,
-      recipe $ val $ wire makeD,
-      recipe $ val $ wire makeE,
+cauldron :: Cauldron IO = mconcat [
+      singleton $ val $ pure makeA,
+      singleton $ val $ pure makeB,
+      singleton $ val $ wire makeC,
+      singleton $ val $ wire makeD,
+      singleton $ val $ wire makeE,
       -- The type app in val checks the specificity, see val definition.
-      recipe @F $ val @F $ wire makeF,
-      recipe @G
+      singleton @F $ val @F $ wire makeF,
+      singleton @G
         Recipe
           { bean = val $ wire makeG,
             decos =
@@ -128,8 +127,8 @@ cauldron :: Cauldron IO =
                 [ val $ wire makeGDeco1
                 ]
           },
-      recipe @H $ val $ wire makeH,
-      recipe @Z
+      singleton @H $ val $ wire makeH,
+      singleton @Z
         Recipe
           { bean = val $ wire makeZ,
             decos =
@@ -138,7 +137,7 @@ cauldron :: Cauldron IO =
                   val $ wire makeZDeco2
                 ]
           },
-      recipe @Result $ val $ wire Result
+      singleton @Result $ val $ wire Result
     ]
 
 data Result = Result Initializer Inspector Z

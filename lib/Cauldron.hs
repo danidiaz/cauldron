@@ -22,7 +22,7 @@
 --
 -- @
 -- {-# LANGUAGE ApplicativeDo #-} -- For building complex values in the Args applicative.
--- {-# LANGUAGE OverloadedLists #-} -- For avoiding explicit calls to fromRecipeList and fromDecoList
+-- {-# LANGUAGE OverloadedLists #-} -- For avoiding explicit calls to fromDecoList
 -- @
 --
 -- An example of using a 'Cauldron' to wire the constructors of dummy @A@, @B@, @C@ datatypes:
@@ -51,10 +51,10 @@
 -- >>> :{
 -- do
 --   let cauldron :: Cauldron IO
---       cauldron = [
---           recipe @A $ val_ $ wire makeA,
---           recipe @B $ val_ $ wire makeB,
---           recipe @C $ eff_ $ wire makeC -- we use eff because the constructor has IO effects
+--       cauldron = mconcat [
+--           singleton @A $ val_ $ wire makeA,
+--           singleton @B $ val_ $ wire makeB,
+--           singleton @C $ eff_ $ wire makeC -- we use eff because the constructor has IO effects
 --         ]
 --   action <- cook @C forbidDepCycles cauldron & either throwIO pure
 --   action
@@ -64,18 +64,18 @@
 -- __Note__: It's better to avoid having beans whose types are functions or
 -- tuples, because those types are given special treatment. See the docs for
 -- 'wire', 'val', and 'eff'.
---
 module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
     empty,
+    singleton,
     insert,
     adjust,
+    Cauldron.lookup,
     delete,
     keysSet,
     restrictKeys,
     fromRecipeList,
-    toRecipeMap,
     hoistCauldron,
     hoistCauldron',
 
@@ -90,12 +90,6 @@ module Cauldron
 
     -- ** How decorators work
     -- $decos
-
-    -- ** Hiding a 'Recipe''s bean type
-    SomeRecipe,
-    recipe,
-    withRecipe,
-    getRecipeCallStack,
 
     -- * Constructors
     -- $constructors
@@ -193,7 +187,6 @@ import Data.String (IsString (..))
 import Data.Type.Equality (testEquality)
 import Data.Typeable
 import GHC.Exception (CallStack, prettyCallStackLines)
-import GHC.IsList
 import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
 import System.IO qualified
 import Type.Reflection qualified
@@ -216,11 +209,6 @@ instance Semigroup (Cauldron m) where
 
 instance Monoid (Cauldron m) where
   mempty = Cauldron Map.empty
-
-instance IsList (Cauldron m) where
-  type Item (Cauldron m) = SomeRecipe m
-  toList (Cauldron {recipeMap}) = Map.elems recipeMap
-  fromList = fromRecipeList
 
 -- | Change the monad used by the 'Recipe's in the 'Cauldron'.
 hoistCauldron :: (forall x. m x -> n x) -> Cauldron m -> Cauldron n
@@ -246,34 +234,30 @@ type SomeRecipe :: (Type -> Type) -> Type
 data SomeRecipe m where
   SomeRecipe :: (Typeable bean) => {_recipeCallStack :: CallStack, _recipe :: Recipe m bean} -> SomeRecipe m
 
--- | Build a 'SomeRecipe' from a 'Recipe' or a 'Constructor'. See 'ToRecipe'.
---
--- Useful in combination with 'fromRecipeList'.
-recipe ::
-  forall {recipelike} {m} bean.
-  (ToRecipe recipelike, Typeable bean, HasCallStack) =>
-  -- | A 'Recipe' or a 'Constructor'.
-  recipelike m bean ->
-  SomeRecipe m
-recipe theRecipe = withFrozenCallStack do
-  SomeRecipe callStack (toRecipe theRecipe)
+-- | Access a 'Recipe' inside a 'Cauldron', if it exists.
+lookup :: forall {m} bean r. (Typeable bean) => (CallStack -> Recipe m bean -> r) -> Cauldron m -> Maybe r
+lookup f (Cauldron {recipeMap}) = withFrozenCallStack do
+  let rep = typeRep (Proxy @bean)
+  case recipeMap & Map.lookup rep of
+    Nothing -> Nothing
+    Just SomeRecipe {_recipeCallStack, _recipe = _recipe :: Recipe m a} -> undefined
+      case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
+        Nothing -> error "should never happen"
+        Just Refl -> f _recipeCallStack _recipe
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
-withRecipe :: forall {m} r. (forall bean. (Typeable bean) => Recipe m bean -> r) -> SomeRecipe m -> r
-withRecipe f (SomeRecipe {_recipe}) = f _recipe
+withRecipe' :: forall {m} r. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
+withRecipe' f (SomeRecipe {_recipeCallStack, _recipe}) = f _recipeCallStack _recipe
 
 getRecipeRep :: SomeRecipe m -> TypeRep
-getRecipeRep = withRecipe go
+getRecipeRep = withRecipe' go
   where
-    go :: forall bean m. (Typeable bean) => Recipe m bean -> TypeRep
-    go _ = typeRep (Proxy @bean)
+    go :: forall bean m. (Typeable bean) => CallStack -> Recipe m bean -> TypeRep
+    go _ _ = typeRep (Proxy @bean)
 
 fromRecipeList :: [SomeRecipe m] -> Cauldron m
 fromRecipeList =
   foldMap \sr -> Cauldron {recipeMap = Map.singleton (getRecipeRep sr) sr}
-
-toRecipeMap :: Cauldron m -> Map TypeRep (SomeRecipe m)
-toRecipeMap Cauldron {recipeMap} = recipeMap
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
 hoistSomeRecipe f r@SomeRecipe {_recipe} = r {_recipe = hoistRecipe f _recipe}
@@ -284,10 +268,10 @@ hoistSomeRecipe' ::
   (forall x. (Typeable x) => Int -> Args (m (Regs x)) -> Args (n (Regs x))) ->
   SomeRecipe m ->
   SomeRecipe n
-hoistSomeRecipe' f fds sr = withRecipe go sr
+hoistSomeRecipe' f fds sr = withRecipe' go sr
   where
-    go :: forall bean. (Typeable bean) => Recipe m bean -> SomeRecipe n
-    go r = sr {_recipe = hoistRecipe' (f @bean) (fds @bean) r}
+    go :: forall bean. (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe n
+    go _ r = sr {_recipe = hoistRecipe' (f @bean) (fds @bean) r}
 
 -- | Instructions for how to build a value of type @bean@ while possibly
 -- performing actions in the monad @m@.
@@ -375,8 +359,8 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 -- >>> :{
 -- do
 --   let cauldron :: Cauldron IO
---       cauldron = [
---           recipe @Foo $ Recipe {
+--       cauldron = mconcat [
+--           singleton @Foo $ Recipe {
 --             bean = val $ wire makeFoo,
 --             decos = [
 --                  val $ wire makeFooDeco1,
@@ -399,7 +383,7 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 --
 -- Bean-producing and bean-decorating functions need to be coaxed into
 -- 'Constructor's in order to be used in 'Cauldron's.
--- 
+--
 -- First we fill the arguments of the function in an 'Args' context, either one
 -- by one using 'arg's and 'Applicative' operators, or all in a single swoop,
 -- using 'wire'.
@@ -407,8 +391,6 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 -- Then, depending on whether the function produces the desired bean directly,
 -- or through an effect, we use functions like 'val_', 'val', 'eff_' or 'eff' on
 -- the 'Args' value.
---
-
 
 -- $managedconstructors
 --
@@ -426,14 +408,12 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 -- >>> :{
 -- -- We treat the 'IOMode' as if it were a bean dependency.
 -- handleBean :: Constructor Managed Handle
--- handleBean = eff_ $ wire $ \mode -> managed $ withFile "/tmp/foo.txt" mode 
+-- handleBean = eff_ $ wire $ \mode -> managed $ withFile "/tmp/foo.txt" mode
 -- :}
 --
--- Annoyingly, this forces us to be a bit more verbose and explicitly mention  
+-- Annoyingly, this forces us to be a bit more verbose and explicitly mention
 -- the constructor parameters (in the example, @mode@) in order to reach the
 -- part that we wrap in 'Cauldron.Managed.Managed'.
---
-
 
 data ConstructorReps where
   ConstructorReps ::
@@ -442,6 +422,18 @@ data ConstructorReps where
       regReps :: Map TypeRep Dynamic
     } ->
     ConstructorReps
+
+-- | Create a 'Cauldron' consisting of a single 'Recipe'.
+--
+-- Useful in combination with 'fromRecipeList'.
+singleton ::
+  forall {recipelike} {m} bean.
+  (Typeable bean, ToRecipe recipelike, HasCallStack) =>
+  -- | A 'Recipe' or a 'Constructor'.
+  recipelike m bean ->
+  Cauldron m
+singleton theRecipe = withFrozenCallStack do
+  mempty & insert theRecipe
 
 -- | Put a 'Recipe' into the 'Cauldron'.
 --
@@ -513,9 +505,7 @@ removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
 -- :}
 --
 -- >>> :{
---   cook @A forbidDepCycles ([
---       recipe @A $ val $ wire loopyA
---       ] :: Cauldron IO)
+--   cook @A forbidDepCycles (singleton @A $ val $ wire loopyA :: Cauldron IO)
 --       & \case Left (DependencyCycleError _) -> "self dep is forbidden"; _ -> "oops"
 -- :}
 -- "self dep is forbidden"
@@ -552,9 +542,7 @@ forbidDepCycles =
 -- :}
 --
 -- >>> :{
---   cook @A allowSelfDeps ([
---       recipe @A $ val $ wire loopyA
---       ] :: Cauldron IO)
+--   cook @A allowSelfDeps (singleton @A $ val $ wire loopyA :: Cauldron IO)
 --       & \case Left (DependencyCycleError _) -> "oops"; _ -> "self dep is ok"
 -- :}
 -- "self dep is ok"
@@ -569,9 +557,9 @@ forbidDepCycles =
 -- :}
 --
 -- >>> :{
---   cook @U allowSelfDeps ([
---       recipe @U $ val $ wire loopyU,
---       recipe @V $ val $ wire loopyV
+--   cook @U allowSelfDeps (mconcat [
+--       singleton @U $ val $ wire loopyU,
+--       singleton @V $ val $ wire loopyV
 --       ] :: Cauldron IO)
 --       & \case Left (DependencyCycleError _) -> "cycle between 2 deps"; _ -> "oops"
 -- :}
@@ -606,9 +594,9 @@ allowSelfDeps =
 -- :}
 --
 -- >>> :{
---   cook @U allowDepCycles ([
---       recipe @U $ val $ wire loopyU,
---       recipe @V $ val $ wire loopyV
+--   cook @U allowDepCycles (mconcat [
+--       singleton @U $ val $ wire loopyU,
+--       singleton @V $ val $ wire loopyV
 --       ] :: Cauldron IO)
 --       & \case Left (DependencyCycleError _) -> "oops"; _ -> "cycles are ok"
 -- :}
@@ -689,7 +677,7 @@ data BeanConstructionStep
 -- :}
 --
 -- >>> :{
--- cook @B forbidDepCycles ([recipe $ val $ wire B] :: Cauldron IO)
+-- cook @B forbidDepCycles ((singleton $ val $ wire B) :: Cauldron IO)
 --  & \case Left (MissingDependenciesError _) -> "no recipe for A"; _ -> "oops"
 -- :}
 -- "no recipe for A"
@@ -743,15 +731,15 @@ cook fire cauldron = do
 --
 -- >>> :{
 -- do
---   nested :: Constructor IO C <- nest @C forbidDepCycles [
---       recipe @A $ val $ wire makeA2, -- this will be used by makeC
---       recipe @C $ val $ wire makeC -- takes B from outside
---       ] & either throwIO pure
---   action <- cook @C forbidDepCycles [
---       recipe @A $ val $ wire makeA,
---       recipe @B $ val $ wire makeB,
---       recipe @C $ nested
---       ] & either throwIO pure
+--   nested :: Constructor IO C <- nest @C forbidDepCycles (mconcat [
+--       singleton @A $ val $ wire makeA2, -- this will be used by makeC
+--       singleton @C $ val $ wire makeC -- takes B from outside
+--       ]) & either throwIO pure
+--   action <- cook @C forbidDepCycles (mconcat [
+--       singleton @A $ val $ wire makeA,
+--       singleton @B $ val $ wire makeB,
+--       singleton @C $ nested
+--       ]) & either throwIO pure
 --   C c <- action
 --   c
 -- :}
@@ -764,11 +752,11 @@ cook fire cauldron = do
 --
 -- >>> :{
 -- do
---   action <- cook @C forbidDepCycles [
---       recipe @A $ val $ wire makeA,
---       recipe @B $ val $ wire makeB,
---       recipe @C $ val $ wire makeC
---       ] & either throwIO pure
+--   action <- cook @C forbidDepCycles (mconcat [
+--       singleton @A $ val $ wire makeA,
+--       singleton @B $ val $ wire makeB,
+--       singleton @C $ val $ wire makeC
+--       ]) & either throwIO pure
 --   C c <- action
 --   c
 -- :}
@@ -836,7 +824,7 @@ checkNoDoubleDutyBeans ::
 checkNoDoubleDutyBeans cauldron = do
   let (accumMap, beanSet) = cauldronRegs cauldron
   let common = do
-        (tr, (cs1,cs2)) <- Map.toList $ Map.intersectionWith (,) (fst <$> accumMap) beanSet
+        (tr, (cs1, cs2)) <- Map.toList $ Map.intersectionWith (,) (fst <$> accumMap) beanSet
         [DoubleDutyBean tr cs1 cs2]
   case common of
     ddb : ddbs -> Left $ ddb Data.List.NonEmpty.:| ddbs
@@ -859,7 +847,8 @@ recipeRegs (SomeRecipe _ (Recipe {bean, decos})) = do
 data MissingDependencies = MissingDependencies CallStack TypeRep (Set TypeRep)
   deriving stock (Show)
 
-missingDepsToArgReps :: (Functor f, Foldable f) => 
+missingDepsToArgReps ::
+  (Functor f, Foldable f) =>
   f MissingDependencies ->
   Set TypeRep
 missingDepsToArgReps = Set.unions . fmap (\(MissingDependencies _ _ missing) -> missing)
@@ -1169,31 +1158,29 @@ defaultStyle merr =
           []
         Just (MissingDependenciesError missingDeps) ->
           let missing = missingDepsToArgReps missingDeps
-           in
-          case step of
-            FinishedBean rep
-              | Set.member rep missing ->
-                  [ fromString "style" Dot.:= fromString "dashed",
-                    fromString "color" Dot.:= fromString "red"
-                  ]
-            _ -> []
+           in case step of
+                FinishedBean rep
+                  | Set.member rep missing ->
+                      [ fromString "style" Dot.:= fromString "dashed",
+                        fromString "color" Dot.:= fromString "red"
+                      ]
+                _ -> []
         Just (DoubleDutyBeansError doubleDutyBeans) ->
-          let bs =  Set.fromList $ do
-                      DoubleDutyBean ddb _ _ <- Data.List.NonEmpty.toList doubleDutyBeans
-                      [ddb]
-          in
-          case step of
-            FinishedBean rep
-              | Set.member rep bs ->
-                  [ fromString "style" Dot.:= fromString "bold",
-                    fromString "color" Dot.:= fromString "green"
-                  ]
-            AggregateBean rep
-              | Set.member rep bs ->
-                  [ fromString "style" Dot.:= fromString "bold",
-                    fromString "color" Dot.:= fromString "green"
-                  ]
-            _ -> []
+          let bs = Set.fromList $ do
+                DoubleDutyBean ddb _ _ <- Data.List.NonEmpty.toList doubleDutyBeans
+                [ddb]
+           in case step of
+                FinishedBean rep
+                  | Set.member rep bs ->
+                      [ fromString "style" Dot.:= fromString "bold",
+                        fromString "color" Dot.:= fromString "green"
+                      ]
+                AggregateBean rep
+                  | Set.member rep bs ->
+                      [ fromString "style" Dot.:= fromString "bold",
+                        fromString "color" Dot.:= fromString "green"
+                      ]
+                _ -> []
         Just (DependencyCycleError (DependencyCycle (Set.fromList . Data.Foldable.toList . fmap fst -> cycleStepSet))) ->
           if Set.member step cycleStepSet
             then
@@ -1440,10 +1427,10 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- >>> :{
 -- do
 --   let cauldron :: Cauldron Identity
---       cauldron = [
---           recipe @U $ val $ wire makeU,
---           recipe @V $ val $ wire makeV,
---           recipe @W $ val $ wire W
+--       cauldron = mconcat [
+--           singleton @U $ val $ wire makeU,
+--           singleton @V $ val $ wire makeV,
+--           singleton @W $ val $ wire W
 --         ]
 --   Identity w <- cook @W forbidDepCycles cauldron & either throwIO pure
 --   pure w
@@ -1461,9 +1448,9 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- :}
 --
 -- >>> :{
---   cook @X forbidDepCycles ([
---       recipe @X $ val $ wire makeX,
---       recipe @(Sum Int) $ val $ wire makeAgg
+--   cook @X forbidDepCycles (mconcat [
+--       singleton @X $ val $ wire makeX,
+--       singleton @(Sum Int) $ val $ wire makeAgg
 --       ] :: Cauldron IO)
 --       & \case Left (DoubleDutyBeansError _) -> "Sum Int is aggregate and primary"; _ -> "oops"
 -- :}
