@@ -720,7 +720,7 @@ data BeanConstructionStep
 -- :}
 --
 -- >>> :{
--- cook @B forbidDepCycles ((singleton $ val $ wire B) :: Cauldron IO)
+-- cook @B forbidDepCycles (singleton $ val $ wire B :: Cauldron IO)
 --  & \case Left (MissingDependenciesError _) -> "no recipe for A"; _ -> "oops"
 -- :}
 -- "no recipe for A"
