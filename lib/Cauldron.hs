@@ -7,8 +7,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
-
--- {-# LANGUAGE RequiredTypeArguments #-}
+{-# LANGUAGE RequiredTypeArguments #-}
 
 -- | This is a library for performing dependency injection. It's an alternative
 -- to manually wiring your functions and passing all required parameters
@@ -64,13 +63,15 @@
 -- C
 --
 -- __Note__: It's better to avoid having beans whose types are functions or
--- tuples, because those types are given special treatment. See the docs for
--- 'wire', 'val', and 'eff'.
+-- tuples, because the library gives those types special treatment. See the docs
+-- for 'wire', 'val', and 'eff'.
 module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
     empty,
     singleton,
+    (|=|),
+    (䷱),
     insert,
     adjust,
     Cauldron.lookup,
@@ -428,7 +429,24 @@ data ConstructorReps where
 
 -- | Create a 'Cauldron' consisting of a single 'Recipe'.
 --
--- Useful in combination with 'fromRecipeList'.
+-- For readability, the @bean@ type is often passed as a type application, despite
+-- not being strictly required:
+--
+-- >>> :{
+-- oneRecipe :: Cauldron IO 
+-- oneRecipe = singleton @Bool $ val_ $ pure $ False
+-- :}
+--
+-- Typical usage involves putting singleton 'Cauldron's in a list and 'mconcat'ting them:
+--
+-- >>> :{
+-- twoRecipes :: Cauldron IO 
+-- twoRecipes = mconcat [
+--      singleton $ val_ $ pure $ False,
+--      singleton @Int $ val_ $ pure $ 5
+--    ]
+-- :}
+--
 singleton ::
   forall {recipelike} {m} bean.
   (Typeable bean, ToRecipe recipelike, HasCallStack) =>
@@ -438,12 +456,27 @@ singleton ::
 singleton theRecipe = withFrozenCallStack do
   mempty & insert theRecipe
 
--- (|=|) :: forall {recipelike} {m}. (ToRecipe recipelike, HasCallStack) =>
---          forall bean ->
---          Typeable bean =>
---          recipelike m bean ->
---          Cauldron m
--- (|=|) _ recipelike = singleton recipelike
+-- | Operator variant of 'singleton' where the @bean@ type is a required type
+-- argument. 
+--
+-- >>> :{
+-- oneRecipe, oneRecipe' :: Cauldron IO 
+-- oneRecipe = Bool |=| val $ pure $ False
+-- oneRecipe' = Bool ䷱ val $ pure $ False
+-- :}
+--
+(|=|), (䷱) :: forall {recipelike} {m}. (ToRecipe recipelike, HasCallStack) =>
+         forall bean ->
+         Typeable bean =>
+         recipelike m bean ->
+         Cauldron m
+(|=|) _ recipelike = withFrozenCallStack do singleton recipelike
+(䷱) _ recipelike = withFrozenCallStack do singleton recipelike
+
+infixr 0 |=|
+infixr 0 ䷱
+
+
 
 -- | Put a 'Recipe' into the 'Cauldron'.
 --
@@ -1471,6 +1504,8 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- $setup
 -- >>> :set -XBlockArguments
 -- >>> :set -XOverloadedLists
+-- >>> :set -XRequiredTypeArguments
+-- >>> :set -XExplicitNamespaces
 -- >>> :set -Wno-incomplete-uni-patterns
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
