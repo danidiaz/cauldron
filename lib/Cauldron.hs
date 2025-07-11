@@ -443,7 +443,7 @@ data ConstructorReps where
 -- twoRecipes :: Cauldron IO 
 -- twoRecipes = mconcat [
 --      singleton $ val_ $ pure $ False,
---      singleton @Int $ val_ $ pure $ 5
+--      singleton @Char $ val_ $ wire $ \(_ :: Bool) -> 'b'
 --    ]
 -- :}
 --
@@ -1503,6 +1503,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 
 -- $setup
 -- >>> :set -XBlockArguments
+-- >>> :set -XApplicativeDo
 -- >>> :set -XOverloadedLists
 -- >>> :set -XRequiredTypeArguments
 -- >>> :set -XExplicitNamespaces
