@@ -462,7 +462,7 @@ singleton theRecipe = withFrozenCallStack do
 recipe theRecipe = withFrozenCallStack do
   mempty & insert theRecipe
 
--- | Operator variant of 'singleton' where the @bean@ type is a [required type argument](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/required_type_arguments.html). 
+-- | Operator variant of 'recipe' where the @bean@ type is a [required type argument](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/required_type_arguments.html). 
 --
 -- >>> :{
 -- oneRecipe, oneRecipe' :: Cauldron IO 
