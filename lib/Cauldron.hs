@@ -290,7 +290,7 @@ fromDecoList :: forall m bean. [Constructor m bean] -> Seq (Constructor m bean)
 fromDecoList = Data.Sequence.fromList
 
 -- | Convenience typeclass that allows passing either 'Recipe's or 'Constructor's
--- to the 'insert' and 'recipe' functions.
+-- to the 'singleton' and 'insert' functions.
 type ToRecipe :: ((Type -> Type) -> Type -> Type) -> Constraint
 class ToRecipe recipelike where
   toRecipe :: forall m bean. recipelike m bean -> Recipe m bean
