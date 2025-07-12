@@ -191,6 +191,7 @@ import GHC.Exception (CallStack, prettyCallStackLines)
 import GHC.Stack (HasCallStack, callStack, withFrozenCallStack)
 import System.IO qualified
 import Type.Reflection qualified
+import Control.Monad (guard)
 
 -- | A map of bean recipes, indexed by the 'TypeRep' of the bean each recipe
 -- ultimately produces. Only one recipe is allowed for each bean type.
@@ -668,7 +669,7 @@ allowDepCycles =
     }
 
 fixyFollowPlanCauldron :: (MonadFix m) => Cauldron m -> BeanGetter -> Beans -> [BeanConstructionStep] -> m Beans
-fixyFollowPlanCauldron = \cauldron previous initial plan -> do
+fixyFollowPlanCauldron cauldron previous initial plan = do
   mfix do
     \final -> do
       -- We prefer the final beans.
@@ -843,8 +844,8 @@ nest' Fire {shouldEnforceDependency, followPlanCauldron} (mconcat -> cauldron) =
   () <- first MissingResultBeanError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
   plan <- first DependencyCycleError do buildPlan shouldEnforceDependency cauldron
   let missingDeps = collectMissingDeps (Map.keysSet accumMap) (Cauldron.keysSet cauldron) cauldron
-  Right $
-    ( missingDeps,
+  Right ( 
+      missingDeps,
       Constructor
         { _constructorCallStack = callStack,
           _args =
@@ -917,11 +918,10 @@ collectMissingDeps ::
   Cauldron m ->
   [MissingDependencies]
 collectMissingDeps accums available cauldron =
-  demandsByConstructorsInCauldron cauldron & Data.Foldable.foldMap \(stack, tr, demanded) ->
+  demandsByConstructorsInCauldron cauldron & Data.Foldable.foldMap \(stack, tr, demanded) -> do
     let missing = Set.filter (`Set.notMember` (available `Set.union` accums)) demanded
-     in if Set.null missing
-          then []
-          else [MissingDependencies stack tr missing]
+    guard $ not (Set.null missing)
+    [MissingDependencies stack tr missing]
 
 demandsByConstructorsInCauldron :: Cauldron m -> [(CallStack, TypeRep, Set TypeRep)]
 demandsByConstructorsInCauldron Cauldron {recipeMap} = do
@@ -1016,7 +1016,7 @@ constructorEdges item (ConstructorReps {argReps, regReps}) =
              ]
        )
 
-data BeanGetter = BeanGetter {_run :: forall t. (Typeable t) => Maybe t}
+newtype BeanGetter = BeanGetter {_run :: forall t. (Typeable t) => Maybe t}
 
 instance Semigroup BeanGetter where
   BeanGetter {_run = run1} <> BeanGetter {_run = run2} =
