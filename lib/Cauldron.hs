@@ -365,7 +365,7 @@ hoistRecipe' f fds (Recipe {bare, decos}) =
 --   action <-
 --     [
 --       singleton @Foo $ Recipe {
---         bean = val $ wire makeFoo,
+--         bare = val $ wire makeFoo,
 --         decos = [
 --              val $ wire makeFooDeco1,
 --              eff $ wire makeFooDeco2
