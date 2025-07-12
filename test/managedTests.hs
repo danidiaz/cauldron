@@ -72,11 +72,11 @@ makeWithWrapperWithMessage ref inMsg outMsg v handler = do
 
 managedCauldron :: IORef [Text] -> Cauldron Managed
 managedCauldron ref =
-  fromRecipeList
+  mconcat
     [ recipe @(Logger IO) $ eff $ wire $ managed (makeLogger ref),
       recipe @(Weird IO)
         Recipe
-          { bean = eff do
+          { bare = eff do
               wire \logger self -> managed (makeSelfInvokingWeird ref logger self),
             decos =
               fromDecoList
@@ -92,7 +92,7 @@ tests =
     "All"
     [ testCase "simple" do
         ref <- newIORef []
-        case cook allowSelfDeps (managedCauldron ref) of
+        case cook allowSelfDeps [managedCauldron ref] of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> with beansAction \boiledBeans -> do
             let (Logger {logMessage}, (Weird {anotherWeirdOp}) :: Weird IO) = boiledBeans

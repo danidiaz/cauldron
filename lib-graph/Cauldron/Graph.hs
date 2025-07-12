@@ -96,7 +96,7 @@ import Data.Monoid
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.String
-import Data.Tree (Tree(..), Forest)
+import Data.Tree (Forest, Tree (..))
 import GHC.Generics
 
 -- | The 'AdjacencyMap' data type represents a graph by a map of vertices to

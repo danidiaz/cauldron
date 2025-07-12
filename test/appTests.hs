@@ -108,21 +108,21 @@ makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
 coolWiring :: Fire IO -> Either CookingError (IO Result)
 coolWiring fire = do
-  cook fire cauldron
+  cook fire [cauldron]
 
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =
-  fromRecipeList
-    [ recipe $ val $ pure makeA,
-      recipe $ val $ pure makeB,
-      recipe $ val $ wire makeC,
-      recipe $ val $ wire makeD,
-      recipe $ val $ wire makeE,
+  mconcat
+    [ singleton $ val $ pure makeA,
+      singleton $ val $ pure makeB,
+      singleton $ val $ wire makeC,
+      singleton $ val $ wire makeD,
+      singleton $ val $ wire makeE,
       -- The type app in val checks the specificity, see val definition.
       recipe @F $ val @F $ wire makeF,
       recipe @G
         Recipe
-          { bean = val $ wire makeG,
+          { bare = val $ wire makeG,
             decos =
               fromDecoList
                 [ val $ wire makeGDeco1
@@ -131,7 +131,7 @@ cauldron :: Cauldron IO =
       recipe @H $ val $ wire makeH,
       recipe @Z
         Recipe
-          { bean = val $ wire makeZ,
+          { bare = val $ wire makeZ,
             decos =
               fromDecoList
                 [ val $ wire makeZDeco1,

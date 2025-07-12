@@ -65,7 +65,7 @@ makeBazSerializer Serializer {runSerializer = runFoo} =
 
 cauldron :: Cauldron Identity
 cauldron =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire makeFooSerializer,
       recipe @(Serializer Bar) $ val $ wire makeBarSerializer,
       recipe @(Serializer Baz) $ val $ wire makeBazSerializer
@@ -113,7 +113,7 @@ newtype Bcc = Bcc Int
 
 cauldronAccums1 :: Cauldron Identity
 cauldronAccums1 =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire $ \sb -> (Acc 5, makeFooSerializer sb),
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
       recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
@@ -121,7 +121,7 @@ cauldronAccums1 =
 
 cauldronAccums2 :: Cauldron Identity
 cauldronAccums2 =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> makeFooSerializer sb,
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
       recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
@@ -129,7 +129,7 @@ cauldronAccums2 =
 
 cauldronAccumsOops1 :: Cauldron Identity
 cauldronAccumsOops1 =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> (Acc 5, makeFooSerializer sb),
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
       recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
@@ -137,7 +137,7 @@ cauldronAccumsOops1 =
 
 cauldronAccumsOops2 :: Cauldron Identity
 cauldronAccumsOops2 =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> (Bcc 5, makeFooSerializer sb),
       recipe @(Serializer Bar) $ val $ wire $ \(_ :: Bcc) sf sb -> (Acc 5, makeBarSerializer sf sb),
       recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
@@ -165,7 +165,7 @@ tests =
           Right _ -> assertFailure "Builder should have failed with duplicate beans error",
       testCase "should fail cycle wiring" do
         Data.Foldable.for_ @[] [("forbid", forbidDepCycles), ("selfdeps", allowSelfDeps)] \(name, fire) ->
-          case cook @(Serializer Foo) fire cauldron of
+          case cook @(Serializer Foo) fire [cauldron] of
             Left (DependencyCycleError _) -> pure ()
             Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
             Right _ -> assertFailure $ "Unexpected success when wiring" ++ name,
@@ -175,7 +175,7 @@ tests =
             ("someConsume", cauldronAccums2, Acc 10)
           ]
           \(name, c, expected) ->
-            case cook @Acc allowDepCycles c of
+            case cook @Acc allowDepCycles [c] of
               Left _err -> do
                 -- putStrLn $ prettyRecipeError err
                 assertFailure $ "could not wire " ++ name
@@ -187,7 +187,7 @@ tests =
             ("indirectagg", cauldronAccumsOops2)
           ]
           \(name, c) ->
-            case cook @(Serializer Foo) allowDepCycles c of
+            case cook @(Serializer Foo) allowDepCycles [c] of
               Left (DependencyCycleError _) -> assertFailure $ "We should be able to wire cycles with accs"
               Left _ -> assertFailure $ "Unexpected error when wiring" ++ name
               Right _ -> pure ()
@@ -195,7 +195,7 @@ tests =
   where
     makeBasicTest :: Cauldron Identity -> IO ()
     makeBasicTest theCauldron =
-      case cook allowDepCycles theCauldron of
+      case cook allowDepCycles [theCauldron] of
         Left _ -> do
           -- putStrLn $ prettyRecipeError err
           assertFailure "could not wire"
