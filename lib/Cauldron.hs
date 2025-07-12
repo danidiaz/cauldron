@@ -446,7 +446,7 @@ data ConstructorReps where
 -- >>> :{
 -- twoRecipes :: Cauldron IO 
 -- twoRecipes = mconcat [
---      singleton $ val_ $ pure $ False,
+--      recipe $ val_ $ pure $ False,
 --      recipe @Char $ val_ $ wire $ \(_ :: Bool) -> 'b'
 --    ]
 -- :}
