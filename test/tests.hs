@@ -172,7 +172,13 @@ tests :: TestTree
 tests =
   testGroup
     "All"
-    [ testCase "value" do
+    [ 
+      testCase "lookup" do
+        case cauldron & Cauldron.lookup @(Logger M) (\_ _ -> ()) of
+          Just () -> pure ()
+          Nothing -> assertFailure "bean not found"
+      ,
+      testCase "value" do
         (_, traces) <- case cook' [cauldron] of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> runWriterT do
