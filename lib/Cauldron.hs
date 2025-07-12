@@ -362,17 +362,18 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 --
 -- >>> :{
 -- do
---   let cauldron :: Cauldron IO
---       cauldron = mconcat [
---           singleton @Foo $ Recipe {
---             bean = val $ wire makeFoo,
---             decos = [
---                  val $ wire makeFooDeco1,
---                  eff $ wire makeFooDeco2
---               ]
---           }
---         ]
---   action <- [cauldron] & cook @Foo forbidDepCycles & either throwIO pure
+--   action <-
+--     [
+--       singleton @Foo $ Recipe {
+--         bean = val $ wire makeFoo,
+--         decos = [
+--              val $ wire makeFooDeco1,
+--              eff $ wire makeFooDeco2
+--           ]
+--       }
+--     ] 
+--     & cook @Foo forbidDepCycles 
+--     & either throwIO pure
 --   Foo {sayFoo} <- action
 --   sayFoo
 -- :}
