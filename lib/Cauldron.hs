@@ -249,8 +249,8 @@ lookup f (Cauldron {recipeMap}) = withFrozenCallStack do
     Nothing -> Nothing
     Just SomeRecipe {_recipeCallStacks, _recipe} ->
         case Wrap1 _recipe of
-          Wrap1 @_ @a _ ->
-            case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
+          Wrap1 @_ @ta _ ->
+            case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @ta) of
               Nothing -> error "should never happen"
               Just Refl -> Just $ f _recipeCallStacks _recipe
 
