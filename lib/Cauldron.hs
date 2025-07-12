@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE TypeAbstractions #-}
 #if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
 {-# LANGUAGE RequiredTypeArguments #-}
 #endif
@@ -1545,7 +1546,9 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- >>> :set -XBlockArguments
 -- >>> :set -XApplicativeDo
 -- >>> :set -XOverloadedLists
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
 -- >>> :set -XRequiredTypeArguments
+#endif
 -- >>> :set -XExplicitNamespaces
 -- >>> :set -Wno-incomplete-uni-patterns
 -- >>> import Data.Functor.Identity
