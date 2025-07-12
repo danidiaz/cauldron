@@ -1,6 +1,5 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -111,7 +110,6 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 
 cauldron :: Cauldron M
 cauldron =
-  mconcat
     [ recipe @(Logger M) $ eff $ pure makeLogger,
       recipe @(Repository M) $ eff $ wire makeRepository,
       recipe @(Initializer, Repository M) $ val_ $ wire (,)
@@ -135,14 +133,12 @@ cauldronWithCycle =
 
 cauldronX1 :: Cauldron M
 cauldronX1 =
-  mconcat
     [ recipe @(Logger M) $ eff $ pure makeLogger,
       recipe @(Weird M) $ eff $ wire makeWeird -- overwritten
     ]
 
 cauldronX2 :: Cauldron M
 cauldronX2 =
-  mconcat
     [ recipe @(Repository M) $ eff $ do
         action <- wire makeRepository
         pure do
@@ -164,7 +160,6 @@ data Result = Result Initializer (Repository M) (Weird M)
 
 cauldronLonely :: Cauldron M
 cauldronLonely =
-  mconcat
     [ recipe @(Lonely M) $ val $ pure makeLonely
     ]
 
@@ -196,7 +191,7 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        ((), traces) <- case cook @Result allowSelfDeps [cauldronX1, cauldronX2] of
+        ((), traces) <- case cook @Result allowSelfDeps (mconcat [cauldronX1, cauldronX2]) of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
             runWriterT do
@@ -243,9 +238,9 @@ tests =
                                  constructorX2 <- nest allowSelfDeps [cauldronX2]
                                  cook @Result
                                    allowSelfDeps
-                                   [ cauldronX1,
+                                   (mconcat [ cauldronX1,
                                      Cauldron.recipe @Result constructorX2
-                                   ]
+                                   ])
                              ) of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
@@ -290,7 +285,7 @@ tests =
       --  pure ()
 
       testCase "lonely beans get built" do
-        (_, _) <- case cook allowSelfDeps [cauldronLonely] of
+        (_, _) <- case cook allowSelfDeps cauldronLonely of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> runWriterT do
             boiledBeans <- beansAction

@@ -190,11 +190,10 @@ boringWiring = do
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
 coolWiring :: Either CookingError (IO Result)
-coolWiring = cook allowSelfDeps [cauldron]
+coolWiring = cook allowSelfDeps cauldron
 
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =
-  mconcat
     [ recipe @A $ val $ pure makeA,
       recipe @B $ val $ pure makeB,
       recipe @C $ val $ wire makeC,

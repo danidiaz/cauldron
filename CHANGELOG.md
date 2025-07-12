@@ -6,8 +6,7 @@
 * breaking change: `recipe` now produces a `Cauldron`, not a `SomeRecipe`.
 * breaking change: `withRecipe` is now `lookup` and works on `Cauldron`s.
 * breaking change: `withRecipeCallstack` gone. Use `lookup`.
-* breaking change: removed `IsList` instance for `Cauldron`.
-* breaking change: `cook` and `nest` now receive a list of cauldrons.
+* breaking change: `IsList` instance for `Cauldron` has changed its `Item` type.
 * breaking change: the `bean` field of `Recipe` is now called `bare`.
 * new (|=|) and (䷱) operators.
 
