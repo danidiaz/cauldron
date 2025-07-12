@@ -3,7 +3,7 @@
 -- | A datatype that encapsulates @with...@-style callback-taking functions that
 -- acquire and release resources.
 --
--- Here's [a video about how it works](https://youtu.be/2v7BAQh_dRs). 
+-- Here's [a video about how it works](https://youtu.be/2v7BAQh_dRs).
 module Cauldron.Managed
   ( -- * The Managed monad for handling resources
     Managed,
@@ -78,15 +78,18 @@ instance MonadIO Managed where
   {-# INLINE liftIO #-}
 
 instance MonadFail Managed where
-    fail s = Managed (\return_ -> do
-        a <- fail @IO s
-        return_ a )
+  fail s =
+    Managed
+      ( \return_ -> do
+          a <- fail @IO s
+          return_ a
+      )
 
-instance Semigroup a => Semigroup (Managed a) where
-    (<>) = liftA2 (<>)
+instance (Semigroup a) => Semigroup (Managed a) where
+  (<>) = liftA2 (<>)
 
-instance Monoid a => Monoid (Managed a) where
-    mempty = pure mempty
+instance (Monoid a) => Monoid (Managed a) where
+  mempty = pure mempty
 
 -- | Make use of the managed resource by supplying a callback.
 with :: Managed a -> (a -> IO b) -> IO b
@@ -94,4 +97,4 @@ with (Managed r) = r
 
 -- | Run a `Managed` computation, enforcing that no acquired resources leak
 runManaged :: Managed () -> IO ()
-runManaged (Managed r) = r pure 
+runManaged (Managed r) = r pure

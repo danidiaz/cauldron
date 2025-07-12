@@ -1,5 +1,15 @@
 # Revision history for cauldron
 
+## 0.9.0.0
+
+* breaking change: `SomeRecipe` type hidden.
+* breaking change: `recipe` now produces a `Cauldron`, not a `SomeRecipe`.
+* breaking change: `withRecipe` is now `lookup` and works on `Cauldron`s.
+* breaking change: `withRecipeCallstack` gone. Use `lookup`.
+* breaking change: `IsList` instance for `Cauldron` has changed its `Item` type.
+* breaking change: the `bean` field of `Recipe` is now called `bare`.
+* new (|=|) and (䷱) operators.
+
 ## 0.8.1.0
 
 * Add `Cauldron.Managed.runManaged`.

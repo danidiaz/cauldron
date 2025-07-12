@@ -1,6 +1,5 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -14,6 +13,7 @@ import Control.Monad.Trans.Writer
 import Data.Foldable qualified
 import Data.Function ((&))
 import Data.IORef
+import Data.List (sort)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Monoid
@@ -22,7 +22,6 @@ import Data.Set qualified
 import Data.Typeable (typeRep)
 import Test.Tasty
 import Test.Tasty.HUnit
-import Data.List (sort)
 
 type Text = String
 
@@ -111,7 +110,6 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 
 cauldron :: Cauldron M
 cauldron =
-  fromRecipeList
     [ recipe @(Logger M) $ eff $ pure makeLogger,
       recipe @(Repository M) $ eff $ wire makeRepository,
       recipe @(Initializer, Repository M) $ val_ $ wire (,)
@@ -135,14 +133,12 @@ cauldronWithCycle =
 
 cauldronX1 :: Cauldron M
 cauldronX1 =
-  fromRecipeList
     [ recipe @(Logger M) $ eff $ pure makeLogger,
       recipe @(Weird M) $ eff $ wire makeWeird -- overwritten
     ]
 
 cauldronX2 :: Cauldron M
 cauldronX2 =
-  fromRecipeList
     [ recipe @(Repository M) $ eff $ do
         action <- wire makeRepository
         pure do
@@ -150,7 +146,7 @@ cauldronX2 =
           pure (initializer, repo),
       recipe @(Weird M)
         Recipe
-          { bean = eff $ wire makeSelfInvokingWeird,
+          { bare = eff $ wire makeSelfInvokingWeird,
             decos =
               fromDecoList
                 [ val $ wire (weirdDeco "inner"),
@@ -162,12 +158,8 @@ cauldronX2 =
 
 data Result = Result Initializer (Repository M) (Weird M)
 
-cauldronX :: Cauldron M
-cauldronX = cauldronX1 <> cauldronX2
-
 cauldronLonely :: Cauldron M
 cauldronLonely =
-  fromRecipeList
     [ recipe @(Lonely M) $ val $ pure makeLonely
     ]
 
@@ -175,8 +167,12 @@ tests :: TestTree
 tests =
   testGroup
     "All"
-    [ testCase "value" do
-        (_, traces) <- case cook' cauldron of
+    [ testCase "lookup" do
+        case cauldron & Cauldron.lookup @(Logger M) (\_ _ -> ()) of
+          Just () -> pure ()
+          Nothing -> assertFailure "bean not found",
+      testCase "value" do
+        (_, traces) <- case cook' [cauldron] of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> runWriterT do
             boiledBeans <- beansAction
@@ -195,7 +191,7 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        ((), traces) <- case cook @Result allowSelfDeps cauldronX of
+        ((), traces) <- case cook @Result allowSelfDeps (mconcat [cauldronX1, cauldronX2]) of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
             runWriterT do
@@ -208,23 +204,25 @@ tests =
               pure ()
         assertEqual
           "traces"
-          (sort [ -- "weird constructor", -- not happens, because overwritten
-            -- the order of the traces here is a bit too overspecified. several orders could be valid.
-            "logger constructor",
-            "self-invoking weird constructor",
-            "logger init",
-            "repo init invoking logger",
-            "store",
-            "findById",
-            -- the deco is applied! The outer the deco, the earliest is invoked.
-            "deco for anotherWeirdOp outer",
-            "deco for anotherWeirdOp inner",
-            "another weirdOp 2",
-            "deco for weirdOp outer",
-            "deco for weirdOp inner",
-            -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
-            "weirdOp 2"
-          ])
+          ( sort
+              [ -- "weird constructor", -- not happens, because overwritten
+                -- the order of the traces here is a bit too overspecified. several orders could be valid.
+                "logger constructor",
+                "self-invoking weird constructor",
+                "logger init",
+                "repo init invoking logger",
+                "store",
+                "findById",
+                -- the deco is applied! The outer the deco, the earliest is invoked.
+                "deco for anotherWeirdOp outer",
+                "deco for anotherWeirdOp inner",
+                "another weirdOp 2",
+                "deco for weirdOp outer",
+                "deco for weirdOp inner",
+                -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
+                "weirdOp 2"
+              ]
+          )
           (sort traces),
       -- case getDependencyGraph cauldronNonEmpty of
       --  dg2  -> do
@@ -237,8 +235,12 @@ tests =
 
       testCase "value nested" do
         ((), traces) <- case ( do
-                                 constructorX2 <- nest allowSelfDeps cauldronX2
-                                 cook @Result allowSelfDeps (cauldronX1 & Cauldron.insert @Result constructorX2)
+                                 constructorX2 <- nest allowSelfDeps [cauldronX2]
+                                 cook @Result
+                                   allowSelfDeps
+                                   (mconcat [ cauldronX1,
+                                     Cauldron.recipe @Result constructorX2
+                                   ])
                              ) of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
@@ -252,24 +254,26 @@ tests =
               pure ()
         assertEqual
           "traces"
-          (sort [ -- the order of the traces here is a bit too overspecified. several orders could be valid.
-            "logger constructor",
-            "self-invoking weird constructor",
-            "weird constructor", -- note that this is present. Overwritten by nested, but still built
-            -- The absence of the logger init is because we are only getting the aggregate beans from the nested.
-            -- "logger init",
-            "repo init invoking logger",
-            "store",
-            "findById",
-            -- the deco is applied! The outer the deco, the earliest is invoked.
-            "deco for anotherWeirdOp outer",
-            "deco for anotherWeirdOp inner",
-            "another weirdOp 2",
-            "deco for weirdOp outer",
-            "deco for weirdOp inner",
-            -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
-            "weirdOp 2"
-          ])
+          ( sort
+              [ -- the order of the traces here is a bit too overspecified. several orders could be valid.
+                "logger constructor",
+                "self-invoking weird constructor",
+                "weird constructor", -- note that this is present. Overwritten by nested, but still built
+                -- The absence of the logger init is because we are only getting the aggregate beans from the nested.
+                -- "logger init",
+                "repo init invoking logger",
+                "store",
+                "findById",
+                -- the deco is applied! The outer the deco, the earliest is invoked.
+                "deco for anotherWeirdOp outer",
+                "deco for anotherWeirdOp inner",
+                "another weirdOp 2",
+                "deco for weirdOp outer",
+                "deco for weirdOp inner",
+                -- note that the self-invocation used the method from 'makeSelfInvokingWeird'
+                "weirdOp 2"
+              ]
+          )
           (sort traces),
       -- case getDependencyGraph cauldronNonEmpty of
       --  dg2  -> do
@@ -290,19 +294,20 @@ tests =
             pure ()
         pure (),
       testCase "cauldron missing dep" do
-        case cook' cauldronMissingDep of
-          Left (MissingDependenciesError missingDeps )
-            | [MissingDependencies _ tr missingSet]  <- Data.Foldable.toList missingDeps,
-              tr == typeRep (Proxy @(Repository M)) && missingSet == Data.Set.singleton (typeRep (Proxy @(Logger M))) -> pure ()
+        case cook' [cauldronMissingDep] of
+          Left (MissingDependenciesError missingDeps)
+            | [MissingDependencies _ tr missingSet] <- Data.Foldable.toList missingDeps,
+              tr == typeRep (Proxy @(Repository M)) && missingSet == Data.Set.singleton (typeRep (Proxy @(Logger M))) ->
+                pure ()
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do
-        case cook' cauldronDoubleDutyBean of
+        case cook' [cauldronDoubleDutyBean] of
           Left (DoubleDutyBeansError _) -> pure ()
           _ -> assertFailure "double duty beans not detected"
         pure (),
       testCase "cauldron with cycle" do
-        case cook' cauldronWithCycle of
+        case cook' [cauldronWithCycle] of
           Left (DependencyCycleError (DependencyCycle vs)) ->
             -- Why not a cycle of length 3? Because there also are bare versions for each bean.
             assertEqual "cycle of the expected length" 4 (Data.Foldable.length vs)

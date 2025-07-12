@@ -194,30 +194,30 @@ coolWiring = cook allowSelfDeps cauldron
 
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =
-  [ recipe @A $ val $ pure makeA,
-    recipe @B $ val $ pure makeB,
-    recipe @C $ val $ wire makeC,
-    recipe @D $ val $ wire makeD,
-    recipe @E $ val $ wire makeE,
-    recipe @F $ val $ wire makeF,
-    recipe @G $
-      Recipe
-        { bean = val $ wire makeG,
-          decos =
-            [ val $ wire makeGDeco1
-            ]
-        },
-    recipe @H $ val $ wire makeH,
-    recipe @Z
-      Recipe
-        { bean = val $ wire makeZ,
-          decos =
-            [ val $ wire makeZDeco1,
-              val $ wire makeZDeco2
-            ]
-        },
-    recipe @Result $ val $ wire Result
-  ]
+    [ recipe @A $ val $ pure makeA,
+      recipe @B $ val $ pure makeB,
+      recipe @C $ val $ wire makeC,
+      recipe @D $ val $ wire makeD,
+      recipe @E $ val $ wire makeE,
+      recipe @F $ val $ wire makeF,
+      recipe @G $
+        Recipe
+          { bare = val $ wire makeG,
+            decos =
+              [ val $ wire makeGDeco1
+              ]
+          },
+      recipe @H $ val $ wire makeH,
+      recipe @Z
+        Recipe
+          { bare = val $ wire makeZ,
+            decos =
+              [ val $ wire makeZDeco1,
+                val $ wire makeZDeco2
+              ]
+          },
+      recipe @Result $ val $ wire Result
+    ]
 
 main :: IO ()
 main = do
@@ -240,7 +240,7 @@ main = do
       print z
       runInitializer
       pure $ Nothing
-  let depGraph = getDependencyGraph cauldron
+  let depGraph = getDependencyGraph [cauldron]
   writeAsDot (defaultStyle merr) "beans.dot" depGraph
   writeAsDot (defaultStyle merr) "beans-no-agg.dot" $ removeAggregates $ depGraph
   writeAsDot (defaultStyle merr) "beans-no-agg-no-decos.dot" $ removeDecos $ removeAggregates $ depGraph

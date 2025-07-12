@@ -65,7 +65,7 @@ makeBazSerializer Serializer {runSerializer = runFoo} =
 
 cauldron :: Cauldron Identity
 cauldron =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire makeFooSerializer,
       recipe @(Serializer Bar) $ val $ wire makeBarSerializer,
       recipe @(Serializer Baz) $ val $ wire makeBazSerializer
@@ -113,7 +113,7 @@ newtype Bcc = Bcc Int
 
 cauldronAccums1 :: Cauldron Identity
 cauldronAccums1 =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire $ \sb -> (Acc 5, makeFooSerializer sb),
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
       recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
@@ -121,7 +121,7 @@ cauldronAccums1 =
 
 cauldronAccums2 :: Cauldron Identity
 cauldronAccums2 =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> makeFooSerializer sb,
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
       recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
@@ -129,7 +129,7 @@ cauldronAccums2 =
 
 cauldronAccumsOops1 :: Cauldron Identity
 cauldronAccumsOops1 =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> (Acc 5, makeFooSerializer sb),
       recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
       recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
@@ -137,7 +137,7 @@ cauldronAccumsOops1 =
 
 cauldronAccumsOops2 :: Cauldron Identity
 cauldronAccumsOops2 =
-  fromRecipeList
+  mconcat
     [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> (Bcc 5, makeFooSerializer sb),
       recipe @(Serializer Bar) $ val $ wire $ \(_ :: Bcc) sf sb -> (Acc 5, makeBarSerializer sf sb),
       recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
