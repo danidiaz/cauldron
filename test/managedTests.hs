@@ -92,7 +92,7 @@ tests =
     "All"
     [ testCase "simple" do
         ref <- newIORef []
-        case cook allowSelfDeps (managedCauldron ref) of
+        case cook allowSelfDeps [managedCauldron ref] of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> with beansAction \boiledBeans -> do
             let (Logger {logMessage}, (Weird {anotherWeirdOp}) :: Weird IO) = boiledBeans

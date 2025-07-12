@@ -162,9 +162,6 @@ cauldronX2 =
 
 data Result = Result Initializer (Repository M) (Weird M)
 
-cauldronX :: Cauldron M
-cauldronX = cauldronX1 <> cauldronX2
-
 cauldronLonely :: Cauldron M
 cauldronLonely =
   mconcat
@@ -176,7 +173,7 @@ tests =
   testGroup
     "All"
     [ testCase "value" do
-        (_, traces) <- case cook' cauldron of
+        (_, traces) <- case cook' [cauldron] of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> runWriterT do
             boiledBeans <- beansAction
@@ -195,7 +192,7 @@ tests =
           ]
           traces,
       testCase "value sequential" do
-        ((), traces) <- case cook @Result allowSelfDeps cauldronX of
+        ((), traces) <- case cook @Result allowSelfDeps [cauldronX1, cauldronX2] of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
             runWriterT do
@@ -239,8 +236,11 @@ tests =
 
       testCase "value nested" do
         ((), traces) <- case ( do
-                                 constructorX2 <- nest allowSelfDeps cauldronX2
-                                 cook @Result allowSelfDeps (cauldronX1 & Cauldron.insert @Result constructorX2)
+                                 constructorX2 <- nest allowSelfDeps [cauldronX2]
+                                 cook @Result allowSelfDeps [ 
+                                    cauldronX1,
+                                    Cauldron.singleton @Result constructorX2 
+                                    ]
                              ) of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do
@@ -285,7 +285,7 @@ tests =
       --  pure ()
 
       testCase "lonely beans get built" do
-        (_, _) <- case cook allowSelfDeps cauldronLonely of
+        (_, _) <- case cook allowSelfDeps [cauldronLonely] of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> runWriterT do
             boiledBeans <- beansAction
@@ -294,7 +294,7 @@ tests =
             pure ()
         pure (),
       testCase "cauldron missing dep" do
-        case cook' cauldronMissingDep of
+        case cook' [cauldronMissingDep] of
           Left (MissingDependenciesError missingDeps)
             | [MissingDependencies _ tr missingSet] <- Data.Foldable.toList missingDeps,
               tr == typeRep (Proxy @(Repository M)) && missingSet == Data.Set.singleton (typeRep (Proxy @(Logger M))) ->
@@ -302,12 +302,12 @@ tests =
           _ -> assertFailure "missing dependency not detected"
         pure (),
       testCase "cauldron with double duty bean" do
-        case cook' cauldronDoubleDutyBean of
+        case cook' [cauldronDoubleDutyBean] of
           Left (DoubleDutyBeansError _) -> pure ()
           _ -> assertFailure "double duty beans not detected"
         pure (),
       testCase "cauldron with cycle" do
-        case cook' cauldronWithCycle of
+        case cook' [cauldronWithCycle] of
           Left (DependencyCycleError (DependencyCycle vs)) ->
             -- Why not a cycle of length 3? Because there also are bare versions for each bean.
             assertEqual "cycle of the expected length" 4 (Data.Foldable.length vs)

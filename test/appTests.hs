@@ -108,7 +108,7 @@ makeZDeco2 = \_ z -> (Initializer (putStrLn "Z deco init"), z)
 
 coolWiring :: Fire IO -> Either CookingError (IO Result)
 coolWiring fire = do
-  cook fire cauldron
+  cook fire [cauldron]
 
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =
