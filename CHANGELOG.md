@@ -1,5 +1,9 @@
 # Revision history for cauldron
 
+## 0.9.0.1
+
+* compat with GHC 9.8.4.
+
 ## 0.9.0.0
 
 * breaking change: `SomeRecipe` type hidden.

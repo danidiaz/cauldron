@@ -1,13 +1,17 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RequiredTypeArguments #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE TypeAbstractions #-}
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
+{-# LANGUAGE RequiredTypeArguments #-}
+#endif
 
 -- | This is a library for performing dependency injection. It's an alternative
 -- to manually wiring your functions and passing all required parameters
@@ -70,8 +74,10 @@ module Cauldron
     empty,
     recipe,
     singleton,
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
     (|=|),
     (䷱),
+#endif
     insert,
     adjust,
     Cauldron.lookup,
@@ -475,6 +481,9 @@ singleton theRecipe = withFrozenCallStack do
 recipe theRecipe = withFrozenCallStack do
   mempty & insert theRecipe
 
+
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
+
 -- | Operator variant of 'recipe' where the @bean@ type is a [required type argument](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/required_type_arguments.html).
 --
 -- '(|=|)' and '(䷱)' are the same function.
@@ -498,6 +507,8 @@ recipe theRecipe = withFrozenCallStack do
 infixr 0 |=|
 
 infixr 0 ䷱
+
+#endif
 
 -- | Put a 'Recipe' into the 'Cauldron'.
 --
@@ -1531,17 +1542,33 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- :}
 -- "Sum Int is aggregate and primary"
 
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
 -- $setup
+-- >>> :set -XRequiredTypeArguments
 -- >>> :set -XBlockArguments
 -- >>> :set -XApplicativeDo
 -- >>> :set -XOverloadedLists
--- >>> :set -XRequiredTypeArguments
 -- >>> :set -XExplicitNamespaces
 -- >>> :set -Wno-incomplete-uni-patterns
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
 -- >>> import Data.Monoid
--- >>> import Data.Either (either, isLeft)
+-- >>> import Data.Either (either)
 -- >>> import Control.Exception (throwIO)
 -- >>> import System.IO
 -- >>> import Cauldron.Managed
+#else
+-- $setup
+-- >>> :set -XBlockArguments
+-- >>> :set -XApplicativeDo
+-- >>> :set -XOverloadedLists
+-- >>> :set -XExplicitNamespaces
+-- >>> :set -Wno-incomplete-uni-patterns
+-- >>> import Data.Functor.Identity
+-- >>> import Data.Function ((&))
+-- >>> import Data.Monoid
+-- >>> import Data.Either (either)
+-- >>> import Control.Exception (throwIO)
+-- >>> import System.IO
+-- >>> import Cauldron.Managed
+#endif

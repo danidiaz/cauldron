@@ -24,7 +24,10 @@ reverseTopSort g = do
       sccs = Data.Graph.stronglyConnComp theEdges
   for_ sccs $ \case
     Data.Graph.AcyclicSCC _ -> pure ()
-    Data.Graph.NECyclicSCC vs -> do
+    -- we should use 
+    -- @Data.Graph.NECyclicSCC vs@
+    -- for containers >= 0.7
+    Data.Graph.CyclicSCC (Data.List.NonEmpty.fromList -> vs) -> do
       let aCycle = findCycleInSCC g vs
       Left aCycle
   let (g', nodeFromVertex, _) = Data.Graph.graphFromEdges theEdges
