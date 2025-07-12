@@ -1553,7 +1553,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
 -- >>> import Data.Monoid
--- >>> import Data.Either (either, isLeft)
+-- >>> import Data.Either (either)
 -- >>> import Control.Exception (throwIO)
 -- >>> import System.IO
 -- >>> import Cauldron.Managed
@@ -1567,7 +1567,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- >>> import Data.Functor.Identity
 -- >>> import Data.Function ((&))
 -- >>> import Data.Monoid
--- >>> import Data.Either (either, isLeft)
+-- >>> import Data.Either (either)
 -- >>> import Control.Exception (throwIO)
 -- >>> import System.IO
 -- >>> import Cauldron.Managed
