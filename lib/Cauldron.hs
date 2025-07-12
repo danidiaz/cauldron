@@ -247,12 +247,17 @@ lookup f (Cauldron {recipeMap}) = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
   case recipeMap & Map.lookup rep of
     Nothing -> Nothing
-    Just SomeRecipe {_recipeCallStacks, _recipe = _recipe :: Recipe m a} ->
-        case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
-          Nothing -> error "should never happen"
-          Just Refl -> Just $ f _recipeCallStacks _recipe
+    Just SomeRecipe {_recipeCallStacks, _recipe} ->
+        case Wrap1 _recipe of
+          Wrap1 @_ @a _ ->
+            case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
+              Nothing -> error "should never happen"
+              Just Refl -> Just $ f _recipeCallStacks _recipe
 
--- newtype Wrap1 f a = Wrap1 (f a)
+-- -- The alternative would be to introduce @_recipe = _recipe :: Recipe m a@
+-- -- "The type abstraction syntax can be used in patterns that match a data constructor. The syntax can’t be used with record patterns or infix patterns."
+-- -- [Type Abstractions in Patterns](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/type_abstractions.html#type-abstractions-in-patterns)
+newtype Wrap1 f a = Wrap1 (f a)
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
 withRecipe' :: forall {m} r. (forall bean. (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r

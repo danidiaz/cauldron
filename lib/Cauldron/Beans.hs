@@ -40,8 +40,9 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable
 import GHC.IsList
-import Type.Reflection (SomeTypeRep (..), eqTypeRep)
+import Type.Reflection (SomeTypeRep (..))
 import Type.Reflection qualified
+import Data.Type.Equality (TestEquality(testEquality))
 
 empty :: Beans
 empty = Beans Map.empty
@@ -66,7 +67,7 @@ taste :: forall bean. (Typeable bean) => Beans -> Maybe bean
 taste Beans {beanMap} =
   let tr = Type.Reflection.typeRep @bean
    in case Map.lookup (SomeTypeRep tr) beanMap of
-        Just (Dynamic tr' v) | Just HRefl <- tr `eqTypeRep` tr' -> Just v
+        Just (Dynamic tr' v) | Just Refl <- tr `testEquality` tr' -> Just v
         _ -> Nothing
 
 -- | A map of 'Dynamic' values, indexed by the 'TypeRep' of each 'Dynamic'.
@@ -115,7 +116,7 @@ instance Show SomeMonoidTypeRep where
 
 instance Eq SomeMonoidTypeRep where
   (SomeMonoidTypeRep tr1) == (SomeMonoidTypeRep tr2) =
-    (SomeTypeRep tr1) == (SomeTypeRep tr2)
+    SomeTypeRep tr1 == SomeTypeRep tr2
 
 instance Ord SomeMonoidTypeRep where
   (SomeMonoidTypeRep tr1) `compare` (SomeMonoidTypeRep tr2) =
@@ -140,8 +141,8 @@ unionBeansMonoidally reps (Beans beans1) (Beans beans2) =
       combine tr d1 d2 =
         case (Map.lookup tr d, d1, d2) of
           (Just (SomeMonoidTypeRep tr'), Dynamic tr1 v1, Dynamic tr2 v2)
-            | Just HRefl <- tr' `eqTypeRep` tr1,
-              Just HRefl <- tr' `eqTypeRep` tr2 ->
+            | Just Refl <- tr' `testEquality` tr1,
+              Just Refl <- tr' `testEquality` tr2 ->
                 Type.Reflection.withTypeable tr' (toDyn (v1 <> v2))
           _ -> d2
    in Beans $ Map.unionWithKey combine beans1 beans2
