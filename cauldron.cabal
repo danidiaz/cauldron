@@ -12,7 +12,7 @@ build-type:         Simple
 extra-doc-files:    README.md, CHANGELOG.md
 -- extra-source-files:
 category: Dependency Injection
-tested-with: GHC ==9.10.1, GHC==9.12.2
+tested-with:  GHC==9.8.4, GHC ==9.10.1, GHC==9.12.2
 source-repository    head
     type:     git
     location: https://github.com/danidiaz/cauldron.git
@@ -26,7 +26,7 @@ common common-base
 common common-lib
     import: common-base
     build-depends:
-      containers >= 0.7 && < 0.9,
+      containers >= 0.6.8 && < 0.9,
 
 common common-tests
     import: common-lib
