@@ -1,13 +1,16 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RequiredTypeArguments #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE NoFieldSelectors #-}
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
+{-# LANGUAGE RequiredTypeArguments #-}
+#endif
 
 -- | This is a library for performing dependency injection. It's an alternative
 -- to manually wiring your functions and passing all required parameters
@@ -475,6 +478,9 @@ singleton theRecipe = withFrozenCallStack do
 recipe theRecipe = withFrozenCallStack do
   mempty & insert theRecipe
 
+
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
+
 -- | Operator variant of 'recipe' where the @bean@ type is a [required type argument](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/required_type_arguments.html).
 --
 -- '(|=|)' and '(䷱)' are the same function.
@@ -498,6 +504,8 @@ recipe theRecipe = withFrozenCallStack do
 infixr 0 |=|
 
 infixr 0 ䷱
+
+#endif
 
 -- | Put a 'Recipe' into the 'Cauldron'.
 --
