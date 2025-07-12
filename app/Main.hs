@@ -190,7 +190,7 @@ boringWiring = do
 --
 -- Note that we detect wiring errors *before* running the effectful constructors.
 coolWiring :: Either CookingError (IO Result)
-coolWiring = cook allowSelfDeps cauldron
+coolWiring = cook allowSelfDeps [cauldron]
 
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =
@@ -241,7 +241,7 @@ main = do
       print z
       runInitializer
       pure $ Nothing
-  let depGraph = getDependencyGraph cauldron
+  let depGraph = getDependencyGraph [cauldron]
   writeAsDot (defaultStyle merr) "beans.dot" depGraph
   writeAsDot (defaultStyle merr) "beans-no-agg.dot" $ removeAggregates $ depGraph
   writeAsDot (defaultStyle merr) "beans-no-agg-no-decos.dot" $ removeDecos $ removeAggregates $ depGraph

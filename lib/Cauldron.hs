@@ -700,8 +700,8 @@ data BeanConstructionStep
     AggregateBean TypeRep
   deriving stock (Show, Eq, Ord)
 
--- | Build the requested @bean@ using the 'Recipe's stored in the 'Cauldron'.
--- The 'Cauldron' must contain a 'Recipe' for the requested bean, as well as
+-- | Build the requested @bean@ using the 'Recipe's stored in the 'mconcat'ted 'Cauldron's.
+-- The 'Cauldron's must contain a 'Recipe' for the requested bean, as well as
 -- 'Recipe's for producing all of its transitive dependencies.
 --
 -- >>> :{
@@ -729,11 +729,11 @@ cook ::
   (Monad m, Typeable bean) =>
   -- | The types of dependency cycles that are allowed between beans.
   Fire m ->
-  -- | A 'Cauldron' containing the necessary 'Recipe's.
-  Cauldron m ->
+  -- | 'Cauldron's containing the necessary 'Recipe's.
+  [Cauldron m] ->
   Either CookingError (m bean)
-cook fire cauldron = do
-  (mdeps, c) <- nest' fire cauldron
+cook fire cauldrons = do
+  (mdeps, c) <- nest' fire cauldrons
   _ <- case mdeps of
     [] -> Right ()
     d : ds -> Left $ MissingDependenciesError $ d Data.List.NonEmpty.:| ds
@@ -742,10 +742,9 @@ cook fire cauldron = do
     pure bean
 
 -- |
---
--- Takes a 'Cauldron' converts it into a 'Constructor' where any unfilled
--- dependencies are taken as the arguments of the 'Constructor'.  The
--- 'Constructor' can later be included in a bigger 'Cauldron', which will
+-- Takes 'mconcat'ted 'Cauldron's and converts them into a 'Constructor' where
+-- any unfilled dependencies are taken as the arguments of the 'Constructor'.
+-- The 'Constructor' can later be included in a bigger 'Cauldron', which will
 -- provide the missing dependencies.
 --
 -- This function never fails with 'MissingDependenciesError'.
@@ -812,20 +811,20 @@ nest ::
   (Monad m, Typeable bean, HasCallStack) =>
   -- | The types of dependency cycles that are allowed between beans.
   Fire m ->
-  -- | A 'Cauldron', possibly with unfilled dependencies.
-  Cauldron m ->
+  -- | 'Cauldron's, possibly with unfilled dependencies.
+  [Cauldron m] ->
   Either CookingError (Constructor m bean)
-nest fire cauldron = withFrozenCallStack do
-  (_, c) <- nest' fire cauldron
+nest fire cauldrons = withFrozenCallStack do
+  (_, c) <- nest' fire cauldrons
   pure c
 
 nest' ::
   forall {m} bean.
   (Monad m, Typeable bean, HasCallStack) =>
   Fire m ->
-  Cauldron m ->
+  [Cauldron m] ->
   Either CookingError ([MissingDependencies], Constructor m bean)
-nest' Fire {shouldEnforceDependency, followPlanCauldron} cauldron = withFrozenCallStack do
+nest' Fire {shouldEnforceDependency, followPlanCauldron} (mconcat -> cauldron) = withFrozenCallStack do
   accumMap <- first DoubleDutyBeansError do checkNoDoubleDutyBeans cauldron
   () <- first MissingResultBeanError do checkEntryPointPresent (typeRep (Proxy @bean)) (Map.keysSet accumMap) cauldron
   plan <- first DependencyCycleError do buildPlan shouldEnforceDependency cauldron
@@ -855,9 +854,9 @@ data DoubleDutyBean = DoubleDutyBean TypeRep CallStack CallStack
   deriving stock (Show)
 
 -- | Get a graph of dependencies between 'BeanConstructionStep's. The graph can
--- be obtained even if the 'Cauldron' can't be 'cook'ed successfully.
-getDependencyGraph :: Cauldron m -> DependencyGraph
-getDependencyGraph cauldron =
+-- be obtained even if the 'mconcat'ted 'Cauldron's can't be 'cook'ed successfully.
+getDependencyGraph :: [Cauldron m] -> DependencyGraph
+getDependencyGraph (mconcat -> cauldron) =
   let (_, deps) = buildDepsCauldron cauldron
    in DependencyGraph {graph = Graph.edges deps}
 
