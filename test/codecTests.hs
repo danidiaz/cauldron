@@ -66,9 +66,9 @@ makeBazSerializer Serializer {runSerializer = runFoo} =
 cauldron :: Cauldron Identity
 cauldron =
   mconcat
-    [ singleton @(Serializer Foo) $ val $ wire makeFooSerializer,
-      singleton @(Serializer Bar) $ val $ wire makeBarSerializer,
-      singleton @(Serializer Baz) $ val $ wire makeBazSerializer
+    [ recipe @(Serializer Foo) $ val $ wire makeFooSerializer,
+      recipe @(Serializer Bar) $ val $ wire makeBarSerializer,
+      recipe @(Serializer Baz) $ val $ wire makeBazSerializer
     ]
 
 builder :: Builder Identity ()
@@ -114,33 +114,33 @@ newtype Bcc = Bcc Int
 cauldronAccums1 :: Cauldron Identity
 cauldronAccums1 =
   mconcat
-    [ singleton @(Serializer Foo) $ val $ wire $ \sb -> (Acc 5, makeFooSerializer sb),
-      singleton @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
-      singleton @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
+    [ recipe @(Serializer Foo) $ val $ wire $ \sb -> (Acc 5, makeFooSerializer sb),
+      recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
+      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
     ]
 
 cauldronAccums2 :: Cauldron Identity
 cauldronAccums2 =
   mconcat
-    [ singleton @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> makeFooSerializer sb,
-      singleton @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
-      singleton @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
+    [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> makeFooSerializer sb,
+      recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
+      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
     ]
 
 cauldronAccumsOops1 :: Cauldron Identity
 cauldronAccumsOops1 =
   mconcat
-    [ singleton @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> (Acc 5, makeFooSerializer sb),
-      singleton @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
-      singleton @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
+    [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> (Acc 5, makeFooSerializer sb),
+      recipe @(Serializer Bar) $ val $ wire $ \sf sb -> (Acc 3, makeBarSerializer sf sb),
+      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
     ]
 
 cauldronAccumsOops2 :: Cauldron Identity
 cauldronAccumsOops2 =
   mconcat
-    [ singleton @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> (Bcc 5, makeFooSerializer sb),
-      singleton @(Serializer Bar) $ val $ wire $ \(_ :: Bcc) sf sb -> (Acc 5, makeBarSerializer sf sb),
-      singleton @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
+    [ recipe @(Serializer Foo) $ val $ wire $ \(_ :: Acc) sb -> (Bcc 5, makeFooSerializer sb),
+      recipe @(Serializer Bar) $ val $ wire $ \(_ :: Bcc) sf sb -> (Acc 5, makeBarSerializer sf sb),
+      recipe @(Serializer Baz) $ val $ wire $ \sf -> (Acc 7, makeBazSerializer sf)
     ]
 
 tests :: TestTree

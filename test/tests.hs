@@ -112,9 +112,9 @@ weirdDeco txt Weird {weirdOp, anotherWeirdOp} =
 cauldron :: Cauldron M
 cauldron =
   mconcat
-    [ singleton @(Logger M) $ eff $ pure makeLogger,
-      singleton @(Repository M) $ eff $ wire makeRepository,
-      singleton @(Initializer, Repository M) $ val_ $ wire (,)
+    [ recipe @(Logger M) $ eff $ pure makeLogger,
+      recipe @(Repository M) $ eff $ wire makeRepository,
+      recipe @(Initializer, Repository M) $ val_ $ wire (,)
     ]
 
 cauldronMissingDep :: Cauldron M
@@ -136,19 +136,19 @@ cauldronWithCycle =
 cauldronX1 :: Cauldron M
 cauldronX1 =
   mconcat
-    [ singleton @(Logger M) $ eff $ pure makeLogger,
-      singleton @(Weird M) $ eff $ wire makeWeird -- overwritten
+    [ recipe @(Logger M) $ eff $ pure makeLogger,
+      recipe @(Weird M) $ eff $ wire makeWeird -- overwritten
     ]
 
 cauldronX2 :: Cauldron M
 cauldronX2 =
   mconcat
-    [ singleton @(Repository M) $ eff $ do
+    [ recipe @(Repository M) $ eff $ do
         action <- wire makeRepository
         pure do
           (initializer, repo) <- action
           pure (initializer, repo),
-      singleton @(Weird M)
+      recipe @(Weird M)
         Recipe
           { bare = eff $ wire makeSelfInvokingWeird,
             decos =
@@ -157,7 +157,7 @@ cauldronX2 =
                   val $ wire (weirdDeco "outer")
                 ]
           },
-      singleton @Result $ val_ do wire Result
+      recipe @Result $ val_ do wire Result
     ]
 
 data Result = Result Initializer (Repository M) (Weird M)
@@ -165,19 +165,17 @@ data Result = Result Initializer (Repository M) (Weird M)
 cauldronLonely :: Cauldron M
 cauldronLonely =
   mconcat
-    [ singleton @(Lonely M) $ val $ pure makeLonely
+    [ recipe @(Lonely M) $ val $ pure makeLonely
     ]
 
 tests :: TestTree
 tests =
   testGroup
     "All"
-    [ 
-      testCase "lookup" do
+    [ testCase "lookup" do
         case cauldron & Cauldron.lookup @(Logger M) (\_ _ -> ()) of
           Just () -> pure ()
-          Nothing -> assertFailure "bean not found"
-      ,
+          Nothing -> assertFailure "bean not found",
       testCase "value" do
         (_, traces) <- case cook' [cauldron] of
           Left _ -> assertFailure "could not wire"
@@ -243,10 +241,11 @@ tests =
       testCase "value nested" do
         ((), traces) <- case ( do
                                  constructorX2 <- nest allowSelfDeps [cauldronX2]
-                                 cook @Result allowSelfDeps [ 
-                                    cauldronX1,
-                                    Cauldron.singleton @Result constructorX2 
-                                    ]
+                                 cook @Result
+                                   allowSelfDeps
+                                   [ cauldronX1,
+                                     Cauldron.recipe @Result constructorX2
+                                   ]
                              ) of
           Left _ -> assertFailure "could not wire"
           Right beansAction -> do

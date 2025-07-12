@@ -195,21 +195,21 @@ coolWiring = cook allowSelfDeps [cauldron]
 cauldron :: Cauldron IO
 cauldron :: Cauldron IO =
   mconcat
-    [ singleton @A $ val $ pure makeA,
-      singleton @B $ val $ pure makeB,
-      singleton @C $ val $ wire makeC,
-      singleton @D $ val $ wire makeD,
-      singleton @E $ val $ wire makeE,
-      singleton @F $ val $ wire makeF,
-      singleton @G $
+    [ recipe @A $ val $ pure makeA,
+      recipe @B $ val $ pure makeB,
+      recipe @C $ val $ wire makeC,
+      recipe @D $ val $ wire makeD,
+      recipe @E $ val $ wire makeE,
+      recipe @F $ val $ wire makeF,
+      recipe @G $
         Recipe
           { bare = val $ wire makeG,
             decos =
               [ val $ wire makeGDeco1
               ]
           },
-      singleton @H $ val $ wire makeH,
-      singleton @Z
+      recipe @H $ val $ wire makeH,
+      recipe @Z
         Recipe
           { bare = val $ wire makeZ,
             decos =
@@ -217,7 +217,7 @@ cauldron :: Cauldron IO =
                 val $ wire makeZDeco2
               ]
           },
-      singleton @Result $ val $ wire Result
+      recipe @Result $ val $ wire Result
     ]
 
 main :: IO ()

@@ -119,8 +119,8 @@ cauldron :: Cauldron IO =
       singleton $ val $ wire makeD,
       singleton $ val $ wire makeE,
       -- The type app in val checks the specificity, see val definition.
-      singleton @F $ val @F $ wire makeF,
-      singleton @G
+      recipe @F $ val @F $ wire makeF,
+      recipe @G
         Recipe
           { bare = val $ wire makeG,
             decos =
@@ -128,8 +128,8 @@ cauldron :: Cauldron IO =
                 [ val $ wire makeGDeco1
                 ]
           },
-      singleton @H $ val $ wire makeH,
-      singleton @Z
+      recipe @H $ val $ wire makeH,
+      recipe @Z
         Recipe
           { bare = val $ wire makeZ,
             decos =
@@ -138,7 +138,7 @@ cauldron :: Cauldron IO =
                   val $ wire makeZDeco2
                 ]
           },
-      singleton @Result $ val $ wire Result
+      recipe @Result $ val $ wire Result
     ]
 
 data Result = Result Initializer Inspector Z

@@ -38,11 +38,11 @@ import Data.Map.Strict qualified as Map
 import Data.Semigroup qualified
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Type.Equality (TestEquality (testEquality))
 import Data.Typeable
 import GHC.IsList
 import Type.Reflection (SomeTypeRep (..))
 import Type.Reflection qualified
-import Data.Type.Equality (TestEquality(testEquality))
 
 empty :: Beans
 empty = Beans Map.empty

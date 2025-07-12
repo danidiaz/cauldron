@@ -3,8 +3,7 @@
 ## 0.9.0.0
 
 * breaking change: `SomeRecipe` type hidden.
-* breaking change: `Cauldron.recipe` removed in favor of `Cauldron.singleton`, 
-  which produces a `Cauldron`, not a `SomeRecipe`.
+* breaking change: `recipe` now produces a `Cauldron`, not a `SomeRecipe`.
 * breaking change: `withRecipe` is now `lookup` and works on `Cauldron`s.
 * breaking change: `withRecipeCallstack` gone. Use `lookup`.
 * breaking change: removed `IsList` instance for `Cauldron`.

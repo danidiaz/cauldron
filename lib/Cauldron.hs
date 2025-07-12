@@ -51,9 +51,9 @@
 -- do
 --   let cauldron :: Cauldron IO
 --       cauldron = mconcat [
---           singleton @A $ val_ $ wire makeA,
---           singleton @B $ val_ $ wire makeB,
---           singleton @C $ eff_ $ wire makeC -- we use eff because the constructor has IO effects
+--           recipe @A $ val_ $ wire makeA,
+--           recipe @B $ val_ $ wire makeB,
+--           recipe @C $ eff_ $ wire makeC -- we use eff because the constructor has IO effects
 --         ]
 --   action <- [cauldron] & cook @C forbidDepCycles & either throwIO pure
 --   action
@@ -67,6 +67,7 @@ module Cauldron
   ( -- * Filling the cauldron
     Cauldron,
     empty,
+    recipe,
     singleton,
     (|=|),
     (䷱),
@@ -364,7 +365,7 @@ hoistRecipe' f fds (Recipe {bare, decos}) =
 -- do
 --   action <-
 --     [
---       singleton @Foo $ Recipe {
+--       recipe @Foo $ Recipe {
 --         bare = val $ wire makeFoo,
 --         decos = [
 --              val $ wire makeFooDeco1,
@@ -428,14 +429,16 @@ data ConstructorReps where
     } ->
     ConstructorReps
 
--- | Create a 'Cauldron' consisting of a single 'Recipe'.
+-- | Create a 'Cauldron' consisting of a single 'Recipe'. 
+--
+-- 'recipe' and 'singleton' are the same function.
 --
 -- For readability, the @bean@ type is often passed as a type application, despite
 -- not being strictly required:
 --
 -- >>> :{
 -- oneRecipe :: Cauldron IO 
--- oneRecipe = singleton @Bool $ val_ $ pure $ False
+-- oneRecipe = recipe @Bool $ val_ $ pure $ False
 -- :}
 --
 -- Typical usage involves putting singleton 'Cauldron's in a list and 'mconcat'ting them:
@@ -444,17 +447,19 @@ data ConstructorReps where
 -- twoRecipes :: Cauldron IO 
 -- twoRecipes = mconcat [
 --      singleton $ val_ $ pure $ False,
---      singleton @Char $ val_ $ wire $ \(_ :: Bool) -> 'b'
+--      recipe @Char $ val_ $ wire $ \(_ :: Bool) -> 'b'
 --    ]
 -- :}
 --
-singleton ::
+recipe, singleton ::
   forall {recipelike} {m} bean.
   (Typeable bean, ToRecipe recipelike, HasCallStack) =>
   -- | A 'Recipe' or a 'Constructor'.
   recipelike m bean ->
   Cauldron m
 singleton theRecipe = withFrozenCallStack do
+  mempty & insert theRecipe
+recipe theRecipe = withFrozenCallStack do
   mempty & insert theRecipe
 
 -- | Operator variant of 'singleton' where the @bean@ type is a [required type argument](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/required_type_arguments.html). 
@@ -551,7 +556,7 @@ removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
 -- :}
 --
 -- >>> :{
---   [singleton @A $ val $ wire loopyA :: Cauldron IO]
+--   [recipe @A $ val $ wire loopyA :: Cauldron IO]
 --       & cook @A forbidDepCycles 
 --       & \case Left (DependencyCycleError _) -> "self dep is forbidden"; _ -> "oops"
 -- :}
@@ -589,7 +594,7 @@ forbidDepCycles =
 -- :}
 --
 -- >>> :{
---   [singleton @A $ val $ wire loopyA :: Cauldron IO]
+--   [recipe @A $ val $ wire loopyA :: Cauldron IO]
 --       & cook @A allowSelfDeps
 --       & \case Left (DependencyCycleError _) -> "oops"; _ -> "self dep is ok"
 -- :}
@@ -606,8 +611,8 @@ forbidDepCycles =
 --
 -- >>> :{
 --   [
---       singleton @U $ val $ wire loopyU,
---       singleton @V $ val $ wire loopyV :: Cauldron IO
+--       recipe @U $ val $ wire loopyU,
+--       recipe @V $ val $ wire loopyV :: Cauldron IO
 --   ] 
 --    & cook @U allowSelfDeps 
 --    & \case Left (DependencyCycleError _) -> "cycle between 2 deps"; _ -> "oops"
@@ -644,8 +649,8 @@ allowSelfDeps =
 --
 -- >>> :{
 --   [
---       singleton @U $ val $ wire loopyU,
---       singleton @V $ val $ wire loopyV :: Cauldron IO
+--       recipe @U $ val $ wire loopyU,
+--       recipe @V $ val $ wire loopyV :: Cauldron IO
 --   ] 
 --     & cook @U allowDepCycles
 --     & \case Left (DependencyCycleError _) -> "oops"; _ -> "cycles are ok"
@@ -783,13 +788,13 @@ cook fire cauldrons = do
 -- >>> :{
 -- do
 --   nested :: Constructor IO C <- nest @C forbidDepCycles [
---       singleton @A $ val $ wire makeA2, -- this will be used by makeC
---       singleton @C $ val $ wire makeC -- takes B from outside
+--       recipe @A $ val $ wire makeA2, -- this will be used by makeC
+--       recipe @C $ val $ wire makeC -- takes B from outside
 --       ] & either throwIO pure
 --   action <- cook @C forbidDepCycles [
---       singleton @A $ val $ wire makeA,
---       singleton @B $ val $ wire makeB,
---       singleton @C $ nested
+--       recipe @A $ val $ wire makeA,
+--       recipe @B $ val $ wire makeB,
+--       recipe @C $ nested
 --       ] & either throwIO pure
 --   C c <- action
 --   c
@@ -804,9 +809,9 @@ cook fire cauldrons = do
 -- >>> :{
 -- do
 --   action <- cook @C forbidDepCycles [
---       singleton @A $ val $ wire makeA,
---       singleton @B $ val $ wire makeB,
---       singleton @C $ val $ wire makeC
+--       recipe @A $ val $ wire makeA,
+--       recipe @B $ val $ wire makeB,
+--       recipe @C $ val $ wire makeC
 --       ] & either throwIO pure
 --   C c <- action
 --   c
@@ -1481,9 +1486,9 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- do
 --   let cauldron :: Cauldron Identity
 --       cauldron = mconcat [
---           singleton @U $ val $ wire makeU,
---           singleton @V $ val $ wire makeV,
---           singleton @W $ val $ wire W
+--           recipe @U $ val $ wire makeU,
+--           recipe @V $ val $ wire makeV,
+--           recipe @W $ val $ wire W
 --         ]
 --   Identity w <- cook @W forbidDepCycles [cauldron] & either throwIO pure
 --   pure w
@@ -1502,8 +1507,8 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 --
 -- >>> :{
 --   [
---       singleton @X $ val $ wire makeX,
---       singleton @(Sum Int) $ val $ wire makeAgg :: Cauldron IO
+--       recipe @X $ val $ wire makeX,
+--       recipe @(Sum Int) $ val $ wire makeAgg :: Cauldron IO
 --   ] 
 --     & cook @X forbidDepCycles 
 --     & \case Left (DoubleDutyBeansError _) -> "Sum Int is aggregate and primary"; _ -> "oops"
