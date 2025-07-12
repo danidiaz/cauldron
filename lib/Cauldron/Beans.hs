@@ -2,7 +2,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
@@ -120,7 +119,7 @@ instance Eq SomeMonoidTypeRep where
 
 instance Ord SomeMonoidTypeRep where
   (SomeMonoidTypeRep tr1) `compare` (SomeMonoidTypeRep tr2) =
-    (SomeTypeRep tr1) `compare` (SomeTypeRep tr2)
+    SomeTypeRep tr1 `compare` SomeTypeRep tr2
 
 -- | The 'mempty' value corresponding to the inner 'Type.Reflection.TypeRep'.
 someMonoidTypeRepMempty :: SomeMonoidTypeRep -> Dynamic

@@ -242,15 +242,17 @@ data SomeRecipe m where
 -- Besides the 'Recipe', the callback also receives a 'NonEmpty' list of
 -- 'CallStack's conveying the locations at which the the 'Recipe' was added and
 -- 'adjust'ed.
-lookup :: forall {m} bean r. (Typeable bean) => (NonEmpty CallStack -> Recipe m bean -> r) -> Cauldron m -> Maybe r
+lookup :: forall {m} (bean :: Type) r. (Typeable bean) => (NonEmpty CallStack -> Recipe m bean -> r) -> Cauldron m -> Maybe r
 lookup f (Cauldron {recipeMap}) = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
   case recipeMap & Map.lookup rep of
     Nothing -> Nothing
-    Just SomeRecipe {_recipeCallStacks, _recipe = _recipe :: Recipe m a} -> undefined
-      case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
-        Nothing -> error "should never happen"
-        Just Refl -> f _recipeCallStacks _recipe
+    Just SomeRecipe {_recipeCallStacks, _recipe = _recipe :: Recipe m a} ->
+        case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
+          Nothing -> error "should never happen"
+          Just Refl -> Just $ f _recipeCallStacks _recipe
+
+-- newtype Wrap1 f a = Wrap1 (f a)
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
 withRecipe' :: forall {m} r. (forall bean. (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
