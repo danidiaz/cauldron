@@ -73,8 +73,10 @@ module Cauldron
     empty,
     recipe,
     singleton,
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
     (|=|),
     (䷱),
+#endif
     insert,
     adjust,
     Cauldron.lookup,
