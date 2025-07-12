@@ -23,7 +23,7 @@
 --
 -- * @ApplicativeDo@ For advanced fiddling in the 'Args' applicative.
 -- * @OverloadedLists@ For avoiding explicit calls to 'mconcat' when building
---   a 'Cauldron' from a list, and for avoiding explicit calls to 'fromDecoList'.
+--   a 'Cauldron' from a list of 'Cauldron's, and for avoiding explicit calls to 'fromDecoList'.
 --
 -- An example of using a 'Cauldron' to wire the constructors of dummy @A@, @B@, @C@ datatypes:
 --
@@ -39,7 +39,7 @@
 -- makeC = \_ _ -> pure C
 -- :}
 --
--- The basic idea is to fill the 'Cauldron' with 'Recipe's. 'Recipe's are
+-- The basic idea is to fill the 'Cauldron' with 'recipe's. 'Recipe's are
 -- built by 'wire'ing the arguments of a constructor function, and then using
 -- functions like 'val_' or 'eff_' depending on whether the constructor is
 -- effectful or not. More complex 'Recipe's can also have decorators.
@@ -310,7 +310,7 @@ fromDecoList :: forall m bean. [Constructor m bean] -> Seq (Constructor m bean)
 fromDecoList = Data.Sequence.fromList
 
 -- | Convenience typeclass that allows passing either 'Recipe's or 'Constructor's
--- to the 'singleton' and 'insert' functions.
+-- to the 'recipe' and 'insert' functions.
 type ToRecipe :: ((Type -> Type) -> Type -> Type) -> Constraint
 class ToRecipe recipelike where
   toRecipe :: forall m bean. recipelike m bean -> Recipe m bean
@@ -476,6 +476,8 @@ recipe theRecipe = withFrozenCallStack do
   mempty & insert theRecipe
 
 -- | Operator variant of 'recipe' where the @bean@ type is a [required type argument](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/required_type_arguments.html).
+--
+-- '(|=|)' and '(䷱)' are the same function.
 --
 -- >>> :{
 -- oneRecipe, oneRecipe' :: Cauldron IO
@@ -1182,7 +1184,7 @@ removeDecos :: DependencyGraph -> DependencyGraph
 removeDecos DependencyGraph {graph} =
   DependencyGraph {graph = Graph.induce (\case PrimaryBeanDeco {} -> False; _ -> True) graph}
 
--- | Unifies 'PrimaryBean's with their respective 'BarePrimaryBean's and 'PrimaryBeanDeco's.
+-- | Unifies 'FinishedBean's with their respective 'BarePrimaryBean's, 'PrimaryBeanDeco's and 'AggregateBean's.
 --
 -- Also removes any self-loops.
 collapseBeans :: DependencyGraph -> DependencyGraph
