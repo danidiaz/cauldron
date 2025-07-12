@@ -19,12 +19,11 @@
 -- This library should be used at the ["composition root"](https://stackoverflow.com/questions/6277771/what-is-a-composition-root-in-the-context-of-dependency-injection) of the application,
 -- and only there: the components we are wiring together need not be aware that the library exists.
 --
--- These extensions, while not required, play well with the library:
+-- These extensions, while not required, can play well with the library:
 --
--- @
--- {-# LANGUAGE ApplicativeDo #-} -- For building complex values in the Args applicative.
--- {-# LANGUAGE OverloadedLists #-} -- For avoiding explicit calls to fromDecoList
--- @
+-- * @ApplicativeDo@ For advanced fiddling in the 'Args' applicative.
+-- * @OverloadedLists@ For avoiding explicit calls to 'fromDecoList'.
+-- * @RequiredTypeArguments@ For using the '(|=|)' and '(䷱)' operators. 
 --
 -- An example of using a 'Cauldron' to wire the constructors of dummy @A@, @B@, @C@ datatypes:
 --
@@ -457,8 +456,7 @@ singleton ::
 singleton theRecipe = withFrozenCallStack do
   mempty & insert theRecipe
 
--- | Operator variant of 'singleton' where the @bean@ type is a required type
--- argument. 
+-- | Operator variant of 'singleton' where the @bean@ type is a [required type argument](https://ghc.gitlab.haskell.org/ghc/doc/users_guide/exts/required_type_arguments.html). 
 --
 -- >>> :{
 -- oneRecipe, oneRecipe' :: Cauldron IO 
