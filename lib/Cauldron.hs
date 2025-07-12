@@ -23,7 +23,6 @@
 --
 -- * @ApplicativeDo@ For advanced fiddling in the 'Args' applicative.
 -- * @OverloadedLists@ For avoiding explicit calls to 'fromDecoList'.
--- * @RequiredTypeArguments@ For using the '(|=|)' and '(䷱)' operators. 
 --
 -- An example of using a 'Cauldron' to wire the constructors of dummy @A@, @B@, @C@ datatypes:
 --
@@ -286,7 +285,7 @@ hoistSomeRecipe' f fds sr = withRecipe' go sr
 type Recipe :: (Type -> Type) -> Type -> Type
 data Recipe m bean = Recipe
   { -- | How to build the bean itself.
-    bean :: Constructor m bean,
+    bare :: Constructor m bean,
     -- | A 'Data.Sequence.Sequence' of decorators that will wrap the bean. There might be no decorators.
     --
     -- See 'fromDecoList', 'Data.Sequence.|>' and 'Data.Sequence.<|'.
@@ -308,13 +307,13 @@ instance ToRecipe Recipe where
 
 -- | 'Constructor' is converted to a 'Recipe' without decorators.
 instance ToRecipe Constructor where
-  toRecipe bean = Recipe {bean, decos = Data.Sequence.empty}
+  toRecipe bare = Recipe {bare, decos = Data.Sequence.empty}
 
 -- | Change the monad used by the bean\'s main 'Constructor' and its decos.
 hoistRecipe :: forall m n bean. (forall x. m x -> n x) -> Recipe m bean -> Recipe n bean
-hoistRecipe f (Recipe {bean, decos}) =
+hoistRecipe f (Recipe {bare, decos}) =
   Recipe
-    { bean = hoistConstructor f bean,
+    { bare = hoistConstructor f bare,
       decos = hoistConstructor f <$> decos
     }
 
@@ -328,9 +327,9 @@ hoistRecipe' ::
   (Int -> Args (m (Regs bean)) -> Args (n (Regs bean))) ->
   Recipe m bean ->
   Recipe n bean
-hoistRecipe' f fds (Recipe {bean, decos}) =
+hoistRecipe' f fds (Recipe {bare, decos}) =
   Recipe
-    { bean = hoistConstructor' f bean,
+    { bare = hoistConstructor' f bare,
       decos = Data.Sequence.mapWithIndex (\i deco -> hoistConstructor' (fds i) deco) decos
     }
 
@@ -890,9 +889,9 @@ cauldronRegs Cauldron {recipeMap} =
 
 -- | Returns the accumulators, not the main bean
 recipeRegs :: SomeRecipe m -> Map TypeRep (CallStack, Dynamic)
-recipeRegs (SomeRecipe _ (Recipe {bean, decos})) = do
+recipeRegs (SomeRecipe _ (Recipe {bare, decos})) = do
   let extractRegReps c = (getConstructorCallStack c,) <$> (\ConstructorReps {regReps} -> regReps) (constructorReps c)
-  extractRegReps bean
+  extractRegReps bare
     <> foldMap extractRegReps decos
 
 -- | Missing depencencies for a 'Constructor'.
@@ -921,9 +920,9 @@ collectMissingDeps accums available cauldron =
 
 demandsByConstructorsInCauldron :: Cauldron m -> [(CallStack, TypeRep, Set TypeRep)]
 demandsByConstructorsInCauldron Cauldron {recipeMap} = do
-  (tr, SomeRecipe _ (Recipe {bean, decos})) <- Map.toList recipeMap
-  ( let ConstructorReps {argReps = beanArgReps} = constructorReps bean
-     in [(getConstructorCallStack bean, tr, beanArgReps)]
+  (tr, SomeRecipe _ (Recipe {bare, decos})) <- Map.toList recipeMap
+  ( let ConstructorReps {argReps = beanArgReps} = constructorReps bare
+     in [(getConstructorCallStack bare, tr, beanArgReps)]
     )
     ++ do
       decoCon <- Data.Foldable.toList decos
@@ -953,7 +952,7 @@ buildDepsCauldron Cauldron {recipeMap} = do
          { _recipeCallStacks,
            _recipe =
              Recipe
-               { bean,
+               { bare,
                  decos
                }
          } ->
@@ -964,7 +963,7 @@ buildDepsCauldron Cauldron {recipeMap} = do
                   (decoIndex, decoCon) <- zip [0 :: Int ..] (Data.Foldable.toList decos)
                   [(PrimaryBeanDeco beanRep decoIndex, decoCon)]
                 beanDeps = do
-                  constructorEdges bareBean (constructorReps bean)
+                  constructorEdges bareBean (constructorReps bare)
                 decoDeps = do
                   (decoStep, decoCon) <- decoSteps
                   -- We remove the bean because from the args becase, in the
@@ -982,7 +981,7 @@ buildDepsCauldron Cauldron {recipeMap} = do
                     -- The dep chain of completed bean -> decorators -> bare bean.
                     zip (Data.List.NonEmpty.tail innerSteps) (Data.List.NonEmpty.toList innerSteps)
             ( Map.fromList $
-                [ (bareBean, getConstructorCallStack bean),
+                [ (bareBean, getConstructorCallStack bare),
                   (boiledBean, Data.List.NonEmpty.head _recipeCallStacks)
                 ]
                   ++ do
@@ -1050,9 +1049,9 @@ followPlanStep ::
 followPlanStep makeBareView makeDecoView Cauldron {recipeMap} super item =
   case item of
     BarePrimaryBean rep -> case fromJust do Map.lookup rep recipeMap of
-      SomeRecipe {_recipe = Recipe {bean}} -> do
-        let ConstructorReps {beanRep} = constructorReps bean
-        inserter <- followConstructor bean (makeBareView beanRep super)
+      SomeRecipe {_recipe = Recipe {bare}} -> do
+        let ConstructorReps {beanRep} = constructorReps bare
+        inserter <- followConstructor bare (makeBareView beanRep super)
         pure do inserter super
     PrimaryBeanDeco rep index -> case fromJust do Map.lookup rep recipeMap of
       SomeRecipe {_recipe = Recipe {decos}} -> do

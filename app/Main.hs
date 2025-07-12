@@ -203,7 +203,7 @@ cauldron :: Cauldron IO =
       singleton @F $ val $ wire makeF,
       singleton @G $
         Recipe
-          { bean = val $ wire makeG,
+          { bare = val $ wire makeG,
             decos =
               [ val $ wire makeGDeco1
               ]
@@ -211,7 +211,7 @@ cauldron :: Cauldron IO =
       singleton @H $ val $ wire makeH,
       singleton @Z
         Recipe
-          { bean = val $ wire makeZ,
+          { bare = val $ wire makeZ,
             decos =
               [ val $ wire makeZDeco1,
                 val $ wire makeZDeco2

@@ -9,6 +9,7 @@
 * breaking change: `withRecipeCallstack` gone. Use `lookup`.
 * breaking change: removed `IsList` instance for `Cauldron`.
 * breaking change: `cook` and `nest` now receive a list of cauldrons.
+* breaking change: the `bean` field of `Recipe` is now called `bare`.
 * new (|=|) and (䷱) operators.
 
 ## 0.8.1.0

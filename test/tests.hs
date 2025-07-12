@@ -150,7 +150,7 @@ cauldronX2 =
           pure (initializer, repo),
       singleton @(Weird M)
         Recipe
-          { bean = eff $ wire makeSelfInvokingWeird,
+          { bare = eff $ wire makeSelfInvokingWeird,
             decos =
               fromDecoList
                 [ val $ wire (weirdDeco "inner"),

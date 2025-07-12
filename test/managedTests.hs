@@ -76,7 +76,7 @@ managedCauldron ref =
     [ singleton @(Logger IO) $ eff $ wire $ managed (makeLogger ref),
       singleton @(Weird IO)
         Recipe
-          { bean = eff do
+          { bare = eff do
               wire \logger self -> managed (makeSelfInvokingWeird ref logger self),
             decos =
               fromDecoList
