@@ -57,7 +57,7 @@
 --           singleton @B $ val_ $ wire makeB,
 --           singleton @C $ eff_ $ wire makeC -- we use eff because the constructor has IO effects
 --         ]
---   action <- cook @C forbidDepCycles cauldron & either throwIO pure
+--   action <- [cauldron] & cook @C forbidDepCycles & either throwIO pure
 --   action
 -- :}
 -- C
@@ -335,8 +335,8 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 
 -- $decos
 --
--- Decorators are 'Constructor's which, instead constructing the original
--- version of a bean, they modify it in some way (but without changing its
+-- Decorators are 'Constructor's which, instead of constructing the original
+-- version of a bean, modify it in some way (but without changing its
 -- type). Because they modify the bean, typically decorators will take the bean
 -- as an argument.
 --
@@ -372,7 +372,7 @@ hoistRecipe' f fds (Recipe {bean, decos}) =
 --               ]
 --           }
 --         ]
---   action <- cook @Foo forbidDepCycles cauldron & either throwIO pure
+--   action <- [cauldron] & cook @Foo forbidDepCycles & either throwIO pure
 --   Foo {sayFoo} <- action
 --   sayFoo
 -- :}
@@ -548,7 +548,8 @@ removeBeanFromArgs ConstructorReps {argReps, regReps, beanRep} =
 -- :}
 --
 -- >>> :{
---   cook @A forbidDepCycles (singleton @A $ val $ wire loopyA :: Cauldron IO)
+--   [singleton @A $ val $ wire loopyA :: Cauldron IO]
+--       & cook @A forbidDepCycles 
 --       & \case Left (DependencyCycleError _) -> "self dep is forbidden"; _ -> "oops"
 -- :}
 -- "self dep is forbidden"
@@ -585,7 +586,8 @@ forbidDepCycles =
 -- :}
 --
 -- >>> :{
---   cook @A allowSelfDeps (singleton @A $ val $ wire loopyA :: Cauldron IO)
+--   [singleton @A $ val $ wire loopyA :: Cauldron IO]
+--       & cook @A allowSelfDeps
 --       & \case Left (DependencyCycleError _) -> "oops"; _ -> "self dep is ok"
 -- :}
 -- "self dep is ok"
@@ -600,11 +602,12 @@ forbidDepCycles =
 -- :}
 --
 -- >>> :{
---   cook @U allowSelfDeps (mconcat [
+--   [
 --       singleton @U $ val $ wire loopyU,
---       singleton @V $ val $ wire loopyV
---       ] :: Cauldron IO)
---       & \case Left (DependencyCycleError _) -> "cycle between 2 deps"; _ -> "oops"
+--       singleton @V $ val $ wire loopyV :: Cauldron IO
+--   ] 
+--    & cook @U allowSelfDeps 
+--    & \case Left (DependencyCycleError _) -> "cycle between 2 deps"; _ -> "oops"
 -- :}
 -- "cycle between 2 deps"
 allowSelfDeps :: (MonadFix m) => Fire m
@@ -637,11 +640,12 @@ allowSelfDeps =
 -- :}
 --
 -- >>> :{
---   cook @U allowDepCycles (mconcat [
+--   [
 --       singleton @U $ val $ wire loopyU,
---       singleton @V $ val $ wire loopyV
---       ] :: Cauldron IO)
---       & \case Left (DependencyCycleError _) -> "oops"; _ -> "cycles are ok"
+--       singleton @V $ val $ wire loopyV :: Cauldron IO
+--   ] 
+--     & cook @U allowDepCycles
+--     & \case Left (DependencyCycleError _) -> "oops"; _ -> "cycles are ok"
 -- :}
 -- "cycles are ok"
 allowDepCycles :: (MonadFix m) => Fire m
@@ -709,7 +713,8 @@ data BeanConstructionStep
 -- :}
 --
 -- >>> :{
--- cook @A forbidDepCycles (mempty :: Cauldron IO)
+-- [mempty :: Cauldron IO]
+--  & cook @A forbidDepCycles 
 --  & \case Left (MissingResultBeanError _) -> "no recipe for requested bean"; _ -> "oops"
 -- :}
 -- "no recipe for requested bean"
@@ -720,7 +725,8 @@ data BeanConstructionStep
 -- :}
 --
 -- >>> :{
--- cook @B forbidDepCycles (singleton $ val $ wire B :: Cauldron IO)
+-- [singleton $ val $ wire B :: Cauldron IO]
+--  & cook @B forbidDepCycles
 --  & \case Left (MissingDependenciesError _) -> "no recipe for A"; _ -> "oops"
 -- :}
 -- "no recipe for A"
@@ -773,15 +779,15 @@ cook fire cauldrons = do
 --
 -- >>> :{
 -- do
---   nested :: Constructor IO C <- nest @C forbidDepCycles (mconcat [
+--   nested :: Constructor IO C <- nest @C forbidDepCycles [
 --       singleton @A $ val $ wire makeA2, -- this will be used by makeC
 --       singleton @C $ val $ wire makeC -- takes B from outside
---       ]) & either throwIO pure
---   action <- cook @C forbidDepCycles (mconcat [
+--       ] & either throwIO pure
+--   action <- cook @C forbidDepCycles [
 --       singleton @A $ val $ wire makeA,
 --       singleton @B $ val $ wire makeB,
 --       singleton @C $ nested
---       ]) & either throwIO pure
+--       ] & either throwIO pure
 --   C c <- action
 --   c
 -- :}
@@ -794,11 +800,11 @@ cook fire cauldrons = do
 --
 -- >>> :{
 -- do
---   action <- cook @C forbidDepCycles (mconcat [
+--   action <- cook @C forbidDepCycles [
 --       singleton @A $ val $ wire makeA,
 --       singleton @B $ val $ wire makeB,
 --       singleton @C $ val $ wire makeC
---       ]) & either throwIO pure
+--       ] & either throwIO pure
 --   C c <- action
 --   c
 -- :}
@@ -1476,7 +1482,7 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 --           singleton @V $ val $ wire makeV,
 --           singleton @W $ val $ wire W
 --         ]
---   Identity w <- cook @W forbidDepCycles cauldron & either throwIO pure
+--   Identity w <- cook @W forbidDepCycles [cauldron] & either throwIO pure
 --   pure w
 -- :}
 -- W (Sum {getSum = 8})
@@ -1492,11 +1498,12 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- :}
 --
 -- >>> :{
---   cook @X forbidDepCycles (mconcat [
+--   [
 --       singleton @X $ val $ wire makeX,
---       singleton @(Sum Int) $ val $ wire makeAgg
---       ] :: Cauldron IO)
---       & \case Left (DoubleDutyBeansError _) -> "Sum Int is aggregate and primary"; _ -> "oops"
+--       singleton @(Sum Int) $ val $ wire makeAgg :: Cauldron IO
+--   ] 
+--     & cook @X forbidDepCycles 
+--     & \case Left (DoubleDutyBeansError _) -> "Sum Int is aggregate and primary"; _ -> "oops"
 -- :}
 -- "Sum Int is aggregate and primary"
 
