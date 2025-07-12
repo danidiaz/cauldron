@@ -38,10 +38,10 @@
 -- makeC = \_ _ -> pure C
 -- :}
 --
--- The basic idea is to fill up the 'Cauldron' with 'recipe's. 'Recipe's are
+-- The basic idea is to fill the 'Cauldron' with 'Recipe's. 'Recipe's are
 -- built by 'wire'ing the arguments of a constructor function, and then using
 -- functions like 'val_' or 'eff_' depending on whether the constructor is
--- effectful or not. More sophisticated 'Recipe's can also have decorators.
+-- effectful or not. More complex 'Recipe's can also have decorators.
 --
 -- The we 'cook' the 'Cauldron' passing as a type argument the type of the bean
 -- that we want to extract, along with a 'Fire' argument that regulates what
@@ -281,7 +281,7 @@ hoistSomeRecipe' f fds sr = withRecipe' go sr
 --
 -- Because the instructions aren't really run until the 'Cauldron' is 'cook'ed,
 -- they can be modified with functions like 'adjust', in order to change the
--- base bean 'Constructor', or add or remove decorators.
+-- base bean 'Constructor' or add or remove decorators.
 type Recipe :: (Type -> Type) -> Type -> Type
 data Recipe m bean = Recipe
   { -- | How to build the bean itself.
