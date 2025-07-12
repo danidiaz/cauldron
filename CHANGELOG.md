@@ -8,6 +8,8 @@
 * breaking change: `withRecipe` is now `lookup` and works on `Cauldron`s.
 * breaking change: `withRecipeCallstack` gone. Use `lookup`.
 * breaking change: removed `IsList` instance for `Cauldron`.
+* breaking change: `cook` and `nest` now receive a list of cauldrons.
+* new (|=|) and (䷱) operators.
 
 ## 0.8.1.0
 

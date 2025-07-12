@@ -77,7 +77,6 @@ module Cauldron
     delete,
     keysSet,
     restrictKeys,
-    fromRecipeList,
     hoistCauldron,
     hoistCauldron',
 
@@ -234,32 +233,28 @@ hoistCauldron' f fds Cauldron {recipeMap} =
 -- need to hide each recipe's bean type. This wrapper allows that.
 type SomeRecipe :: (Type -> Type) -> Type
 data SomeRecipe m where
-  SomeRecipe :: (Typeable bean) => {_recipeCallStack :: CallStack, _recipe :: Recipe m bean} -> SomeRecipe m
+  SomeRecipe :: (Typeable bean) => {_recipeCallStacks :: NonEmpty CallStack, _recipe :: Recipe m bean} -> SomeRecipe m
 
--- | Access a 'Recipe' inside a 'Cauldron', if it exists.
-lookup :: forall {m} bean r. (Typeable bean) => (CallStack -> Recipe m bean -> r) -> Cauldron m -> Maybe r
+-- | Access a 'Recipe' inside a 'Cauldron', if it exists there.
+--
+-- A callback is used because 'Cauldron's are heterogenous containers. 
+--
+-- Besides the 'Recipe', the callback also receives a 'NonEmpty' list of
+-- 'CallStack's conveying the locations at which the the 'Recipe' was added and
+-- 'adjust'ed.
+lookup :: forall {m} bean r. (Typeable bean) => (NonEmpty CallStack -> Recipe m bean -> r) -> Cauldron m -> Maybe r
 lookup f (Cauldron {recipeMap}) = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
   case recipeMap & Map.lookup rep of
     Nothing -> Nothing
-    Just SomeRecipe {_recipeCallStack, _recipe = _recipe :: Recipe m a} -> undefined
+    Just SomeRecipe {_recipeCallStacks, _recipe = _recipe :: Recipe m a} -> undefined
       case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
         Nothing -> error "should never happen"
-        Just Refl -> f _recipeCallStack _recipe
+        Just Refl -> f _recipeCallStacks _recipe
 
 -- | Access the 'Recipe' inside a 'SomeRecipe'.
-withRecipe' :: forall {m} r. (forall bean. (Typeable bean) => CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
-withRecipe' f (SomeRecipe {_recipeCallStack, _recipe}) = f _recipeCallStack _recipe
-
-getRecipeRep :: SomeRecipe m -> TypeRep
-getRecipeRep = withRecipe' go
-  where
-    go :: forall bean m. (Typeable bean) => CallStack -> Recipe m bean -> TypeRep
-    go _ _ = typeRep (Proxy @bean)
-
-fromRecipeList :: [SomeRecipe m] -> Cauldron m
-fromRecipeList =
-  foldMap \sr -> Cauldron {recipeMap = Map.singleton (getRecipeRep sr) sr}
+withRecipe' :: forall {m} r. (forall bean. (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> r) -> SomeRecipe m -> r
+withRecipe' f (SomeRecipe {_recipeCallStacks, _recipe}) = f _recipeCallStacks _recipe
 
 hoistSomeRecipe :: (forall x. m x -> n x) -> SomeRecipe m -> SomeRecipe n
 hoistSomeRecipe f r@SomeRecipe {_recipe} = r {_recipe = hoistRecipe f _recipe}
@@ -272,7 +267,7 @@ hoistSomeRecipe' ::
   SomeRecipe n
 hoistSomeRecipe' f fds sr = withRecipe' go sr
   where
-    go :: forall bean. (Typeable bean) => CallStack -> Recipe m bean -> SomeRecipe n
+    go :: forall bean. (Typeable bean) => NonEmpty CallStack -> Recipe m bean -> SomeRecipe n
     go _ r = sr {_recipe = hoistRecipe' (f @bean) (fds @bean) r}
 
 -- | Instructions for how to build a value of type @bean@ while possibly
@@ -490,12 +485,12 @@ insert ::
   Cauldron m
 insert recipelike Cauldron {recipeMap} = withFrozenCallStack do
   let rep = typeRep (Proxy @bean)
-  Cauldron {recipeMap = Map.insert rep (SomeRecipe callStack (toRecipe recipelike)) recipeMap}
+  Cauldron {recipeMap = Map.insert rep (SomeRecipe (Data.List.NonEmpty.singleton callStack) (toRecipe recipelike)) recipeMap}
 
--- | Tweak a 'Recipe' inside the 'Cauldron', if the recipe exists.
+-- | Tweak a 'Recipe' inside the 'Cauldron', if it exists there.
 adjust ::
   forall {m} bean.
-  (Typeable bean) =>
+  (Typeable bean, HasCallStack) =>
   (Recipe m bean -> Recipe m bean) ->
   Cauldron m ->
   Cauldron m
@@ -506,10 +501,13 @@ adjust f (Cauldron {recipeMap}) = withFrozenCallStack do
         recipeMap
           & Map.adjust
             do
-              \r@SomeRecipe {_recipe = _recipe :: Recipe m a} ->
+              \SomeRecipe {_recipeCallStacks, _recipe = _recipe :: Recipe m a} ->
                 case testEquality (Type.Reflection.typeRep @bean) (Type.Reflection.typeRep @a) of
                   Nothing -> error "should never happen"
-                  Just Refl -> r {_recipe = f _recipe}
+                  Just Refl -> SomeRecipe {
+                    _recipeCallStacks = _recipeCallStacks `Data.List.NonEmpty.appendList` [callStack],
+                    _recipe = f _recipe
+                    }
             rep
     }
 
@@ -880,7 +878,7 @@ checkNoDoubleDutyBeans cauldron = do
 cauldronRegs :: Cauldron m -> (Map TypeRep (CallStack, Dynamic), Map TypeRep CallStack)
 cauldronRegs Cauldron {recipeMap} =
   Map.foldMapWithKey
-    do \rep aRecipe -> (recipeRegs aRecipe, Map.singleton rep (getRecipeCallStack aRecipe))
+    do \rep aRecipe -> (recipeRegs aRecipe, Map.singleton rep (Data.List.NonEmpty.head $ getRecipeCallStack aRecipe))
     recipeMap
 
 -- | Returns the accumulators, not the main bean
@@ -945,7 +943,7 @@ buildDepsCauldron Cauldron {recipeMap} = do
     & Map.foldMapWithKey
       \beanRep
        SomeRecipe
-         { _recipeCallStack,
+         { _recipeCallStacks,
            _recipe =
              Recipe
                { bean,
@@ -978,7 +976,7 @@ buildDepsCauldron Cauldron {recipeMap} = do
                     zip (Data.List.NonEmpty.tail innerSteps) (Data.List.NonEmpty.toList innerSteps)
             ( Map.fromList $
                 [ (bareBean, getConstructorCallStack bean),
-                  (boiledBean, _recipeCallStack)
+                  (boiledBean, Data.List.NonEmpty.head _recipeCallStacks)
                 ]
                   ++ do
                     (decoStep, decoCon) <- decoSteps
@@ -1401,8 +1399,8 @@ getConstructorCallStack (Constructor {_constructorCallStack}) = _constructorCall
 
 -- | For debugging purposes, 'SomeRecipe's remember the 'CallStack'
 -- of when they were created.
-getRecipeCallStack :: SomeRecipe m -> CallStack
-getRecipeCallStack (SomeRecipe {_recipeCallStack}) = _recipeCallStack
+getRecipeCallStack :: SomeRecipe m -> NonEmpty CallStack
+getRecipeCallStack (SomeRecipe {_recipeCallStacks}) = _recipeCallStacks
 
 -- | The set of all 'TypeRep' keys of the map.
 keysSet :: Cauldron m -> Set TypeRep
