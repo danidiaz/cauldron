@@ -1542,13 +1542,12 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- :}
 -- "Sum Int is aggregate and primary"
 
+#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
 -- $setup
+-- >>> :set -XRequiredTypeArguments
 -- >>> :set -XBlockArguments
 -- >>> :set -XApplicativeDo
 -- >>> :set -XOverloadedLists
-#if MIN_VERSION_GLASGOW_HASKELL(9,10,1,0)
--- >>> :set -XRequiredTypeArguments
-#endif
 -- >>> :set -XExplicitNamespaces
 -- >>> :set -Wno-incomplete-uni-patterns
 -- >>> import Data.Functor.Identity
@@ -1558,3 +1557,18 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- >>> import Control.Exception (throwIO)
 -- >>> import System.IO
 -- >>> import Cauldron.Managed
+#else
+-- $setup
+-- >>> :set -XBlockArguments
+-- >>> :set -XApplicativeDo
+-- >>> :set -XOverloadedLists
+-- >>> :set -XExplicitNamespaces
+-- >>> :set -Wno-incomplete-uni-patterns
+-- >>> import Data.Functor.Identity
+-- >>> import Data.Function ((&))
+-- >>> import Data.Monoid
+-- >>> import Data.Either (either, isLeft)
+-- >>> import Control.Exception (throwIO)
+-- >>> import System.IO
+-- >>> import Cauldron.Managed
+#endif
