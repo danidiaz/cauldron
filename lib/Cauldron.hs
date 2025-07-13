@@ -29,7 +29,8 @@
 -- * @OverloadedLists@ For avoiding explicit calls to 'mconcat' when building
 --   a 'Cauldron' from a list of 'Cauldron's, and for avoiding explicit calls to 'fromDecoList'.
 --
--- An example of using a 'Cauldron' to wire the constructors of dummy @A@, @B@, @C@ datatypes:
+-- An example. Suppose we want to use 'Cauldron' to wire the constructors of dummy @A@, @B@,
+-- @C@ datatypes:
 --
 -- >>> :{
 -- data A = A deriving Show
@@ -43,10 +44,12 @@
 -- makeC = \_ _ -> pure C
 -- :}
 --
--- The basic idea is to fill the 'Cauldron' with 'recipe's. 'Recipe's are
--- built by 'wire'ing the arguments of a constructor function, and then using
--- functions like 'val_' or 'eff_' depending on whether the constructor is
--- effectful or not. More complex 'Recipe's can also have decorators.
+-- The basic idea is to fill the 'Cauldron' with 'recipe's that specify how to
+-- construct the @A@, @B@, @C@ values (we call those values \"beans\").
+-- 'Recipe's are built by 'wire'ing the arguments of a constructor function, and
+-- then using functions like 'val_' or 'eff_' depending on whether the
+-- constructor is effectful or not. More complex 'Recipe's can also have
+-- decorators.
 --
 -- Then we 'cook' the 'Cauldron' passing as a type argument the type of the bean
 -- that we want to extract, along with a 'Fire' argument that regulates what
@@ -642,8 +645,8 @@ forbidDepCycles =
 --       recipe @U $ val $ wire loopyU,
 --       recipe @V $ val $ wire loopyV :: Cauldron IO
 --   ]
---    & cook @U allowSelfDeps
---    & \case Left (DependencyCycleError _) -> "cycle between 2 deps"; _ -> "oops"
+--   & cook @U allowSelfDeps
+--   & \case Left (DependencyCycleError _) -> "cycle between 2 deps"; _ -> "oops"
 -- :}
 -- "cycle between 2 deps"
 allowSelfDeps :: (MonadFix m) => Fire m
@@ -680,8 +683,8 @@ allowSelfDeps =
 --       recipe @U $ val $ wire loopyU,
 --       recipe @V $ val $ wire loopyV :: Cauldron IO
 --   ]
---     & cook @U allowDepCycles
---     & \case Left (DependencyCycleError _) -> "oops"; _ -> "cycles are ok"
+--   & cook @U allowDepCycles
+--   & \case Left (DependencyCycleError _) -> "oops"; _ -> "cycles are ok"
 -- :}
 -- "cycles are ok"
 allowDepCycles :: (MonadFix m) => Fire m
@@ -734,10 +737,14 @@ data BeanConstructionStep
     BarePrimaryBean TypeRep
   | -- | Apply the decorator with the given index. Comes after the 'BarePrimaryBean' and all 'PrimaryBeanDeco's with a lower index value.
     PrimaryBeanDeco TypeRep Int
-  | -- | Final, fully decorated version of a bean. If there are no decorators, comes directly after 'BarePrimaryBean'.
-    FinishedBean TypeRep
   | -- | Beans that are secondary registrations of a 'Constructor' and which are aggregated monoidally.
     AggregateBean TypeRep
+  | -- | Final, fully constructed version of a bean, the version other beans depend on. 
+    --
+    -- * If the bean is a primary bean, depends on the bean's last 'PrimaryBeanDeco' or directly on 'BarePrimaryBean' if there are no decorators.
+    --
+    -- * If the bean is an aggregate bean, points to the 'AggregateBean'.
+    FinishedBean TypeRep
   deriving stock (Show, Eq, Ord)
 
 -- | Build the requested @bean@ using the 'Recipe's stored in 'Cauldron'.
@@ -761,7 +768,7 @@ data BeanConstructionStep
 -- :}
 --
 -- >>> :{
--- (singleton $ val $ wire B :: Cauldron IO)
+-- (recipe $ val $ wire B :: Cauldron IO)
 --  & cook @B forbidDepCycles
 --  & \case Left (MissingDependenciesError _) -> "no recipe for A"; _ -> "oops"
 -- :}
@@ -815,15 +822,21 @@ cook fire cauldron = do
 --
 -- >>> :{
 -- do
---   nested :: Constructor IO C <- nest @C forbidDepCycles (mconcat [
---       recipe @A $ val $ wire makeA2, -- this will be used by makeC
---       recipe @C $ val $ wire makeC -- takes B from outside
---       ]) & either throwIO pure
---   action <- cook @C forbidDepCycles (mconcat [
---       recipe @A $ val $ wire makeA,
---       recipe @B $ val $ wire makeB,
---       recipe @C $ nested
---       ]) & either throwIO pure
+--   nested :: Constructor IO C <- 
+--      mconcat [
+--        recipe @A $ val $ wire makeA2, -- this will be used by makeC
+--        recipe @C $ val $ wire makeC -- takes B from outside
+--      ] 
+--      & nest @C forbidDepCycles
+--      & either throwIO pure
+--   action <- 
+--      mconcat [
+--        recipe @A $ val $ wire makeA,
+--        recipe @B $ val $ wire makeB,
+--        recipe @C $ nested
+--      ] 
+--      & cook @C forbidDepCycles
+--      & either throwIO pure
 --   C c <- action
 --   c
 -- :}
@@ -836,11 +849,14 @@ cook fire cauldron = do
 --
 -- >>> :{
 -- do
---   action <- cook @C forbidDepCycles (mconcat [
---       recipe @A $ val $ wire makeA,
---       recipe @B $ val $ wire makeB,
---       recipe @C $ val $ wire makeC
---       ]) & either throwIO pure
+--   action <- 
+--      mconcat [
+--        recipe @A $ val $ wire makeA,
+--        recipe @B $ val $ wire makeB,
+--        recipe @C $ val $ wire makeC
+--      ] 
+--      & cook @C forbidDepCycles  
+--      & either throwIO pure
 --   C c <- action
 --   c
 -- :}
@@ -1295,7 +1311,7 @@ defaultStepToText =
 -- Note that only the type of the primary @bean@ is reflected in the
 -- 'Constructor' type. Those of the dependencies and aggregate beans are not.
 --
--- 'Constructor' doesn't have a 'Functor' instance. This is beause sometimes a
+-- 'Constructor' doesn't have a 'Functor' instance. This is because sometimes a
 -- 'Constructor' may depend on the same type of bean it produces, but the
 -- 'Functor' instance would only change the output type, leading to confusing
 -- wiring errors.
@@ -1533,12 +1549,12 @@ restrictKeys Cauldron {recipeMap} trs = Cauldron {recipeMap = Map.restrictKeys r
 -- :}
 --
 -- >>> :{
---   (mconcat [
+--   mconcat [
 --       recipe @X $ val $ wire makeX,
 --       recipe @(Sum Int) $ val $ wire makeAgg :: Cauldron IO
---   ])
---     & cook @X forbidDepCycles
---     & \case Left (DoubleDutyBeansError _) -> "Sum Int is aggregate and primary"; _ -> "oops"
+--   ]
+--   & cook @X forbidDepCycles
+--   & \case Left (DoubleDutyBeansError _) -> "Sum Int is aggregate and primary"; _ -> "oops"
 -- :}
 -- "Sum Int is aggregate and primary"
 
