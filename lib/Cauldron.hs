@@ -48,7 +48,7 @@
 -- functions like 'val_' or 'eff_' depending on whether the constructor is
 -- effectful or not. More complex 'Recipe's can also have decorators.
 --
--- The we 'cook' the 'Cauldron' passing as a type argument the type of the bean
+-- Then we 'cook' the 'Cauldron' passing as a type argument the type of the bean
 -- that we want to extract, along with a 'Fire' argument that regulates what
 -- dependency cycles are allowed (if allowed at all).
 --
